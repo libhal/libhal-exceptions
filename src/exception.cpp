@@ -481,7 +481,7 @@ unwind_frame(const instructions_t& p_instructions,
       }
       case 0b1001: {
         // Handle "1001nnnn"
-        int nnnn = *instruction & 0xF; // Extract the last 4 bits
+        int nnnn = *instruction & 0xF;
         if (nnnn != 13 && nnnn != 15) {
           // Set vsp = r[nnnn]
           virtual_cpu.sp = virtual_cpu[nnnn];
@@ -495,8 +495,11 @@ unwind_frame(const instructions_t& p_instructions,
         break;
       }
       case 0b1010: {
-        // Handle "10100nnn" (Pop r4-r[4+nnn]), and "10101nnn" (Pop
-        // r4-r[4+nnn], r14)
+        // Handle:
+        //
+        //     "10100nnn" (Pop r4-r[4+nnn]), and
+        //     "10101nnn" (Pop r4-r[4+nnn], r14)
+        //
         const std::uint32_t* sp_ptr = *virtual_cpu.sp;
         int nnn = *instruction & 0b111; // Extract the last 3 bits
         switch (nnn) {
@@ -703,8 +706,6 @@ std::terminate_handler __terminate_handler = terminate_halt; // NOLINT
 
 extern "C"
 {
-  std::array<std::uint8_t, 1024> storage;
-  std::span<std::uint8_t> storage_left(storage);
 
   void* __wrap___cxa_allocate_exception(size_t p_thrown_size)
   {
@@ -718,8 +719,6 @@ extern "C"
 
   void __wrap___cxa_free_exception([[maybe_unused]] void* p_thrown_exception)
   {
-    volatile su16_t* v1 = ke::get_su16(nullptr);
-    volatile lu_t* v2 = ke::get_lu(nullptr);
     ke::exception_buffer.fill(0);
   }
 
@@ -752,7 +751,7 @@ extern "C"
     std::terminate();
   }
 
-  void __wrap___cxa_rethrow()
+  void __cxa_rethrow()
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
 
@@ -782,9 +781,9 @@ extern "C"
     std::terminate();
   }
 
-  void __wrap___cxa_throw(ke::exception_ptr p_thrown_exception,
-                          std::type_info* p_type_info,
-                          ke::destructor_t p_destructor)
+  void __cxa_throw(ke::exception_ptr p_thrown_exception,
+                   std::type_info* p_type_info,
+                   ke::destructor_t p_destructor)
   {
     ke::active_exception = p_thrown_exception;
     auto& exception_object = ke::extract_exception_object(p_thrown_exception);
