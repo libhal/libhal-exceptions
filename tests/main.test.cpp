@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
-
-#include <libhal-exceptions/control.hpp>
-
 namespace hal {
-exception_allocator& get_exception_allocator() noexcept;
 }  // namespace hal
+
+int main()
+{
+  return 0;
+}

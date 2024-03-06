@@ -1,0 +1,39 @@
+# Copyright 2024 Khalil Estell
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: ✅ CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 12 * * 0"
+
+jobs:
+  ci:
+    uses: libhal/ci/.github/workflows/library_check.yml@5.x.y
+    secrets: inherit
+
+  deploy_cortex-m4f_check:
+    uses: libhal/ci/.github/workflows/deploy.yml@5.x.y
+    with:
+      arch: cortex-m4f
+      os: baremetal
+      compiler: gcc
+      compiler_version: 12.3
+      compiler_package: arm-gnu-toolchain
+    secrets: inherit

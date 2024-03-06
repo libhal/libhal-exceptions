@@ -1,3 +1,17 @@
+// Copyright 2024 Khalil Estell
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <algorithm>
 #include <bit>
 #include <exception>
@@ -22,45 +36,40 @@ using instructions_t = std::array<std::uint8_t, 7>;
 namespace {
 exception_ptr active_exception = nullptr;
 std::array<std::uint8_t, 256> exception_buffer{};
-} // namespace
+}  // namespace
 
-su16_t*
-get_su16(void* p_ptr)
+su16_t* get_su16(void* p_ptr)
 {
   return reinterpret_cast<su16_t*>(p_ptr);
 }
-lu_t*
-get_lu(void* p_ptr)
+lu_t* get_lu(void* p_ptr)
 {
   return reinterpret_cast<lu_t*>(p_ptr);
 }
 
-exception_ptr
-current_exception() noexcept
+exception_ptr current_exception() noexcept
 {
   return active_exception;
 }
 
-[[gnu::always_inline]] void
-capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
+[[gnu::always_inline]] void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
   // TODO(kammce): test this
-  asm volatile("mrs r0, MSP\n"        // Move Main Stack Pointer to r0
-               "stmia %0, {r0-r12}\n" // Store r0 to r12 into the array
-               "mov r0, SP\n"         // Move SP to r0
-               "str r0, [%0, #52]\n"  // Store SP at the appropriate index
-               "mov r0, LR\n"         // Move LR to r0
-               "str r0, [%0, #56]\n"  // Store LR at the appropriate index
-               "mov r0, PC\n"         // Move PC to r0
-               "str r0, [%0, #60]\n"  // Store PC at the appropriate index
-               :                      // no output
-               : "r"(&p_cpu_core)     // input is the address of the array
-               : "r0"                 // r0 is being modified
+  asm volatile("mrs r0, MSP\n"         // Move Main Stack Pointer to r0
+               "stmia %0, {r0-r12}\n"  // Store r0 to r12 into the array
+               "mov r0, SP\n"          // Move SP to r0
+               "str r0, [%0, #52]\n"   // Store SP at the appropriate index
+               "mov r0, LR\n"          // Move LR to r0
+               "str r0, [%0, #56]\n"   // Store LR at the appropriate index
+               "mov r0, PC\n"          // Move PC to r0
+               "str r0, [%0, #60]\n"   // Store PC at the appropriate index
+               :                       // no output
+               : "r"(&p_cpu_core)      // input is the address of the array
+               : "r0"                  // r0 is being modified
   );
 }
 
-bool
-index_entry_t::has_inlined_personality() const
+bool index_entry_t::has_inlined_personality() const
 {
   // 31st bit is `1` when the personality/unwind information is inlined, other
   // otherwise, personality_offset is an offset.
@@ -68,20 +77,17 @@ index_entry_t::has_inlined_personality() const
   return hal::bit_extract<mask>(personality_offset);
 }
 
-bool
-index_entry_t::is_noexcept() const
+bool index_entry_t::is_noexcept() const
 {
   return personality_offset == 0x1;
 }
 
-const std::uint32_t*
-index_entry_t::personality() const
+const std::uint32_t* index_entry_t::personality() const
 {
   return to_absolute_address_ptr(&personality_offset);
 }
 
-const std::uint32_t*
-index_entry_t::lsda_data() const
+const std::uint32_t* index_entry_t::lsda_data() const
 {
   constexpr auto personality_type = hal::bit_mask::from<24, 27>();
   // +1 to skip the prel31 offset to the personality function
@@ -98,8 +104,7 @@ index_entry_t::lsda_data() const
   return header + 3;
 }
 
-const std::uint32_t*
-index_entry_t::descriptor_start() const
+const std::uint32_t* index_entry_t::descriptor_start() const
 {
   constexpr auto type_mask = hal::bit_mask{ .position = 24, .width = 8 };
 
@@ -117,8 +122,7 @@ index_entry_t::descriptor_start() const
   return personality_address + 2;
 }
 
-function_t
-index_entry_t::function() const
+function_t index_entry_t::function() const
 {
   return function_t(to_absolute_address(&function_offset));
 }
@@ -140,21 +144,18 @@ struct index_less_than
   }
 };
 
-std::span<const index_entry_t>
-get_arm_exception_index()
+std::span<const index_entry_t> get_arm_exception_index()
 {
   return { reinterpret_cast<const index_entry_t*>(&__exidx_start),
            reinterpret_cast<const index_entry_t*>(&__exidx_end) };
 }
 
-[[gnu::used]] std::span<const std::uint32_t>
-get_arm_exception_table()
+[[gnu::used]] std::span<const std::uint32_t> get_arm_exception_table()
 {
   return { &__extab_start, &__extab_end };
 }
 
-const index_entry_t&
-get_index_entry(std::uint32_t p_program_counter)
+const index_entry_t& get_index_entry(std::uint32_t p_program_counter)
 {
   const auto index_table = get_arm_exception_index();
   const auto& index = std::upper_bound(index_table.begin(),
@@ -168,8 +169,7 @@ get_index_entry(std::uint32_t p_program_counter)
   return *(index - 1);
 }
 
-void
-pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
+void pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
 {
   // The mask may not demand that the stack pointer be popped, but the
   // stack pointer will still need to be popped anyway, so this check
@@ -190,8 +190,7 @@ pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
   p_cpu.sp = stack_pointer;
 }
 
-std::uint32_t
-read_uleb128(volatile const std::uint8_t** p_ptr)
+std::uint32_t read_uleb128(volatile const std::uint8_t** p_ptr)
 {
   std::uint32_t result = 0;
   std::uint8_t shift_amount = 0;
@@ -214,8 +213,7 @@ read_uleb128(volatile const std::uint8_t** p_ptr)
 }
 
 template<typename T>
-volatile const T*
-as(volatile const void* p_ptr)
+volatile const T* as(volatile const void* p_ptr)
 {
   return reinterpret_cast<volatile const T*>(p_ptr);
 }
@@ -246,23 +244,21 @@ enum class personality_encoding : std::uint8_t
   omit = 0xff,
 };
 
-personality_encoding
-operator&(const personality_encoding& p_encoding, const std::uint8_t& p_byte)
+personality_encoding operator&(const personality_encoding& p_encoding,
+                               const std::uint8_t& p_byte)
 {
   return static_cast<personality_encoding>(
     static_cast<std::uint8_t>(p_encoding) & p_byte);
 }
-personality_encoding
-operator&(const personality_encoding& p_encoding,
-          const personality_encoding& p_byte)
+personality_encoding operator&(const personality_encoding& p_encoding,
+                               const personality_encoding& p_byte)
 {
   return static_cast<personality_encoding>(
     static_cast<std::uint8_t>(p_encoding) & static_cast<std::uint8_t>(p_byte));
 }
 
-std::uintptr_t
-read_encoded_data(volatile const std::uint8_t** p_data,
-                  personality_encoding p_encoding)
+std::uintptr_t read_encoded_data(volatile const std::uint8_t** p_data,
+                                 personality_encoding p_encoding)
 {
   volatile const std::uint8_t* ptr = *p_data;
   std::uintptr_t result = 0;
@@ -379,7 +375,10 @@ public:
     return to_type_info(const_cast<const std::uint32_t*>(current_type));
   }
 
-  std::uint8_t filter() { return m_filter; }
+  std::uint8_t filter()
+  {
+    return m_filter;
+  }
 
 private:
   volatile const std::uint32_t* m_type_table_end = nullptr;
@@ -389,8 +388,7 @@ private:
 
 int global_int = 0;
 
-void
-perform_gcc_lsda_cleanup_catch_phase(exception_object& p_exception_object)
+void perform_gcc_lsda_cleanup_catch_phase(exception_object& p_exception_object)
 {
   volatile const std::uint8_t* lsda_data =
     reinterpret_cast<const std::uint8_t*>(
@@ -447,9 +445,8 @@ perform_gcc_lsda_cleanup_catch_phase(exception_object& p_exception_object)
   }
 }
 
-void
-unwind_frame(const instructions_t& p_instructions,
-             exception_object& p_exception_object)
+void unwind_frame(const instructions_t& p_instructions,
+                  exception_object& p_exception_object)
 {
   auto& virtual_cpu = p_exception_object.cpu;
   bool set_pc = false;
@@ -501,7 +498,7 @@ unwind_frame(const instructions_t& p_instructions,
         //     "10101nnn" (Pop r4-r[4+nnn], r14)
         //
         const std::uint32_t* sp_ptr = *virtual_cpu.sp;
-        int nnn = *instruction & 0b111; // Extract the last 3 bits
+        int nnn = *instruction & 0b111;  // Extract the last 3 bits
         switch (nnn) {
           case 7:
             virtual_cpu[11] = sp_ptr[7];
@@ -579,8 +576,7 @@ exit_loop:
   }
 }
 
-instructions_t
-create_instructions_from_entry(const index_entry_t& p_entry)
+instructions_t create_instructions_from_entry(const index_entry_t& p_entry)
 {
   constexpr auto personality_type = hal::bit_mask::from<24, 27>();
   constexpr auto generic = hal::bit_mask::from<31>();
@@ -654,8 +650,7 @@ create_instructions_from_entry(const index_entry_t& p_entry)
   return instructions;
 }
 
-void
-raise_exception(exception_object& p_exception_object)
+void raise_exception(exception_object& p_exception_object)
 {
   while (true) {
     switch (p_exception_object.cache.state()) {
@@ -690,18 +685,17 @@ raise_exception(exception_object& p_exception_object)
     }
   }
 }
-} // namespace ke
+}  // namespace ke
 
-[[noreturn]] void
-terminate_halt() noexcept
+[[noreturn]] void terminate_halt() noexcept
 {
   while (true) {
     continue;
   }
 }
 
-namespace __cxxabiv1 {                                       // NOLINT
-std::terminate_handler __terminate_handler = terminate_halt; // NOLINT
+namespace __cxxabiv1 {                                        // NOLINT
+std::terminate_handler __terminate_handler = terminate_halt;  // NOLINT
 }
 
 extern "C"
@@ -722,7 +716,7 @@ extern "C"
     ke::exception_buffer.fill(0);
   }
 
-  void __wrap___cxa_call_unexpected(void*) // NOLINT
+  void __wrap___cxa_call_unexpected(void*)  // NOLINT
   {
     std::terminate();
   }
@@ -813,4 +807,4 @@ extern "C"
     ke::raise_exception(exception_object);
     std::terminate();
   }
-} // extern "C"
+}  // extern "C"
