@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdio>
+
 #include <libhal-exceptions/control.hpp>
 
 int main()
 {
+  hal::set_terminate(+[]() { puts("terminating application!"); });
 }
