@@ -31,5 +31,5 @@
 *.out
 *.app
 
-build/**
-CMakeUserPresets.json
+**/build/*
+**/CMakeUserPresets.json
