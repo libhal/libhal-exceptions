@@ -30,8 +30,6 @@ extern "C"
     std::terminate();
   }
 
-  struct _reent* _impure_ptr = nullptr;  // NOLINT
-
   void* __wrap___cxa_allocate_exception(unsigned int p_size)  // NOLINT
   {
     // Size of the GCC exception object header is 128 bytes. Will have to update
