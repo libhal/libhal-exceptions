@@ -20,6 +20,28 @@
 
 namespace __cxxabiv1 {                                // NOLINT
 std::terminate_handler __terminate_handler = +[]() {  // NOLINT
+  // So you may be wondering what this code is doing here? Its actually a
+  // bit of weird circular logic. So the linker will garbage collect any
+  // functions that are not used in your code. If you somehow have an
+  // application without any exceptions thrown, the exception code will be
+  // eliminated. This would be great, but due the fact that our build system
+  // adds the `-Wl,--wrap=symbol` to the compiler to swap the function
+  // implementations, this results in the compiler yelling at the user that
+  // they are missing a wrapped function. In order to prevent the compiler
+  // from throwing away this function and then turning around demanding that
+  // we supply it, we simply need to call throw somewhere in the code. That
+  // will force it to link in the original implementations which will be
+  // swapped out with our wrapped implementations.
+  //
+  // Use a volatile bool that is always set to false to ensure that the
+  // "throw 5" is NEVER called.
+  //
+  // This location was choosen because it always links in for GCC.
+  volatile bool force_exceptions_to_link = false;
+  if (force_exceptions_to_link) {
+    throw 5;
+  }
+
   while (true) {
     continue;
   }
