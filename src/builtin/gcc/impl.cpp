@@ -30,7 +30,7 @@ extern "C"
     std::terminate();
   }
 
-  void* __wrap___cxa_allocate_exception(unsigned int p_size)  // NOLINT
+  void* __wrap___cxa_allocate_exception(unsigned int p_size) noexcept  // NOLINT
   {
     // Size of the GCC exception object header is 128 bytes. Will have to update
     // this if the size of the EO increases. 😅

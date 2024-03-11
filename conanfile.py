@@ -110,6 +110,8 @@ class libhal_exceptions_conan(ConanFile):
     def package_info(self):
         self.cpp_info.libs = ["libhal-exceptions"]
         self.cpp_info.set_property("cmake_target_name", "libhal::exceptions")
+        lib_path = os.path.join(self.package_folder,
+                                'lib', 'liblibhal-exceptions.a')
 
         # Keep this for now, will update this for the runtime select
         if self._is_arm_cortex:
@@ -117,4 +119,8 @@ class libhal_exceptions_conan(ConanFile):
                 "-Wl,--wrap=__cxa_allocate_exception",
                 "-Wl,--wrap=__cxa_free_exception",
                 "-Wl,--wrap=__cxa_call_unexpected",
+                # Ensure that all symbols are added to the linker's symbol table
+                "-Wl,--whole-archive",
+                lib_path,
+                "-Wl,--no-whole-archive",
             ]
