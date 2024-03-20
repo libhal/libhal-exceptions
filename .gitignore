@@ -33,3 +33,4 @@
 
 **/build/*
 **/CMakeUserPresets.json
+*/.DS_Store
