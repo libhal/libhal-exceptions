@@ -6,4 +6,4 @@ AlwaysBreakAfterDefinitionReturnType: None
 AllowShortFunctionsOnASingleLine: None
 FixNamespaceComments: true
 SpacesBeforeTrailingComments: 2
-ColumnLimit: 80
+ColumnLimit: 80QualifierAlignment: Right
