@@ -17,6 +17,7 @@
 #include <exception>
 
 #include <libhal-exceptions/control.hpp>
+#include <memory_resource>
 
 namespace __cxxabiv1 {                                // NOLINT
 std::terminate_handler __terminate_handler = +[]() {  // NOLINT
@@ -24,7 +25,7 @@ std::terminate_handler __terminate_handler = +[]() {  // NOLINT
     continue;
   }
 };
-}
+}  // namespace __cxxabiv1
 
 namespace hal {
 std::terminate_handler set_terminate(
@@ -40,18 +41,67 @@ std::terminate_handler get_terminate() noexcept
   return __cxxabiv1::__terminate_handler;
 }
 
-// TODO(#11): Add macro to IFDEF this out if the user want to save 256 bytes.
-using default_exception_allocator = single_thread_exception_allocator<256>;
-default_exception_allocator _default_allocator{};                 // NOLINT
-exception_allocator* _exception_allocator = &_default_allocator;  // NOLINT
-
-void set_exception_allocator(exception_allocator& p_allocator) noexcept
+/**
+ * @brief Simple exception allocator
+ *
+ * This allocator can only allocates space for a single exception object at a
+ * time.
+ *
+ * @tparam size - size of the exception object memory buffer. If this is set too
+ * small (less than 128 bytes), then it is likely that the memory will not be
+ * enough for any exception runtime and will result in terminate being called.
+ */
+template<size_t size>
+class single_exception_allocator : public std::pmr::memory_resource
 {
-  _exception_allocator = &p_allocator;
+public:
+  single_exception_allocator() = default;
+  ~single_exception_allocator() override = default;
+
+private:
+  void* do_allocate(std::size_t p_size,
+                    [[maybe_unused]] std::size_t p_alignment) override
+  {
+    if (m_allocated || p_size > m_buffer.size()) {
+      return nullptr;
+    }
+    m_allocated = true;
+    return m_buffer.data();
+  }
+
+  void do_deallocate(void* p_address,
+                     [[maybe_unused]] std::size_t p_size,
+                     [[maybe_unused]] std::size_t p_alignment) override
+  {
+    if (p_address != m_buffer.data()) {
+      std::terminate();
+    }
+    m_allocated = false;
+  }
+
+  bool do_is_equal(
+    std::pmr::memory_resource const& other) const noexcept override
+  {
+    return this == &other;
+  }
+
+  std::array<std::uint8_t, size> m_buffer{};
+  bool m_allocated = false;
+};
+
+// TODO(#11): Add macro to IFDEF this out if the user want to save 256 bytes.
+using default_exception_allocator = single_exception_allocator<256>;
+default_exception_allocator _default_allocator{};  // NOLINT
+std::pmr::memory_resource* _exception_allocator =
+  &_default_allocator;  // NOLINT
+
+void set_exception_allocator(std::pmr::memory_resource* p_allocator) noexcept
+{
+  _exception_allocator = p_allocator;
 }
 
-exception_allocator* get_exception_allocator() noexcept
+std::pmr::memory_resource& get_exception_allocator() noexcept
 {
-  return _exception_allocator;
+  return *_exception_allocator;
 }
 }  // namespace hal

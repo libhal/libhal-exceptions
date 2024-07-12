@@ -12,10 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#include <libhal-armcortex/dwt_counter.hpp>
+#include <libhal-stm32f1/clock.hpp>
 
-#include <libhal-exceptions/control.hpp>
+#include "../resource_list.hpp"
 
-namespace hal {
-exception_allocator& get_exception_allocator() noexcept;
-}  // namespace hal
+resource_list initialize_platform()
+{
+  using namespace hal::literals;
+  hal::stm32f1::maximum_speed_using_internal_oscillator();
+
+  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
+  static hal::cortex_m::dwt_counter dwt_steady_clock(cpu_frequency);
+
+  return {
+    .clock = &dwt_steady_clock,
+  };
+}

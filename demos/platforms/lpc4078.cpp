@@ -12,15 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdio>
+#include <libhal-armcortex/dwt_counter.hpp>
+#include <libhal-lpc40/clock.hpp>
 
-#include <libhal-exceptions/control.hpp>
+#include "../resource_list.hpp"
 
-// These are just here to resolve linker errors. This will not work in practice.
-std::uint64_t __extab_start = 0;
-std::uint64_t __extab_end = 0;
-
-int main()
+resource_list initialize_platform()
 {
-  hal::set_terminate(+[]() { puts("terminating application!"); });
+  using namespace hal::literals;
+
+  // Set the MCU to the maximum clock speed
+  hal::lpc40::maximum(12.0_MHz);
+
+  static hal::cortex_m::dwt_counter dwt_steady_clock(
+    hal::lpc40::get_frequency(hal::lpc40::peripheral::cpu));
+
+  return {
+    .clock = &dwt_steady_clock,
+  };
 }

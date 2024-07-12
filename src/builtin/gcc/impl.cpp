@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <cstdint>
 
 #include <algorithm>
-#include <array>
 #include <exception>
-#include <span>
 
 #include <libhal-exceptions/control.hpp>
-
-#include "../../internal.hpp"
 
 extern "C"
 {
@@ -30,29 +27,35 @@ extern "C"
     std::terminate();
   }
 
+  // Size of the GCC exception object header is 128 bytes. Will have to update
+  // this if the size of the EO increases. 😅
+  // Might need to add some GCC macro flags here to keep track of all of the
+  // EO sizes over the versions.
+  constexpr size_t header_size = 128;
+
   void* __wrap___cxa_allocate_exception(unsigned int p_size) noexcept  // NOLINT
   {
-    // Size of the GCC exception object header is 128 bytes. Will have to update
-    // this if the size of the EO increases. 😅
-    // Might need to add some GCC macro flags here to keep track of all of the
-    // EO sizes over the versions.
-    constexpr size_t header_size = 128;
+    auto* exception_memory = hal::get_exception_allocator().allocate(
+      sizeof(std::size_t) + header_size + p_size);
 
-    auto exception_memory =
-      hal::get_exception_allocator().allocate(header_size + p_size);
-
-    if (exception_memory.empty()) {
+    if (exception_memory == nullptr) {
       std::terminate();
     }
 
+    auto* exception_size = reinterpret_cast<std::size_t*>(exception_memory);
+    *exception_size = header_size + p_size;
+
     // Required for GCC's impl to work correctly as it assumes that all bytes
     // default to 0. The Estell impl will utilize the same technique.
-    auto trimmed_memory = exception_memory.first(header_size + p_size);
-    std::fill(trimmed_memory.begin(), trimmed_memory.end(), 0U);
+    std::fill_n(exception_size + 1,
+                (sizeof(std::size_t) + header_size + p_size) /
+                  sizeof(std::size_t),
+                0U);
 
     // Return the pointer to the memory after the header, which is the start of
     // the thrown object's allocated memory.
-    return trimmed_memory.data() + header_size;
+    return reinterpret_cast<std::uint8_t*>(exception_memory) +
+           header_size / sizeof(decltype(exception_size));
   }
 
   void __wrap___cxa_call_unexpected(void*)  // NOLINT
@@ -62,6 +65,9 @@ extern "C"
 
   void __wrap___cxa_free_exception(void* p_exception) noexcept  // NOLINT
   {
-    hal::get_exception_allocator().deallocate(p_exception);
+    auto* exception = reinterpret_cast<std::uint8_t*>(p_exception);
+    auto* original_pointer = exception - header_size;
+    auto exception_size = *reinterpret_cast<std::size_t*>(original_pointer);
+    hal::get_exception_allocator().deallocate(original_pointer, exception_size);
   }
 }  // extern "C"
