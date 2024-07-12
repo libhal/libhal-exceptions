@@ -34,7 +34,16 @@ libhal_make_library(
   SOURCES
   src/control.cpp
   ${SOURCE_LIST}
+
+  PACKAGES
+  libhal-util
+
+  LINK_LIBRARIES
+  libhal::util
 )
+
+target_compile_definitions(libhal-exceptions PRIVATE
+  OPTIMIZATION_LEVEL=${OPTIMIZATION_LEVEL})
 
 if(NOT ${CMAKE_CROSSCOMPILING})
 libhal_unit_test(
@@ -44,5 +53,11 @@ libhal_unit_test(
   src/control.cpp
   tests/main.test.cpp
   ${SOURCE_LIST}
+
+  PACKAGES
+  libhal-util
+
+  LINK_LIBRARIES
+  libhal::util
 )
 endif()

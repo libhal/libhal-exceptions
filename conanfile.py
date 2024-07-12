@@ -63,19 +63,14 @@ class libhal_exceptions_conan(ConanFile):
 
     @property
     def _runtime_select(self):
-        if self._is_arm_cortex() and self.options.runtime == "builtin":
+        if self._is_arm_cortex and self.options.runtime == "builtin":
             return "ARM_CORTEX_GCC"
-        elif self._is_arm_cortex() and self.options.runtime == "estell":
+        elif self._is_arm_cortex and self.options.runtime == "estell":
             return "ARM_CORTEX_ESTELL"
 
     def validate(self):
         if self.settings.get_safe("compiler.cppstd"):
             check_min_cppstd(self, self._min_cppstd)
-
-        # Remove this when Estell impl is ready for beta testing
-        if self.options.runtime != "builtin":
-            raise ConanInvalidConfiguration(
-                "Only the 'builtin' exception runtime is supported currently")
 
     def layout(self):
         cmake_layout(self)
@@ -85,9 +80,25 @@ class libhal_exceptions_conan(ConanFile):
         self.tool_requires("libhal-cmake-util/[^4.0.3]")
         self.test_requires("boost-ext-ut/1.1.9")
 
+    def requirements(self):
+        self.requires("libhal-util/[^5.0.0]")
+
     def build(self):
         cmake = CMake(self)
-        cmake.configure(variables={"RUNTIME": "ARM_CORTEX_GCC"})
+        optimization_level = {
+            'Debug': 1,
+            'MinSizeRel': 2,
+            'RelWithDebInfo': 3,
+            'Release': 4
+        }
+
+        configure_variables = {"RUNTIME": self._runtime_select}
+        build_type = self.settings.build_type
+        if str(build_type) in optimization_level:
+            configure_variables["OPTIMIZATION_LEVEL"] = optimization_level[str(
+                build_type)]
+
+        cmake.configure(variables=configure_variables)
         cmake.build()
 
     def package(self):
@@ -113,9 +124,18 @@ class libhal_exceptions_conan(ConanFile):
         lib_path = os.path.join(self.package_folder,
                                 'lib', 'liblibhal-exceptions.a')
 
+        if self.options.runtime == "estell":
+            self.cpp_info.exelinkflags.extend([
+                "-Wl,--wrap=__cxa_throw",
+                "-Wl,--wrap=__cxa_rethrow",
+                "-Wl,--wrap=__cxa_end_catch",
+                "-Wl,--wrap=__cxa_begin_catch",
+                "-Wl,--wrap=__cxa_end_cleanup",
+            ])
+
         # Keep this for now, will update this for the runtime select
         if self._is_arm_cortex:
-            self.cpp_info.exelinkflags = [
+            self.cpp_info.exelinkflags.extend([
                 "-Wl,--wrap=__cxa_allocate_exception",
                 "-Wl,--wrap=__cxa_free_exception",
                 "-Wl,--wrap=__cxa_call_unexpected",
@@ -123,4 +143,4 @@ class libhal_exceptions_conan(ConanFile):
                 "-Wl,--whole-archive",
                 lib_path,
                 "-Wl,--no-whole-archive",
-            ]
+            ])

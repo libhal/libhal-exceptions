@@ -17,9 +17,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 
-#include "bit.hpp"
+#include <libhal-util/bit.hpp>
 
 namespace ke {
 using exception_ptr = void*;
@@ -41,7 +40,7 @@ struct register_t
   {
   }
 
-  register_t(const void* p_data)
+  register_t(void const* p_data)
     : data(reinterpret_cast<std::uint32_t>(p_data))
   {
   }
@@ -51,9 +50,9 @@ struct register_t
     return data;
   }
 
-  const std::uint32_t* operator*()
+  std::uint32_t const* operator*()
   {
-    return reinterpret_cast<const std::uint32_t*>(data);
+    return reinterpret_cast<std::uint32_t const*>(data);
   }
 };
 
@@ -86,12 +85,12 @@ struct function_t
     return reinterpret_cast<void*>(address);
   }
 
-  bool operator<(const function_t& p_other) const
+  bool operator<(function_t const& p_other) const
   {
     return address < p_other.address;
   }
 
-  bool operator==(const function_t& p_other) const
+  bool operator==(function_t const& p_other) const
   {
     return address == p_other.address;
   }
@@ -105,18 +104,18 @@ struct index_entry_t
   bool has_inlined_personality() const;
   bool is_noexcept() const;
   bool short_instructions() const;
-  const std::uint32_t* personality() const;
-  const std::uint32_t* lsda_data() const;
-  const std::uint32_t* descriptor_start() const;
+  std::uint32_t const* personality() const;
+  std::uint32_t const* lsda_data() const;
+  std::uint32_t const* descriptor_start() const;
   function_t function() const;
 };
 
 struct cortex_m_cpu
 {
-  register_t r0;
-  register_t r1;
-  register_t r2;
-  register_t r3;
+  register_t r0;  // Remove?
+  register_t r1;  // Remove?
+  register_t r2;  // Remove?
+  register_t r3;  // Remove?
   register_t r4;
   register_t r5;
   register_t r6;
@@ -161,14 +160,14 @@ constexpr auto instruction6 = hal::bit_mask::from<24, 31>();
 enum class runtime_state : std::uint8_t
 {
   get_next_frame = 0,
-  gcc_lsda_cleanup_catch_phase = 1,
+  enter_function = 1,
   unwind_frame = 2,
 };
 
 struct cache_t
 {
   std::uint32_t state_and_rel_address;
-  const index_entry_t* entry_ptr = nullptr;
+  index_entry_t const* entry_ptr = nullptr;
 
   static constexpr auto state_mask = hal::bit_mask{
     .position = 24,
@@ -194,13 +193,13 @@ struct cache_t
     return hal::bit_extract<relative_address_mask>(state_and_rel_address);
   }
 
-  constexpr void state(runtime_state p_state)
+  void state(runtime_state p_state)
   {
     auto state_int = static_cast<std::uint8_t>(p_state);
     hal::bit_modify(state_and_rel_address).insert<state_mask>(state_int);
   }
 
-  constexpr void rethrown(bool p_rethrown)
+  void rethrown(bool p_rethrown)
   {
     hal::bit_modify(state_and_rel_address).insert<rethrown_mask>(p_rethrown);
   }
@@ -210,7 +209,7 @@ struct cache_t
     return hal::bit_extract<rethrown_mask>(state_and_rel_address);
   }
 
-  constexpr void relative_address(std::uint32_t p_rel_address)
+  void relative_address(std::uint32_t p_rel_address)
   {
     hal::bit_modify(state_and_rel_address)
       .insert<relative_address_mask>(p_rel_address);
@@ -287,12 +286,12 @@ inline void* extract_thrown_object(void* p_exception_object)
       "r12");
 }
 
-constexpr std::uint32_t to_absolute_address(const void* p_object)
+std::uint32_t to_absolute_address(void const* p_object)
 {
   constexpr auto signed_bit_31 = hal::bit_mask::from<30>();
   constexpr auto signed_bit_32 = hal::bit_mask::from<31>();
   auto object_address = reinterpret_cast<std::int32_t>(p_object);
-  auto offset = *reinterpret_cast<const std::uint32_t*>(p_object);
+  auto offset = *reinterpret_cast<std::uint32_t const*>(p_object);
 
   // Sign extend the offset to 32-bits
   if (hal::bit_extract<signed_bit_31>(offset)) {
@@ -307,12 +306,12 @@ constexpr std::uint32_t to_absolute_address(const void* p_object)
 }
 
 [[gnu::used]] inline std::uint32_t runtime_to_absolute_address(
-  const void* p_object)
+  void const* p_object)
 {
   return to_absolute_address(p_object);
 }
 
-inline std::uint32_t* to_absolute_address_ptr(const void* p_object)
+inline std::uint32_t* to_absolute_address_ptr(void const* p_object)
 {
   return reinterpret_cast<std::uint32_t*>(to_absolute_address(p_object));
 }

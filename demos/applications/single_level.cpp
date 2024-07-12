@@ -12,15 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdio>
+#include "../resource_list.hpp"
 
-#include <libhal-exceptions/control.hpp>
+int volatile value = 5;
 
-// These are just here to resolve linker errors. This will not work in practice.
-std::uint64_t __extab_start = 0;
-std::uint64_t __extab_end = 0;
+resource_list* resources;
 
-int main()
+struct error
 {
-  hal::set_terminate(+[]() { puts("terminating application!"); });
+  int data = 0;
+};
+
+std::uint64_t start = 0;
+std::uint64_t end = 0;
+
+void foo()
+{
+  if (value) {
+    start = resources->clock->uptime();
+    throw error{ .data = value };
+  }
+}
+
+void application(resource_list& p_resources)
+{
+  resources = &p_resources;
+  try {
+    foo();
+  } catch (error const& p_error) {
+    end = resources->clock->uptime();
+    while (true) {
+      continue;
+    }
+  }
 }

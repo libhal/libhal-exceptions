@@ -15,10 +15,11 @@
 from conan import ConanFile
 
 
-class TestPackageConan(ConanFile):
-    settings = "os", "arch", "compiler", "build_type"
+class demos(ConanFile):
     python_requires = "libhal-bootstrap/[^2.0.0]"
-    python_requires_extend = "libhal-bootstrap.library_test_package"
+    python_requires_extend = "libhal-bootstrap.demo"
 
     def requirements(self):
-        self.requires(self.tested_reference_str)
+        bootstrap = self.python_requires["libhal-bootstrap"]
+        bootstrap.module.add_demo_requirements(self)
+        self.requires("libhal-exceptions/[latest || ^1.0.0]")

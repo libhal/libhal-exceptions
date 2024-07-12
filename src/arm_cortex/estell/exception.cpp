@@ -52,9 +52,8 @@ exception_ptr current_exception() noexcept
   return active_exception;
 }
 
-[[gnu::always_inline]] void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
+void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
-  // TODO(kammce): test this
   asm volatile("mrs r0, MSP\n"         // Move Main Stack Pointer to r0
                "stmia %0, {r0-r12}\n"  // Store r0 to r12 into the array
                "mov r0, SP\n"          // Move SP to r0
@@ -82,16 +81,16 @@ bool index_entry_t::is_noexcept() const
   return personality_offset == 0x1;
 }
 
-const std::uint32_t* index_entry_t::personality() const
+std::uint32_t const* index_entry_t::personality() const
 {
   return to_absolute_address_ptr(&personality_offset);
 }
 
-const std::uint32_t* index_entry_t::lsda_data() const
+std::uint32_t const* index_entry_t::lsda_data() const
 {
   constexpr auto personality_type = hal::bit_mask::from<24, 27>();
   // +1 to skip the prel31 offset to the personality function
-  const auto* header = personality() + 1;
+  auto const* header = personality() + 1;
   if (hal::bit_extract<personality_type>(*header) == 0x0) {
     return header + 1;
   }
@@ -104,7 +103,7 @@ const std::uint32_t* index_entry_t::lsda_data() const
   return header + 3;
 }
 
-const std::uint32_t* index_entry_t::descriptor_start() const
+std::uint32_t const* index_entry_t::descriptor_start() const
 {
   constexpr auto type_mask = hal::bit_mask{ .position = 24, .width = 8 };
 
@@ -129,36 +128,36 @@ function_t index_entry_t::function() const
 
 struct index_less_than
 {
-  bool operator()(const index_entry_t& left, const index_entry_t& right)
+  bool operator()(index_entry_t const& left, index_entry_t const& right)
   {
     return left.function() < right.function();
   }
-  bool operator()(const index_entry_t& left, std::uint32_t right)
+  bool operator()(index_entry_t const& left, std::uint32_t right)
   {
     // De Morgan's laws to flip the < sign. Otherwise I have to cast.
     return right >= left.function();
   }
-  bool operator()(std::uint32_t left, const index_entry_t& right)
+  bool operator()(std::uint32_t left, index_entry_t const& right)
   {
     return left < right.function();
   }
 };
 
-std::span<const index_entry_t> get_arm_exception_index()
+std::span<index_entry_t const> get_arm_exception_index()
 {
-  return { reinterpret_cast<const index_entry_t*>(&__exidx_start),
-           reinterpret_cast<const index_entry_t*>(&__exidx_end) };
+  return { reinterpret_cast<index_entry_t const*>(&__exidx_start),
+           reinterpret_cast<index_entry_t const*>(&__exidx_end) };
 }
 
-[[gnu::used]] std::span<const std::uint32_t> get_arm_exception_table()
-{
-  return { &__extab_start, &__extab_end };
-}
+// [[gnu::used]] std::span<std::uint32_t const> get_arm_exception_table()
+// {
+//   return { &__extab_start, &__extab_end };
+// }
 
-const index_entry_t& get_index_entry(std::uint32_t p_program_counter)
+index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 {
-  const auto index_table = get_arm_exception_index();
-  const auto& index = std::upper_bound(index_table.begin(),
+  auto const index_table = get_arm_exception_index();
+  auto const& index = std::upper_bound(index_table.begin(),
                                        index_table.end(),
                                        p_program_counter,
                                        index_less_than{});
@@ -179,7 +178,7 @@ void pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
   bool set_stack_pointer_afterwards = hal::bit_extract<sp_mask>(mask);
 #endif
 
-  const std::uint32_t* stack_pointer = *p_cpu.sp;
+  std::uint32_t const* stack_pointer = *p_cpu.sp;
 
   while (mask) {
     auto reg_to_restore = std::countr_zero(mask);
@@ -190,7 +189,7 @@ void pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
   p_cpu.sp = stack_pointer;
 }
 
-std::uint32_t read_uleb128(volatile const std::uint8_t** p_ptr)
+std::uint32_t read_uleb128(std::uint8_t const volatile** p_ptr)
 {
   std::uint32_t result = 0;
   std::uint8_t shift_amount = 0;
@@ -198,7 +197,7 @@ std::uint32_t read_uleb128(volatile const std::uint8_t** p_ptr)
   while (true) {
     constexpr auto more_data = hal::bit_mask::from<7>();
     constexpr auto data = hal::bit_mask::from<0, 6>();
-    const std::uint8_t uleb128 = **p_ptr;
+    std::uint8_t const uleb128 = **p_ptr;
 
     result |= hal::bit_extract<data>(uleb128) << shift_amount;
     shift_amount += 7;
@@ -213,9 +212,9 @@ std::uint32_t read_uleb128(volatile const std::uint8_t** p_ptr)
 }
 
 template<typename T>
-volatile const T* as(volatile const void* p_ptr)
+T const volatile* as(void const volatile* p_ptr)
 {
-  return reinterpret_cast<volatile const T*>(p_ptr);
+  return reinterpret_cast<T const volatile*>(p_ptr);
 }
 
 /**
@@ -244,32 +243,32 @@ enum class personality_encoding : std::uint8_t
   omit = 0xff,
 };
 
-personality_encoding operator&(const personality_encoding& p_encoding,
-                               const std::uint8_t& p_byte)
+personality_encoding operator&(personality_encoding const& p_encoding,
+                               std::uint8_t const& p_byte)
 {
   return static_cast<personality_encoding>(
     static_cast<std::uint8_t>(p_encoding) & p_byte);
 }
-personality_encoding operator&(const personality_encoding& p_encoding,
-                               const personality_encoding& p_byte)
+personality_encoding operator&(personality_encoding const& p_encoding,
+                               personality_encoding const& p_byte)
 {
   return static_cast<personality_encoding>(
     static_cast<std::uint8_t>(p_encoding) & static_cast<std::uint8_t>(p_byte));
 }
 
-std::uintptr_t read_encoded_data(volatile const std::uint8_t** p_data,
+std::uintptr_t read_encoded_data(std::uint8_t const volatile** p_data,
                                  personality_encoding p_encoding)
 {
-  volatile const std::uint8_t* ptr = *p_data;
+  std::uint8_t const volatile* ptr = *p_data;
   std::uintptr_t result = 0;
-  const auto encoding = static_cast<personality_encoding>(p_encoding);
+  auto const encoding = static_cast<personality_encoding>(p_encoding);
 
   if (encoding == personality_encoding::omit) {
     return 0;
   }
 
   // TODO: convert to hal::bit_extract w/ bit mask
-  const auto encoding_type = p_encoding & 0x0F;
+  auto const encoding_type = p_encoding & 0x0F;
 
   switch (encoding_type) {
     case personality_encoding::absptr:
@@ -304,7 +303,7 @@ std::uintptr_t read_encoded_data(volatile const std::uint8_t** p_data,
   }
 
   // TODO: convert to hal::bit_extract w/ bit mask
-  const auto encoding_offset = p_encoding & 0x70;
+  auto const encoding_offset = p_encoding & 0x70;
 
   switch (encoding_offset) {
     case personality_encoding::pcrel:
@@ -320,7 +319,7 @@ std::uintptr_t read_encoded_data(volatile const std::uint8_t** p_data,
   // Handle indirection GCC extension
   // TODO: convert to hal::bit_extract w/ bit mask
   if (static_cast<bool>(p_encoding & 0x80)) {
-    result = *reinterpret_cast<const std::uintptr_t*>(result);
+    result = *reinterpret_cast<std::uintptr_t const*>(result);
   }
 
   *p_data = ptr;
@@ -330,35 +329,35 @@ std::uintptr_t read_encoded_data(volatile const std::uint8_t** p_data,
 class action_decoder
 {
 public:
-  action_decoder(volatile const std::uint8_t* p_type_table_end,
-                 volatile const std::uint8_t* p_action_table_start,
+  action_decoder(std::uint8_t const volatile* p_type_table_end,
+                 std::uint8_t const volatile* p_action_table_start,
                  std::uint32_t p_action)
     : m_type_table_end(
-        reinterpret_cast<volatile const std::uint32_t*>(p_type_table_end))
+        reinterpret_cast<std::uint32_t const volatile*>(p_type_table_end))
     , m_action(p_action_table_start + p_action)
   {
   }
 
-  static const std::type_info* to_type_info(const void* p_type_info_address)
+  static std::type_info const* to_type_info(void const* p_type_info_address)
   {
-    return reinterpret_cast<const std::type_info*>(
+    return reinterpret_cast<std::type_info const*>(
       to_absolute_address(p_type_info_address));
   }
 
-  static const std::type_info* install_context_type()
+  static std::type_info const* install_context_type()
   {
-    return reinterpret_cast<const std::type_info*>(0xFFFF'FFFF);
+    return reinterpret_cast<std::type_info const*>(0xFFFF'FFFF);
   }
 
-  const std::type_info* get_next_catch_type()
+  std::type_info const* get_next_catch_type()
   {
     if (m_action == nullptr) {
       return nullptr;
     }
 
     m_filter = m_action[-1];
-    const auto unsigned_offset = m_action[0] | 0x80;
-    const auto offset = static_cast<std::int8_t>(unsigned_offset);
+    auto const unsigned_offset = m_action[0] | 0x80;
+    auto const offset = static_cast<std::int8_t>(unsigned_offset);
 
     if (offset == 0) {
       m_action = nullptr;
@@ -366,13 +365,13 @@ public:
       m_action += (offset + 1);
     }
 
-    volatile const std::uint32_t* current_type = &m_type_table_end[-m_filter];
+    std::uint32_t const volatile* current_type = &m_type_table_end[-m_filter];
 
     if (m_filter == 0 || *current_type == 0x0) {
       return install_context_type();
     }
 
-    return to_type_info(const_cast<const std::uint32_t*>(current_type));
+    return to_type_info(const_cast<std::uint32_t const*>(current_type));
   }
 
   std::uint8_t filter()
@@ -381,33 +380,34 @@ public:
   }
 
 private:
-  volatile const std::uint32_t* m_type_table_end = nullptr;
-  volatile const std::uint8_t* m_action = nullptr;
+  std::uint32_t const volatile* m_type_table_end = nullptr;
+  std::uint8_t const volatile* m_action = nullptr;
   std::uint8_t m_filter = 0;
 };
 
 int global_int = 0;
 
-void perform_gcc_lsda_cleanup_catch_phase(exception_object& p_exception_object)
+void enter_function(exception_object& p_exception_object)
 {
-  volatile const std::uint8_t* lsda_data =
-    reinterpret_cast<const std::uint8_t*>(
+  std::uint8_t const volatile* lsda_data =
+    reinterpret_cast<std::uint8_t const*>(
       p_exception_object.cache.entry_ptr->lsda_data());
 
-  const auto landing_pad_format = personality_encoding{ *(lsda_data++) };
-  if (landing_pad_format != personality_encoding::omit) {
+  auto const dwarf_offset_info_format = personality_encoding{ *(lsda_data++) };
+  if (dwarf_offset_info_format != personality_encoding::omit) {
     // Ignore this because we don't need it for unwinding.
-    read_encoded_data(&lsda_data, landing_pad_format);
+    read_encoded_data(&lsda_data, dwarf_offset_info_format);
   }
 
-  const auto type_table_format = personality_encoding{ *(lsda_data++) };
-  const auto offset_to_end_of_tt_table = read_uleb128(&lsda_data);
-  const auto* end_of_tt_table = lsda_data + offset_to_end_of_tt_table;
-  const auto call_site_format = personality_encoding{ *(lsda_data++) };
-  const auto call_site_length = read_uleb128(&lsda_data);
-  const auto* call_site_end = lsda_data + call_site_length;
+  [[maybe_unused]] auto const end_of_type_table_format =
+    personality_encoding{ *(lsda_data++) };
+  auto const offset_to_end_of_tt_table = read_uleb128(&lsda_data);
+  auto const* end_of_tt_table = lsda_data + offset_to_end_of_tt_table;
+  auto const call_site_format = personality_encoding{ *(lsda_data++) };
+  auto const call_site_length = read_uleb128(&lsda_data);
+  auto const* call_site_end = lsda_data + call_site_length;
 
-  const auto rel_pc = p_exception_object.cache.relative_address() & ~1;
+  auto const rel_pc = p_exception_object.cache.relative_address() & ~1;
   std::uint32_t landing_pad = 0;
   std::uint32_t action = 0;
 
@@ -430,7 +430,7 @@ void perform_gcc_lsda_cleanup_catch_phase(exception_object& p_exception_object)
 
   auto& cpu = p_exception_object.cpu;
   auto* entry_ptr = p_exception_object.cache.entry_ptr;
-  for (const auto* type_info = a_decoder.get_next_catch_type();
+  for (auto const* type_info = a_decoder.get_next_catch_type();
        type_info != nullptr;
        type_info = a_decoder.get_next_catch_type()) {
     if (type_info == p_exception_object.type_info ||
@@ -445,7 +445,7 @@ void perform_gcc_lsda_cleanup_catch_phase(exception_object& p_exception_object)
   }
 }
 
-void unwind_frame(const instructions_t& p_instructions,
+void unwind_frame(instructions_t const& p_instructions,
                   exception_object& p_exception_object)
 {
   auto& virtual_cpu = p_exception_object.cpu;
@@ -497,7 +497,7 @@ void unwind_frame(const instructions_t& p_instructions,
         //     "10100nnn" (Pop r4-r[4+nnn]), and
         //     "10101nnn" (Pop r4-r[4+nnn], r14)
         //
-        const std::uint32_t* sp_ptr = *virtual_cpu.sp;
+        std::uint32_t const* sp_ptr = *virtual_cpu.sp;
         int nnn = *instruction & 0b111;  // Extract the last 3 bits
         switch (nnn) {
           case 7:
@@ -576,7 +576,7 @@ exit_loop:
   }
 }
 
-instructions_t create_instructions_from_entry(const index_entry_t& p_entry)
+instructions_t create_instructions_from_entry(index_entry_t const& p_entry)
 {
   constexpr auto personality_type = hal::bit_mask::from<24, 27>();
   constexpr auto generic = hal::bit_mask::from<31>();
@@ -587,7 +587,7 @@ instructions_t create_instructions_from_entry(const index_entry_t& p_entry)
   // needs to overwrite the values from the start.
   instructions.fill(arm_ehabi::finish);
 
-  const std::uint32_t* handler_data = nullptr;
+  std::uint32_t const* handler_data = nullptr;
 
   if (p_entry.has_inlined_personality()) {
     handler_data = &p_entry.personality_offset;
@@ -655,30 +655,31 @@ void raise_exception(exception_object& p_exception_object)
   while (true) {
     switch (p_exception_object.cache.state()) {
       case runtime_state::get_next_frame: {
-        const auto& index_entry = get_index_entry(p_exception_object.cpu.pc);
+        auto const& index_entry = get_index_entry(p_exception_object.cpu.pc);
         p_exception_object.cache.entry_ptr = &index_entry;
         if (index_entry.has_inlined_personality()) {
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
-        const auto* descriptor_start = index_entry.descriptor_start();
+        auto const* descriptor_start = index_entry.descriptor_start();
         if (*descriptor_start == 0x0000'0000) {
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
         p_exception_object.cache.relative_address(p_exception_object.cpu.pc -
                                                   index_entry.function());
-        p_exception_object.cache.state(
-          runtime_state::gcc_lsda_cleanup_catch_phase);
+        p_exception_object.cache.state(runtime_state::enter_function);
         [[fallthrough]];
       }
-      case runtime_state::gcc_lsda_cleanup_catch_phase: {
-        perform_gcc_lsda_cleanup_catch_phase(p_exception_object);
+      case runtime_state::enter_function: {
+        enter_function(p_exception_object);
+        // enter function returns normally if it determines that there was no
+        // reason to enter the function, thus the function should be unwound.
         [[fallthrough]];
       }
       case runtime_state::unwind_frame: {
-        const auto& entry = *p_exception_object.cache.entry_ptr;
-        const auto instructions = create_instructions_from_entry(entry);
+        auto const& entry = *p_exception_object.cache.entry_ptr;
+        auto const instructions = create_instructions_from_entry(entry);
         unwind_frame(instructions, p_exception_object);
         p_exception_object.cache.state(runtime_state::get_next_frame);
       }
@@ -687,19 +688,13 @@ void raise_exception(exception_object& p_exception_object)
 }
 }  // namespace ke
 
-[[noreturn]] void terminate_halt() noexcept
-{
-  while (true) {
-    continue;
-  }
-}
-
-namespace __cxxabiv1 {                                        // NOLINT
-std::terminate_handler __terminate_handler = terminate_halt;  // NOLINT
-}
-
 extern "C"
 {
+
+  void _exit([[maybe_unused]] int rc)  // NOLINT
+  {
+    std::terminate();
+  }
 
   void* __wrap___cxa_allocate_exception(size_t p_thrown_size)
   {
@@ -745,7 +740,7 @@ extern "C"
     std::terminate();
   }
 
-  void __cxa_rethrow()
+  void __wrap___cxa_rethrow()
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
 
@@ -757,12 +752,12 @@ extern "C"
     // Perform an inline trivial unwind __cxa_throw:
 #if defined(OPTIMIZATION_LEVEL) || 1
 #if OPTIMIZATION_LEVEL == Debug || 0
-    const std::uint32_t* stack_pointer = *exception_object.cpu.sp;
+    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     stack_pointer += 5;
     exception_object.cpu.pc = stack_pointer[0];
     exception_object.cpu.sp = stack_pointer + 1;
 #elif OPTIMIZATION_LEVEL == MinSizeRel || 1
-    const std::uint32_t* stack_pointer = *exception_object.cpu.sp;
+    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r4 = stack_pointer[0];
     exception_object.cpu.pc = stack_pointer[1];
     exception_object.cpu.sp = stack_pointer + 2;
@@ -775,9 +770,9 @@ extern "C"
     std::terminate();
   }
 
-  void __cxa_throw(ke::exception_ptr p_thrown_exception,
-                   std::type_info* p_type_info,
-                   ke::destructor_t p_destructor)
+  void __wrap___cxa_throw(ke::exception_ptr p_thrown_exception,
+                          std::type_info* p_type_info,
+                          ke::destructor_t p_destructor) noexcept(false)
   {
     ke::active_exception = p_thrown_exception;
     auto& exception_object = ke::extract_exception_object(p_thrown_exception);
@@ -788,15 +783,15 @@ extern "C"
     // Perform an inline trivial unwind __cxa_throw:
 #if defined(OPTIMIZATION_LEVEL)
 #if OPTIMIZATION_LEVEL == Debug
-    const std::uint32_t* stack_pointer = *exception_object.cpu.sp;
+    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r3 = stack_pointer[0];
     exception_object.cpu.r4 = stack_pointer[1];
     exception_object.cpu.r5 = stack_pointer[2];
     exception_object.cpu.pc = stack_pointer[3];
     exception_object.cpu.sp = stack_pointer + 5;
 #elif OPTIMIZATION_LEVEL == MinSizeRel
-    const std::uint32_t* stack_pointer = *exception_object.cpu.sp;
-    exception_object.cpu.r3 = stack_pointer[0];
+    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
+    exception_object.cpu.r4 = stack_pointer[0];
     exception_object.cpu.pc = stack_pointer[1];
     exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == Release

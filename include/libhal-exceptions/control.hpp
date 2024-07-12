@@ -17,48 +17,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <memory_resource>
 #include <span>
 
 namespace hal {
-/**
- * @brief Interface for an object that allocates memory specifically for
- * exceptions
- *
- */
-class exception_allocator
-{
-public:
-  /**
-   * @brief Allocate/retrieve memory for the exception object allocation
-   *
-   * If memory has run out, this function must return an empty span.
-   *
-   * @param p_size - Amount of memory to be allocated
-   * @return std::span<std::uint8_t> - block of memory equal to or greater than
-   * the size of p_size or and empty span if no memory is available.
-   */
-  std::span<std::uint8_t> allocate(std::size_t p_size) noexcept
-  {
-    return do_allocate(p_size);
-  }
-
-  /**
-   * @brief Deallocate the memory for the exception object
-   *
-   * @param p_exception_object - pointer to the allocated exception object
-   */
-  void deallocate(void* p_exception_object) noexcept
-  {
-    do_deallocate(p_exception_object);
-  }
-
-  virtual ~exception_allocator() = default;
-
-private:
-  virtual std::span<std::uint8_t> do_allocate(std::size_t p_size) noexcept = 0;
-  virtual void do_deallocate(void* p_exception_object) noexcept = 0;
-};
-
 /**
  * @brief Set the global exception allocator function
  *
@@ -66,7 +28,16 @@ private:
  *
  * @param p_allocator - exception memory allocator implementation
  */
-void set_exception_allocator(exception_allocator& p_allocator) noexcept;
+void set_exception_allocator(std::pmr::memory_resource& p_allocator) noexcept;
+
+/**
+ * @brief Get the global exception allocator function
+ *
+ * More details on how you should use this API to come in the future.
+ *
+ * @returns the global exception memory allocator implementation
+ */
+std::pmr::memory_resource& get_exception_allocator() noexcept;
 
 /**
  * @brief Set the terminate handler
@@ -83,37 +54,4 @@ std::terminate_handler set_terminate(
  */
 std::terminate_handler get_terminate() noexcept;
 
-/**
- * @brief Simple single threaded exception allocator
- *
- * @tparam size - size of the exception object memory buffer. If this is set too
- * small (less than 128 bytes), then it is likely that the memory will not be
- * enough for any exception runtime and will result in terminate being called.
- */
-template<size_t size>
-class single_thread_exception_allocator : public exception_allocator
-{
-public:
-  single_thread_exception_allocator() = default;
-  ~single_thread_exception_allocator() override = default;
-
-private:
-  std::span<std::uint8_t> do_allocate(std::size_t p_size) noexcept override
-  {
-    if (m_allocated || p_size > m_buffer.size()) {
-      return {};
-    }
-    m_allocated = true;
-    return m_buffer;
-  }
-
-  void do_deallocate(
-    [[maybe_unused]] void* p_exception_object) noexcept override
-  {
-    m_allocated = false;
-  }
-
-  std::array<std::uint8_t, size> m_buffer{};
-  bool m_allocated = false;
-};
 }  // namespace hal
