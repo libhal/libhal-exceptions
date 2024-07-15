@@ -242,50 +242,6 @@ inline void* extract_thrown_object(void* p_exception_object)
   return reinterpret_cast<exception_object*>(start_of_thrown);
 }
 
-[[gnu::always_inline]] inline void restore_cpu_core(
-  ke::cortex_m_cpu& p_cpu_core)
-{
-  asm volatile(
-    "ldr r0, [%[regs], #0]\n"  // Load R0
-    "ldr r1, [%[regs], #4]\n"  // Load R1
-    "ldr r2, [%[regs], #8]\n"  // Load R2
-    // "ldr r3, [%[regs], #12]\n"   // Load R3
-    "ldr r4, [%[regs], #16]\n"   // Load R4
-    "ldr r5, [%[regs], #20]\n"   // Load R5
-    "ldr r6, [%[regs], #24]\n"   // Load R6
-    "ldr r7, [%[regs], #28]\n"   // Load R7
-    "ldr r8, [%[regs], #32]\n"   // Load R8
-    "ldr r9, [%[regs], #36]\n"   // Load R9
-    "ldr r10, [%[regs], #40]\n"  // Load R10
-    "ldr r11, [%[regs], #44]\n"  // Load R11
-    "ldr r12, [%[regs], #48]\n"  // Load R12
-    // Stack Pointer (R13/SP) and Link Register (R14/LR) require special
-    // handling
-    "ldr sp, [%[regs], #52]\n"  // Load SP
-    "ldr lr, [%[regs], #56]\n"  // Load LR
-    // PC and xPSR restoration is more complex due to ARM's execution state and
-    // alignment requirements Directly loading PC can be dangerous and is
-    // typically managed through a pop or an exception return mechanism
-    "ldr pc, [%[regs], #60]\n"
-    :
-    : [regs] "r"(&p_cpu_core)
-    : "memory",
-      "r0",
-      "r1",
-      "r2",
-      // "r3",
-      "r4",
-      "r5",
-      "r6",
-      "r7",
-      "fp",
-      "r8",
-      "r9",
-      "r10",
-      "r11",
-      "r12");
-}
-
 std::uint32_t to_absolute_address(void const* p_object)
 {
   constexpr auto signed_bit_31 = hal::bit_mask::from<30>();
