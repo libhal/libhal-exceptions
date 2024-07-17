@@ -199,7 +199,7 @@ void pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
   p_cpu.sp = stack_pointer;
 }
 
-std::uint32_t read_uleb128(std::uint8_t const volatile** p_ptr)
+std::uint32_t read_uleb128(std::uint8_t const** p_ptr)
 {
   std::uint32_t result = 0;
   std::uint8_t shift_amount = 0;
@@ -266,10 +266,10 @@ personality_encoding operator&(personality_encoding const& p_encoding,
     static_cast<std::uint8_t>(p_encoding) & static_cast<std::uint8_t>(p_byte));
 }
 
-std::uintptr_t read_encoded_data(std::uint8_t const volatile** p_data,
+std::uintptr_t read_encoded_data(std::uint8_t const** p_data,
                                  personality_encoding p_encoding)
 {
-  std::uint8_t const volatile* ptr = *p_data;
+  std::uint8_t const* ptr = *p_data;
   std::uintptr_t result = 0;
   auto const encoding = static_cast<personality_encoding>(p_encoding);
 
@@ -435,9 +435,8 @@ inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 
 void enter_function(exception_object& p_exception_object)
 {
-  std::uint8_t const volatile* lsda_data =
-    reinterpret_cast<std::uint8_t const*>(
-      p_exception_object.cache.entry_ptr->lsda_data());
+  std::uint8_t const* lsda_data = reinterpret_cast<std::uint8_t const*>(
+    p_exception_object.cache.entry_ptr->lsda_data());
 
   auto const dwarf_offset_info_format = personality_encoding{ *(lsda_data++) };
   if (dwarf_offset_info_format != personality_encoding::omit) {
@@ -492,48 +491,67 @@ void enter_function(exception_object& p_exception_object)
 }
 
 template<size_t Amount>
-std::uint32_t vsp_deallocate_amount()
+constexpr std::uint32_t vsp_deallocate_amount()
 {
-  return (Amount << 2) + 4;
+  return (Amount << 2);
 }
 
-template<size_t PopCount, bool PopLinkRegister = bool{ false }>
-inline void pop_register_range(cortex_m_cpu& p_virtual_cpu)
+enum class pop_lr
 {
-  if constexpr (PopLinkRegister == 7) {
-    p_virtual_cpu.lr = (*p_virtual_cpu.sp)[PopCount + 1];
-  }
-  if constexpr (PopCount == 7) {
-    p_virtual_cpu[11] = (*p_virtual_cpu.sp)[7];
-  }
-  if constexpr (PopCount >= 6) {
-    p_virtual_cpu[10] = (*p_virtual_cpu.sp)[6];
-  }
-  if constexpr (PopCount >= 5) {
-    p_virtual_cpu[9] = (*p_virtual_cpu.sp)[5];
-  }
-  if constexpr (PopCount >= 4) {
-    p_virtual_cpu[8] = (*p_virtual_cpu.sp)[4];
-  }
-  if constexpr (PopCount >= 3) {
-    p_virtual_cpu[7] = (*p_virtual_cpu.sp)[3];
-  }
-  if constexpr (PopCount >= 2) {
-    p_virtual_cpu[6] = (*p_virtual_cpu.sp)[2];
+  skip = 0,
+  do_it = 1,
+};
+
+template<size_t PopCount, pop_lr PopLinkRegister = pop_lr::skip>
+[[nodiscard("You MUST set the unwind function's stack pointer to this "
+            "value after executing it!")]]
+inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
+                                               cortex_m_cpu& p_virtual_cpu)
+{
+  // We pull these pointers out in order to access them incrementally, which
+  // will give the hint to the compiler to convert them into a sequence of
+  // immediate load and stores.
+  auto* r4_pointer = &p_virtual_cpu.r4.data;
+
+  static_assert(PopCount <= 7, "Pop Count cannot be above 7");
+
+  // NOTE: A for loop has the same cycle count, and is more compact
+#if 0
+  if constexpr (PopCount >= 0) {
+    *(r4_pointer++) = *(sp_ptr++);
   }
   if constexpr (PopCount >= 1) {
-    p_virtual_cpu[5] = (*p_virtual_cpu.sp)[1];
+    *(r4_pointer++) = *(sp_ptr++);
   }
-  if constexpr (PopCount >= 0) {
-    p_virtual_cpu[4] = (*p_virtual_cpu.sp)[0];
+  if constexpr (PopCount >= 2) {
+    *(r4_pointer++) = *(sp_ptr++);
+  }
+  if constexpr (PopCount >= 3) {
+    *(r4_pointer++) = *(sp_ptr++);
+  }
+  if constexpr (PopCount >= 4) {
+    *(r4_pointer++) = *(sp_ptr++);
+  }
+  if constexpr (PopCount >= 5) {
+    *(r4_pointer++) = *(sp_ptr++);
+  }
+  if constexpr (PopCount >= 6) {
+    *(r4_pointer++) = *(sp_ptr++);
+  }
+  if constexpr (PopCount == 7) {
+    *(r4_pointer++) = *(sp_ptr++);
+  }
+#else
+  for (std::size_t i = 0; i < PopCount + 1; i++) {
+    *(r4_pointer++) = *(sp_ptr++);
+  }
+#endif
+
+  if constexpr (PopLinkRegister == pop_lr::do_it) {
+    p_virtual_cpu.lr = *(sp_ptr++);
   }
 
-  // Move the stack up by the number of registers we popped plus 1 to place it
-  // in the previous function's frame.
-  static constexpr auto stack_offset =
-    4U * (PopCount + 1U + unsigned{ PopLinkRegister });
-
-  p_virtual_cpu.sp = p_virtual_cpu.sp + stack_offset;
+  return sp_ptr;
 }
 
 void unwind_frame(instructions_t const& p_instructions,
@@ -805,6 +823,22 @@ void unwind_frame(instructions_t const& p_instructions,
 
     // Spare (xxx != 000, 001, 010) 11xxxyyy
 
+    &&reserved_or_spare_thus_terminate,  // 11011'000 [216]
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 []
+    &&reserved_or_spare_thus_terminate,  // 11011'000 []
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 [231]
     &&reserved_or_spare_thus_terminate,  // 11011'000 []
     &&reserved_or_spare_thus_terminate,  // 11011'001 []
     &&reserved_or_spare_thus_terminate,  // 11011'010 []
@@ -820,32 +854,16 @@ void unwind_frame(instructions_t const& p_instructions,
     &&reserved_or_spare_thus_terminate,  // 11011'100 []
     &&reserved_or_spare_thus_terminate,  // 11011'101 []
     &&reserved_or_spare_thus_terminate,  // 11011'110 []
-    &&reserved_or_spare_thus_terminate,  // 11011'111 []
-    &&reserved_or_spare_thus_terminate,  // 11011'000 []
-    &&reserved_or_spare_thus_terminate,  // 11011'001 []
-    &&reserved_or_spare_thus_terminate,  // 11011'010 []
-    &&reserved_or_spare_thus_terminate,  // 11011'011 []
-    &&reserved_or_spare_thus_terminate,  // 11011'100 []
-    &&reserved_or_spare_thus_terminate,  // 11011'101 []
-    &&reserved_or_spare_thus_terminate,  // 11011'110 []
-    &&reserved_or_spare_thus_terminate,  // 11011'111 []
-    &&reserved_or_spare_thus_terminate,  // 11011'000 []
-    &&reserved_or_spare_thus_terminate,  // 11011'001 []
-    &&reserved_or_spare_thus_terminate,  // 11011'010 []
-    &&reserved_or_spare_thus_terminate,  // 11011'011 []
-    &&reserved_or_spare_thus_terminate,  // 11011'100 []
-    &&reserved_or_spare_thus_terminate,  // 11011'101 []
-    &&reserved_or_spare_thus_terminate,  // 11011'110 []
-    &&reserved_or_spare_thus_terminate,  // 11011'111 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 [247]
 
-    &&reserved_or_spare_thus_terminate,  // 11011'000 []
+    &&reserved_or_spare_thus_terminate,  // 11011'000 [248]
     &&reserved_or_spare_thus_terminate,  // 11011'001 []
     &&reserved_or_spare_thus_terminate,  // 11011'010 []
     &&reserved_or_spare_thus_terminate,  // 11011'011 []
     &&reserved_or_spare_thus_terminate,  // 11011'100 []
     &&reserved_or_spare_thus_terminate,  // 11011'101 []
     &&reserved_or_spare_thus_terminate,  // 11011'110 []
-    &&reserved_or_spare_thus_terminate,  // 11111'111 []
+    &&reserved_or_spare_thus_terminate,  // 11111'111 [255]
 
   };
 
@@ -853,14 +871,18 @@ void unwind_frame(instructions_t const& p_instructions,
   bool move_lr_to_pc = true;
   std::uint32_t u32_storage = 0;
   auto const* instruction_ptr = p_instructions.data.data();
+  auto const* sp_ptr = *virtual_cpu.sp;
 
   while (true) {
-    goto* jump_table[*instruction_ptr++];
+    auto const* jump_location = jump_table[*instruction_ptr];
+    instruction_ptr++;
+    goto* jump_location;
 
   // +=========================================================================+
   // |                                 Finish!                                 |
   // +=========================================================================+
   finish_unwind:
+    virtual_cpu.sp = sp_ptr;
     [[likely]] if (move_lr_to_pc) {
       virtual_cpu.pc = virtual_cpu.lr;
     }
@@ -871,26 +893,29 @@ void unwind_frame(instructions_t const& p_instructions,
     break;
 
   subtract_vsp_using_uleb128:
-    // TODO(kammce): subtract stack using uleb128
-    goto reserved_or_spare_thus_terminate;
+    u32_storage = read_uleb128(&instruction_ptr);
+    sp_ptr += u32_storage;
+    continue;
 
   pop_integer_registers_under_mask_r3_r2_r1_r0:
     // If the next unwind instruction equals 0, or if the bits from 4 or 7
     // contains any 1s, then its time to terminate
-    if (*instruction_ptr == 0b0000'0000 || (*instruction_ptr & 0xF0) == 0) {
+    if (*instruction_ptr == 0b0000'0000 || (*instruction_ptr & 0xF0) != 0) {
       goto reserved_or_spare_thus_terminate;
     }
-    u32_storage = *(instruction_ptr) & 0xF;
+
+    u32_storage = *instruction_ptr;
 
     while (u32_storage) {
       // The first bit corresponds to the R0
       std::uint32_t lsb_bit_position = std::countr_zero(u32_storage);
-      virtual_cpu[lsb_bit_position] = *virtual_cpu.sp;
-      // Move stack pointer up by 4 bytes
-      virtual_cpu.sp = virtual_cpu.sp + 4;
+      // Copy value from the stack, increment stack pointer.
+      virtual_cpu[lsb_bit_position] = *(sp_ptr++);
       // Clear the bit for the lsb_bit_position
       u32_storage = u32_storage & ~(1 << lsb_bit_position);
     }
+    instruction_ptr++;
+    continue;
 
   refuse_unwind_or_pop:
     // If the next unwind instruction equals 0, then its time to terminate
@@ -924,9 +949,8 @@ void unwind_frame(instructions_t const& p_instructions,
       // byte, the instruction byte, only contains the registers from 12
       // to 15.
       std::uint32_t lsb_bit_position = std::countr_zero(u32_storage) + 12U;
-      virtual_cpu[lsb_bit_position] = *virtual_cpu.sp;
-      // Move stack pointer up by 4 bytes
-      virtual_cpu.sp = virtual_cpu.sp + 4;
+      // Copy value from the stack, increment stack pointer.
+      virtual_cpu[lsb_bit_position] = *(sp_ptr++);
       // Clear the bit for the lsb_bit_position
       u32_storage = u32_storage & ~(1 << lsb_bit_position);
     }
@@ -937,13 +961,13 @@ void unwind_frame(instructions_t const& p_instructions,
       // Get the first 1's distance from the right. We add 4 because the mask's
       // first bit represents r4 and increases from there.
       std::uint32_t lsb_bit_position = std::countr_zero(u32_storage) + 4U;
-      virtual_cpu[lsb_bit_position] = *virtual_cpu.sp;
-      // Move stack pointer up by 4 bytes
-      virtual_cpu.sp = virtual_cpu.sp + 4;
+      // Copy value from the stack, increment stack pointer.
+      virtual_cpu[lsb_bit_position] = *(sp_ptr++);
       // Clear the bit for the lsb_bit_position
       u32_storage = u32_storage & ~(1 << lsb_bit_position);
     }
 
+    instruction_ptr++;
     continue;
 
   // +=========================================================================+
@@ -952,455 +976,455 @@ void unwind_frame(instructions_t const& p_instructions,
   assign_to_vsp_to_reg_nnnn:
     // Get the current instruction and get all lower 4-bits
     u32_storage = *(instruction_ptr - 1U) & 0xF;
-    virtual_cpu.sp = virtual_cpu[u32_storage];
+    sp_ptr = *virtual_cpu[u32_storage];
     continue;
 
   // +=========================================================================+
   // |                     Sequentially Pop Registers + LR                     |
   // +=========================================================================+
   pop_off_stack_r4_to_r11_and_lr:
-    pop_register_range<7, true>(virtual_cpu);
+    sp_ptr = pop_register_range<7, pop_lr::do_it>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r10_and_lr:
-    pop_register_range<6, true>(virtual_cpu);
+    sp_ptr = pop_register_range<6, pop_lr::do_it>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r9_and_lr:
-    pop_register_range<5, true>(virtual_cpu);
+    sp_ptr = pop_register_range<5, pop_lr::do_it>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r8_and_lr:
-    pop_register_range<4, true>(virtual_cpu);
+    sp_ptr = pop_register_range<4, pop_lr::do_it>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r7_and_lr:
-    pop_register_range<3, true>(virtual_cpu);
+    sp_ptr = pop_register_range<3, pop_lr::do_it>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r6_and_lr:
-    pop_register_range<2, true>(virtual_cpu);
+    sp_ptr = pop_register_range<2, pop_lr::do_it>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r5_and_lr:
-    pop_register_range<1, true>(virtual_cpu);
+    sp_ptr = pop_register_range<1, pop_lr::do_it>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r4_and_lr:
-    pop_register_range<0, true>(virtual_cpu);
+    sp_ptr = pop_register_range<0, pop_lr::do_it>(sp_ptr, virtual_cpu);
     continue;
 
   // +=========================================================================+
   // |                      Sequentially Pop Registers                         |
   // +=========================================================================+
   pop_off_stack_r4_to_r11:
-    pop_register_range<7>(virtual_cpu);
+    sp_ptr = pop_register_range<7>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r10:
-    pop_register_range<6>(virtual_cpu);
+    sp_ptr = pop_register_range<6>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r9:
-    pop_register_range<5>(virtual_cpu);
+    sp_ptr = pop_register_range<5>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r8:
-    pop_register_range<4>(virtual_cpu);
+    sp_ptr = pop_register_range<4>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r7:
-    pop_register_range<3>(virtual_cpu);
+    sp_ptr = pop_register_range<3>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r6:
-    pop_register_range<2>(virtual_cpu);
+    sp_ptr = pop_register_range<2>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r5:
-    pop_register_range<1>(virtual_cpu);
+    sp_ptr = pop_register_range<1>(sp_ptr, virtual_cpu);
     continue;
   pop_off_stack_r4_to_r4:
-    pop_register_range<0>(virtual_cpu);
+    sp_ptr = pop_register_range<0>(sp_ptr, virtual_cpu);
     continue;
 
   // +=========================================================================+
   // |                                Add VSP                                  |
   // +=========================================================================+
   vsp_add_0:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<0>();
+    sp_ptr += vsp_deallocate_amount<0>();
     continue;
   vsp_add_1:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<1>();
+    sp_ptr += vsp_deallocate_amount<1>();
     continue;
   vsp_add_2:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<2>();
+    sp_ptr += vsp_deallocate_amount<2>();
     continue;
   vsp_add_3:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<3>();
+    sp_ptr += vsp_deallocate_amount<3>();
     continue;
   vsp_add_4:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<4>();
+    sp_ptr += vsp_deallocate_amount<4>();
     continue;
   vsp_add_5:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<5>();
+    sp_ptr += vsp_deallocate_amount<5>();
     continue;
   vsp_add_6:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<6>();
+    sp_ptr += vsp_deallocate_amount<6>();
     continue;
   vsp_add_7:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<7>();
+    sp_ptr += vsp_deallocate_amount<7>();
     continue;
   vsp_add_8:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<8>();
+    sp_ptr += vsp_deallocate_amount<8>();
     continue;
   vsp_add_9:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<9>();
+    sp_ptr += vsp_deallocate_amount<9>();
     continue;
   vsp_add_10:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<10>();
+    sp_ptr += vsp_deallocate_amount<10>();
     continue;
   vsp_add_11:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<11>();
+    sp_ptr += vsp_deallocate_amount<11>();
     continue;
   vsp_add_12:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<12>();
+    sp_ptr += vsp_deallocate_amount<12>();
     continue;
   vsp_add_13:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<13>();
+    sp_ptr += vsp_deallocate_amount<13>();
     continue;
   vsp_add_14:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<14>();
+    sp_ptr += vsp_deallocate_amount<14>();
     continue;
   vsp_add_15:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<15>();
+    sp_ptr += vsp_deallocate_amount<15>();
     continue;
   vsp_add_16:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<16>();
+    sp_ptr += vsp_deallocate_amount<16>();
     continue;
   vsp_add_17:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<17>();
+    sp_ptr += vsp_deallocate_amount<17>();
     continue;
   vsp_add_18:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<18>();
+    sp_ptr += vsp_deallocate_amount<18>();
     continue;
   vsp_add_19:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<19>();
+    sp_ptr += vsp_deallocate_amount<19>();
     continue;
   vsp_add_20:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<20>();
+    sp_ptr += vsp_deallocate_amount<20>();
     continue;
   vsp_add_21:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<21>();
+    sp_ptr += vsp_deallocate_amount<21>();
     continue;
   vsp_add_22:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<22>();
+    sp_ptr += vsp_deallocate_amount<22>();
     continue;
   vsp_add_23:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<23>();
+    sp_ptr += vsp_deallocate_amount<23>();
     continue;
   vsp_add_24:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<24>();
+    sp_ptr += vsp_deallocate_amount<24>();
     continue;
   vsp_add_25:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<25>();
+    sp_ptr += vsp_deallocate_amount<25>();
     continue;
   vsp_add_26:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<26>();
+    sp_ptr += vsp_deallocate_amount<26>();
     continue;
   vsp_add_27:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<27>();
+    sp_ptr += vsp_deallocate_amount<27>();
     continue;
   vsp_add_28:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<28>();
+    sp_ptr += vsp_deallocate_amount<28>();
     continue;
   vsp_add_29:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<29>();
+    sp_ptr += vsp_deallocate_amount<29>();
     continue;
   vsp_add_30:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<30>();
+    sp_ptr += vsp_deallocate_amount<30>();
     continue;
   vsp_add_31:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<31>();
+    sp_ptr += vsp_deallocate_amount<31>();
     continue;
   vsp_add_32:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<32>();
+    sp_ptr += vsp_deallocate_amount<32>();
     continue;
   vsp_add_33:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<33>();
+    sp_ptr += vsp_deallocate_amount<33>();
     continue;
   vsp_add_34:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<34>();
+    sp_ptr += vsp_deallocate_amount<34>();
     continue;
   vsp_add_35:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<35>();
+    sp_ptr += vsp_deallocate_amount<35>();
     continue;
   vsp_add_36:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<36>();
+    sp_ptr += vsp_deallocate_amount<36>();
     continue;
   vsp_add_37:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<37>();
+    sp_ptr += vsp_deallocate_amount<37>();
     continue;
   vsp_add_38:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<38>();
+    sp_ptr += vsp_deallocate_amount<38>();
     continue;
   vsp_add_39:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<39>();
+    sp_ptr += vsp_deallocate_amount<39>();
     continue;
   vsp_add_40:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<40>();
+    sp_ptr += vsp_deallocate_amount<40>();
     continue;
   vsp_add_41:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<41>();
+    sp_ptr += vsp_deallocate_amount<41>();
     continue;
   vsp_add_42:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<42>();
+    sp_ptr += vsp_deallocate_amount<42>();
     continue;
   vsp_add_43:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<43>();
+    sp_ptr += vsp_deallocate_amount<43>();
     continue;
   vsp_add_44:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<44>();
+    sp_ptr += vsp_deallocate_amount<44>();
     continue;
   vsp_add_45:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<45>();
+    sp_ptr += vsp_deallocate_amount<45>();
     continue;
   vsp_add_46:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<46>();
+    sp_ptr += vsp_deallocate_amount<46>();
     continue;
   vsp_add_47:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<47>();
+    sp_ptr += vsp_deallocate_amount<47>();
     continue;
   vsp_add_48:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<48>();
+    sp_ptr += vsp_deallocate_amount<48>();
     continue;
   vsp_add_49:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<49>();
+    sp_ptr += vsp_deallocate_amount<49>();
     continue;
   vsp_add_50:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<50>();
+    sp_ptr += vsp_deallocate_amount<50>();
     continue;
   vsp_add_51:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<51>();
+    sp_ptr += vsp_deallocate_amount<51>();
     continue;
   vsp_add_52:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<52>();
+    sp_ptr += vsp_deallocate_amount<52>();
     continue;
   vsp_add_53:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<53>();
+    sp_ptr += vsp_deallocate_amount<53>();
     continue;
   vsp_add_54:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<54>();
+    sp_ptr += vsp_deallocate_amount<54>();
     continue;
   vsp_add_55:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<55>();
+    sp_ptr += vsp_deallocate_amount<55>();
     continue;
   vsp_add_56:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<56>();
+    sp_ptr += vsp_deallocate_amount<56>();
     continue;
   vsp_add_57:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<57>();
+    sp_ptr += vsp_deallocate_amount<57>();
     continue;
   vsp_add_58:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<58>();
+    sp_ptr += vsp_deallocate_amount<58>();
     continue;
   vsp_add_59:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<59>();
+    sp_ptr += vsp_deallocate_amount<59>();
     continue;
   vsp_add_60:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<60>();
+    sp_ptr += vsp_deallocate_amount<60>();
     continue;
   vsp_add_61:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<61>();
+    sp_ptr += vsp_deallocate_amount<61>();
     continue;
   vsp_add_62:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<62>();
+    sp_ptr += vsp_deallocate_amount<62>();
     continue;
   vsp_add_63:
-    virtual_cpu.sp = virtual_cpu.sp + vsp_deallocate_amount<63>();
+    sp_ptr += vsp_deallocate_amount<63>();
     continue;
 
   // +=========================================================================+
   // |                                Sub VSP                                  |
   // +=========================================================================+
   vsp_sub_0:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<0>();
+    sp_ptr -= vsp_deallocate_amount<0>();
     continue;
   vsp_sub_1:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<1>();
+    sp_ptr -= vsp_deallocate_amount<1>();
     continue;
   vsp_sub_2:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<2>();
+    sp_ptr -= vsp_deallocate_amount<2>();
     continue;
   vsp_sub_3:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<3>();
+    sp_ptr -= vsp_deallocate_amount<3>();
     continue;
   vsp_sub_4:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<4>();
+    sp_ptr -= vsp_deallocate_amount<4>();
     continue;
   vsp_sub_5:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<5>();
+    sp_ptr -= vsp_deallocate_amount<5>();
     continue;
   vsp_sub_6:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<6>();
+    sp_ptr -= vsp_deallocate_amount<6>();
     continue;
   vsp_sub_7:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<7>();
+    sp_ptr -= vsp_deallocate_amount<7>();
     continue;
   vsp_sub_8:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<8>();
+    sp_ptr -= vsp_deallocate_amount<8>();
     continue;
   vsp_sub_9:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<9>();
+    sp_ptr -= vsp_deallocate_amount<9>();
     continue;
   vsp_sub_10:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<10>();
+    sp_ptr -= vsp_deallocate_amount<10>();
     continue;
   vsp_sub_11:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<11>();
+    sp_ptr -= vsp_deallocate_amount<11>();
     continue;
   vsp_sub_12:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<12>();
+    sp_ptr -= vsp_deallocate_amount<12>();
     continue;
   vsp_sub_13:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<13>();
+    sp_ptr -= vsp_deallocate_amount<13>();
     continue;
   vsp_sub_14:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<14>();
+    sp_ptr -= vsp_deallocate_amount<14>();
     continue;
   vsp_sub_15:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<15>();
+    sp_ptr -= vsp_deallocate_amount<15>();
     continue;
   vsp_sub_16:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<16>();
+    sp_ptr -= vsp_deallocate_amount<16>();
     continue;
   vsp_sub_17:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<17>();
+    sp_ptr -= vsp_deallocate_amount<17>();
     continue;
   vsp_sub_18:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<18>();
+    sp_ptr -= vsp_deallocate_amount<18>();
     continue;
   vsp_sub_19:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<19>();
+    sp_ptr -= vsp_deallocate_amount<19>();
     continue;
   vsp_sub_20:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<20>();
+    sp_ptr -= vsp_deallocate_amount<20>();
     continue;
   vsp_sub_21:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<21>();
+    sp_ptr -= vsp_deallocate_amount<21>();
     continue;
   vsp_sub_22:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<22>();
+    sp_ptr -= vsp_deallocate_amount<22>();
     continue;
   vsp_sub_23:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<23>();
+    sp_ptr -= vsp_deallocate_amount<23>();
     continue;
   vsp_sub_24:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<24>();
+    sp_ptr -= vsp_deallocate_amount<24>();
     continue;
   vsp_sub_25:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<25>();
+    sp_ptr -= vsp_deallocate_amount<25>();
     continue;
   vsp_sub_26:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<26>();
+    sp_ptr -= vsp_deallocate_amount<26>();
     continue;
   vsp_sub_27:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<27>();
+    sp_ptr -= vsp_deallocate_amount<27>();
     continue;
   vsp_sub_28:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<28>();
+    sp_ptr -= vsp_deallocate_amount<28>();
     continue;
   vsp_sub_29:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<29>();
+    sp_ptr -= vsp_deallocate_amount<29>();
     continue;
   vsp_sub_30:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<30>();
+    sp_ptr -= vsp_deallocate_amount<30>();
     continue;
   vsp_sub_31:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<31>();
+    sp_ptr -= vsp_deallocate_amount<31>();
     continue;
   vsp_sub_32:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<32>();
+    sp_ptr -= vsp_deallocate_amount<32>();
     continue;
   vsp_sub_33:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<33>();
+    sp_ptr -= vsp_deallocate_amount<33>();
     continue;
   vsp_sub_34:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<34>();
+    sp_ptr -= vsp_deallocate_amount<34>();
     continue;
   vsp_sub_35:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<35>();
+    sp_ptr -= vsp_deallocate_amount<35>();
     continue;
   vsp_sub_36:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<36>();
+    sp_ptr -= vsp_deallocate_amount<36>();
     continue;
   vsp_sub_37:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<37>();
+    sp_ptr -= vsp_deallocate_amount<37>();
     continue;
   vsp_sub_38:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<38>();
+    sp_ptr -= vsp_deallocate_amount<38>();
     continue;
   vsp_sub_39:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<39>();
+    sp_ptr -= vsp_deallocate_amount<39>();
     continue;
   vsp_sub_40:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<40>();
+    sp_ptr -= vsp_deallocate_amount<40>();
     continue;
   vsp_sub_41:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<41>();
+    sp_ptr -= vsp_deallocate_amount<41>();
     continue;
   vsp_sub_42:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<42>();
+    sp_ptr -= vsp_deallocate_amount<42>();
     continue;
   vsp_sub_43:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<43>();
+    sp_ptr -= vsp_deallocate_amount<43>();
     continue;
   vsp_sub_44:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<44>();
+    sp_ptr -= vsp_deallocate_amount<44>();
     continue;
   vsp_sub_45:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<45>();
+    sp_ptr -= vsp_deallocate_amount<45>();
     continue;
   vsp_sub_46:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<46>();
+    sp_ptr -= vsp_deallocate_amount<46>();
     continue;
   vsp_sub_47:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<47>();
+    sp_ptr -= vsp_deallocate_amount<47>();
     continue;
   vsp_sub_48:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<48>();
+    sp_ptr -= vsp_deallocate_amount<48>();
     continue;
   vsp_sub_49:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<49>();
+    sp_ptr -= vsp_deallocate_amount<49>();
     continue;
   vsp_sub_50:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<50>();
+    sp_ptr -= vsp_deallocate_amount<50>();
     continue;
   vsp_sub_51:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<51>();
+    sp_ptr -= vsp_deallocate_amount<51>();
     continue;
   vsp_sub_52:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<52>();
+    sp_ptr -= vsp_deallocate_amount<52>();
     continue;
   vsp_sub_53:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<53>();
+    sp_ptr -= vsp_deallocate_amount<53>();
     continue;
   vsp_sub_54:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<54>();
+    sp_ptr -= vsp_deallocate_amount<54>();
     continue;
   vsp_sub_55:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<55>();
+    sp_ptr -= vsp_deallocate_amount<55>();
     continue;
   vsp_sub_56:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<56>();
+    sp_ptr -= vsp_deallocate_amount<56>();
     continue;
   vsp_sub_57:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<57>();
+    sp_ptr -= vsp_deallocate_amount<57>();
     continue;
   vsp_sub_58:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<58>();
+    sp_ptr -= vsp_deallocate_amount<58>();
     continue;
   vsp_sub_59:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<59>();
+    sp_ptr -= vsp_deallocate_amount<59>();
     continue;
   vsp_sub_60:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<60>();
+    sp_ptr -= vsp_deallocate_amount<60>();
     continue;
   vsp_sub_61:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<61>();
+    sp_ptr -= vsp_deallocate_amount<61>();
     continue;
   vsp_sub_62:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<62>();
+    sp_ptr -= vsp_deallocate_amount<62>();
     continue;
   vsp_sub_63:
-    virtual_cpu.sp = virtual_cpu.sp - vsp_deallocate_amount<63>();
+    sp_ptr -= vsp_deallocate_amount<63>();
     continue;
   }
 

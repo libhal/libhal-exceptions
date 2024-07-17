@@ -50,9 +50,9 @@ struct register_t
     return data;
   }
 
-  std::uint32_t const* operator*()
+  std::uint32_t* operator*()
   {
-    return reinterpret_cast<std::uint32_t const*>(data);
+    return reinterpret_cast<std::uint32_t*>(data);
   }
 };
 
