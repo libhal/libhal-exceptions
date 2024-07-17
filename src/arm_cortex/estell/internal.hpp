@@ -62,6 +62,36 @@ constexpr std::uint32_t end_descriptor = 0x0000'0000;
 constexpr std::uint32_t su16_mask = 0b1111'1111'1111'1110;
 }  // namespace arm_ehabi
 
+std::uint32_t to_absolute_address(void const* p_object)
+{
+  constexpr auto signed_bit_31 = hal::bit_mask::from<30>();
+  constexpr auto signed_bit_32 = hal::bit_mask::from<31>();
+  auto object_address = reinterpret_cast<std::int32_t>(p_object);
+  auto offset = *reinterpret_cast<std::uint32_t const*>(p_object);
+
+  // Sign extend the offset to 32-bits
+  if (hal::bit_extract<signed_bit_31>(offset)) {
+    hal::bit_modify(offset).set<signed_bit_32>();
+  } else {
+    hal::bit_modify(offset).clear<signed_bit_32>();
+  }
+
+  auto signed_offset = static_cast<std::int32_t>(offset);
+  std::int32_t final_address = object_address + signed_offset;
+  return static_cast<std::uint32_t>(final_address);
+}
+
+[[gnu::used]] inline std::uint32_t runtime_to_absolute_address(
+  void const* p_object)
+{
+  return to_absolute_address(p_object);
+}
+
+inline std::uint32_t* to_absolute_address_ptr(void const* p_object)
+{
+  return reinterpret_cast<std::uint32_t*>(to_absolute_address(p_object));
+}
+
 // This is only to make GDB debugging easier, the functions are never actually
 // called so it is not important to include the correct types.
 struct function_t
@@ -96,18 +126,85 @@ struct function_t
   }
 };
 
+namespace su16 {
+constexpr auto instruction0 = hal::bit_mask{ .position = 16, .width = 8 };
+constexpr auto instruction1 = hal::bit_mask{ .position = 8, .width = 8 };
+constexpr auto instruction2 = hal::bit_mask{ .position = 0, .width = 8 };
+}  // namespace su16
+
+namespace lu16_32 {
+constexpr auto length = hal::bit_mask::from<16, 23>();
+constexpr auto instruction0 = hal::bit_mask::from<15, 8>();
+constexpr auto instruction1 = hal::bit_mask::from<7, 0>();
+constexpr auto instruction2 = hal::bit_mask::from<31, 24>();
+constexpr auto instruction3 = hal::bit_mask::from<23, 16>();
+constexpr auto instruction4 = hal::bit_mask::from<15, 8>();
+constexpr auto instruction5 = hal::bit_mask::from<7, 0>();
+constexpr auto instruction6 = hal::bit_mask::from<24, 31>();
+}  // namespace lu16_32
+
 struct index_entry_t
 {
   std::uint32_t function_offset;
   std::uint32_t personality_offset;
 
-  bool has_inlined_personality() const;
-  bool is_noexcept() const;
-  bool short_instructions() const;
-  std::uint32_t const* personality() const;
-  std::uint32_t const* lsda_data() const;
-  std::uint32_t const* descriptor_start() const;
-  function_t function() const;
+  [[gnu::always_inline]] inline constexpr bool has_inlined_personality() const
+  {
+    // 31st bit is `1` when the personality/unwind information is inlined, other
+    // otherwise, personality_offset is an offset.
+    constexpr auto mask = hal::bit_mask::from<31>();
+    return hal::bit_extract<mask>(personality_offset);
+  }
+
+  [[gnu::always_inline]] inline bool is_noexcept() const
+  {
+    return personality_offset == 0x1;
+  }
+
+  [[gnu::always_inline]] inline std::uint32_t const* personality() const
+  {
+    return to_absolute_address_ptr(&personality_offset);
+  }
+
+  [[gnu::always_inline]] inline std::uint32_t const* lsda_data() const
+  {
+    constexpr auto personality_type = hal::bit_mask::from<24, 27>();
+    // +1 to skip the prel31 offset to the personality function
+    auto const* header = personality() + 1;
+    if (hal::bit_extract<personality_type>(*header) == 0x0) {
+      return header + 1;
+    }
+    if (hal::bit_extract<lu16_32::length>(*header) == 1) {
+      return header + 2;
+    }
+    if (hal::bit_extract<lu16_32::length>(*header) > 2) {
+      return header + 2;
+    }
+    return header + 3;
+  }
+
+  [[gnu::always_inline]] inline std::uint32_t const* descriptor_start() const
+  {
+    constexpr auto type_mask = hal::bit_mask{ .position = 24, .width = 8 };
+
+    auto* personality_address = personality();
+    auto type = hal::bit_extract<type_mask>(*personality_address);
+
+    // TODO(kammce): comment why each of these works!
+    if (type == 0x0) {
+      return personality_address + 1;
+    }
+
+    // The limit for ARM exceptions instructions is 7. LD optimizes the ARM
+    // exception spec by removing the "word length" specifier allowing the
+    // instructions to fit in 2 words.
+    return personality_address + 2;
+  }
+
+  [[gnu::always_inline]] function_t function() const
+  {
+    return function_t(to_absolute_address(&function_offset));
+  }
 };
 
 struct cortex_m_cpu
@@ -139,23 +236,6 @@ struct cortex_m_cpu
     return (*file)[p_size];
   }
 };
-
-namespace su16 {
-constexpr auto instruction0 = hal::bit_mask{ .position = 16, .width = 8 };
-constexpr auto instruction1 = hal::bit_mask{ .position = 8, .width = 8 };
-constexpr auto instruction2 = hal::bit_mask{ .position = 0, .width = 8 };
-}  // namespace su16
-
-namespace lu16_32 {
-constexpr auto length = hal::bit_mask::from<16, 23>();
-constexpr auto instruction0 = hal::bit_mask::from<15, 8>();
-constexpr auto instruction1 = hal::bit_mask::from<7, 0>();
-constexpr auto instruction2 = hal::bit_mask::from<31, 24>();
-constexpr auto instruction3 = hal::bit_mask::from<23, 16>();
-constexpr auto instruction4 = hal::bit_mask::from<15, 8>();
-constexpr auto instruction5 = hal::bit_mask::from<7, 0>();
-constexpr auto instruction6 = hal::bit_mask::from<24, 31>();
-}  // namespace lu16_32
 
 enum class runtime_state : std::uint8_t
 {
@@ -240,36 +320,6 @@ inline void* extract_thrown_object(void* p_exception_object)
   auto object_address = reinterpret_cast<std::intptr_t>(p_exception_object);
   auto start_of_thrown = object_address + sizeof(exception_object);
   return reinterpret_cast<exception_object*>(start_of_thrown);
-}
-
-std::uint32_t to_absolute_address(void const* p_object)
-{
-  constexpr auto signed_bit_31 = hal::bit_mask::from<30>();
-  constexpr auto signed_bit_32 = hal::bit_mask::from<31>();
-  auto object_address = reinterpret_cast<std::int32_t>(p_object);
-  auto offset = *reinterpret_cast<std::uint32_t const*>(p_object);
-
-  // Sign extend the offset to 32-bits
-  if (hal::bit_extract<signed_bit_31>(offset)) {
-    hal::bit_modify(offset).set<signed_bit_32>();
-  } else {
-    hal::bit_modify(offset).clear<signed_bit_32>();
-  }
-
-  auto signed_offset = static_cast<std::int32_t>(offset);
-  std::int32_t final_address = object_address + signed_offset;
-  return static_cast<std::uint32_t>(final_address);
-}
-
-[[gnu::used]] inline std::uint32_t runtime_to_absolute_address(
-  void const* p_object)
-{
-  return to_absolute_address(p_object);
-}
-
-inline std::uint32_t* to_absolute_address_ptr(void const* p_object)
-{
-  return reinterpret_cast<std::uint32_t*>(to_absolute_address(p_object));
 }
 }  // namespace ke
 

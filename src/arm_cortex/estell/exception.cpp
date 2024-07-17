@@ -14,8 +14,10 @@
 
 #include <algorithm>
 #include <bit>
+#include <concepts>
 #include <exception>
 #include <span>
+#include <type_traits>
 #include <typeinfo>
 
 #include "internal.hpp"
@@ -78,63 +80,6 @@ inline void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
   );
 }
 
-bool index_entry_t::has_inlined_personality() const
-{
-  // 31st bit is `1` when the personality/unwind information is inlined, other
-  // otherwise, personality_offset is an offset.
-  constexpr auto mask = hal::bit_mask::from<31>();
-  return hal::bit_extract<mask>(personality_offset);
-}
-
-bool index_entry_t::is_noexcept() const
-{
-  return personality_offset == 0x1;
-}
-
-std::uint32_t const* index_entry_t::personality() const
-{
-  return to_absolute_address_ptr(&personality_offset);
-}
-
-std::uint32_t const* index_entry_t::lsda_data() const
-{
-  constexpr auto personality_type = hal::bit_mask::from<24, 27>();
-  // +1 to skip the prel31 offset to the personality function
-  auto const* header = personality() + 1;
-  if (hal::bit_extract<personality_type>(*header) == 0x0) {
-    return header + 1;
-  }
-  if (hal::bit_extract<lu16_32::length>(*header) == 1) {
-    return header + 2;
-  }
-  if (hal::bit_extract<lu16_32::length>(*header) > 2) {
-    return header + 2;
-  }
-  return header + 3;
-}
-
-std::uint32_t const* index_entry_t::descriptor_start() const
-{
-  constexpr auto type_mask = hal::bit_mask{ .position = 24, .width = 8 };
-
-  auto* personality_address = personality();
-  auto type = hal::bit_extract<type_mask>(*personality_address);
-
-  // TODO(kammce): comment why each of these works!
-  if (type == 0x0) {
-    return personality_address + 1;
-  }
-
-  // The limit for ARM exceptions instructions is 7. LD optimizes the ARM
-  // exception spec by removing the "word length" specifier allowing the
-  // instructions to fit in 2 words.
-  return personality_address + 2;
-}
-
-function_t index_entry_t::function() const
-{
-  return function_t(to_absolute_address(&function_offset));
-}
 
 struct index_less_than
 {
@@ -178,7 +123,8 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
   return *(index - 1);
 }
 
-void pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
+[[gnu::always_inline]] inline void pop_registers(cortex_m_cpu& p_cpu,
+                                                 std::uint32_t mask)
 {
   // The mask may not demand that the stack pointer be popped, but the
   // stack pointer will still need to be popped anyway, so this check
@@ -199,7 +145,8 @@ void pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
   p_cpu.sp = stack_pointer;
 }
 
-std::uint32_t read_uleb128(std::uint8_t const** p_ptr)
+[[gnu::always_inline]] inline constexpr std::uint32_t read_uleb128(
+  std::uint8_t const** p_ptr)
 {
   std::uint32_t result = 0;
   std::uint8_t shift_amount = 0;
@@ -266,8 +213,9 @@ personality_encoding operator&(personality_encoding const& p_encoding,
     static_cast<std::uint8_t>(p_encoding) & static_cast<std::uint8_t>(p_byte));
 }
 
-std::uintptr_t read_encoded_data(std::uint8_t const** p_data,
-                                 personality_encoding p_encoding)
+[[gnu::always_inline]] inline std::uintptr_t read_encoded_data(
+  std::uint8_t const** p_data,
+  personality_encoding p_encoding)
 {
   std::uint8_t const* ptr = *p_data;
   std::uintptr_t result = 0;
@@ -413,14 +361,14 @@ inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
     "ldr r12, [%[regs], #48]\n"  // Load R12
     "ldr sp, [%[regs], #52]\n"   // Load SP
     "ldr lr, [%[regs], #56]\n"   // Load LR
-    "ldr pc, [%[regs], #60]\n"
+    "ldr pc, [%[regs], #60]\n"   // Load PC
     :
     : [regs] "r"(&p_cpu_core)
     : "memory",
       "r0",
       "r1",
       "r2",
-      // skip r3
+      // skip r3 & use it as the offset register
       "r4",
       "r5",
       "r6",
@@ -430,10 +378,12 @@ inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
       "r9",
       "r10",
       "r11",
-      "r12");
+      "r12",
+      "lr",
+      "pc");
 }
 
-void enter_function(exception_object& p_exception_object)
+inline void enter_function(exception_object& p_exception_object)
 {
   std::uint8_t const* lsda_data = reinterpret_cast<std::uint8_t const*>(
     p_exception_object.cache.entry_ptr->lsda_data());
@@ -456,20 +406,38 @@ void enter_function(exception_object& p_exception_object)
   std::uint32_t landing_pad = 0;
   std::uint32_t action = 0;
 
-  do {
-    auto start = read_encoded_data(&lsda_data, call_site_format);
-    auto length = read_encoded_data(&lsda_data, call_site_format);
-    landing_pad = read_encoded_data(&lsda_data, call_site_format);
-    action = read_uleb128(&lsda_data);
+  // Optimize for the most common use case and encouraged
+  if (call_site_format == personality_encoding::uleb128) {
+    do {
+      auto start = read_uleb128(&lsda_data);
+      auto length = read_uleb128(&lsda_data);
+      landing_pad = read_uleb128(&lsda_data);
+      action = read_uleb128(&lsda_data);
 
-    if (start <= rel_pc && rel_pc <= start + length) {
-      if (landing_pad == 0) {
-        p_exception_object.cache.state(runtime_state::unwind_frame);
-        return;
+      if (start <= rel_pc && rel_pc <= start + length) {
+        if (landing_pad == 0) {
+          p_exception_object.cache.state(runtime_state::unwind_frame);
+          return;
+        }
+        break;
       }
-      break;
-    }
-  } while (lsda_data < call_site_end);
+    } while (lsda_data < call_site_end);
+  } else {
+    do {
+      auto start = read_encoded_data(&lsda_data, call_site_format);
+      auto length = read_encoded_data(&lsda_data, call_site_format);
+      landing_pad = read_encoded_data(&lsda_data, call_site_format);
+      action = read_uleb128(&lsda_data);
+
+      if (start <= rel_pc && rel_pc <= start + length) {
+        if (landing_pad == 0) {
+          p_exception_object.cache.state(runtime_state::unwind_frame);
+          return;
+        }
+        break;
+      }
+    } while (lsda_data < call_site_end);
+  }
 
   action_decoder a_decoder(end_of_tt_table, call_site_end, action);
 
@@ -1645,8 +1613,8 @@ void raise_exception(exception_object& p_exception_object)
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
-        p_exception_object.cache.relative_address(p_exception_object.cpu.pc -
-                                                  index_entry.function());
+        p_exception_object.cache.relative_address(
+          (p_exception_object.cpu.pc - index_entry.function()));
         p_exception_object.cache.state(runtime_state::enter_function);
         [[fallthrough]];
       }
