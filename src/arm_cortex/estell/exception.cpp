@@ -66,20 +66,20 @@ exception_ptr current_exception() noexcept
 
 inline void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
-  asm volatile("mrs r0, MSP\n"         // Move Main Stack Pointer to r0
-               "stmia %0, {r0-r12}\n"  // Store r0 to r12 into the array
-               "mov r0, SP\n"          // Move SP to r0
-               "str r0, [%0, #52]\n"   // Store SP at the appropriate index
-               "mov r0, LR\n"          // Move LR to r0
-               "str r0, [%0, #56]\n"   // Store LR at the appropriate index
-               "mov r0, PC\n"          // Move PC to r0
-               "str r0, [%0, #60]\n"   // Store PC at the appropriate index
+  // We only capture r4 to r12 because __cxa_throw & __cxa_rethrow should be
+  // normal functions. Meaning they will not utilize the `sp = r[nnnn]`
+  // instruction, meaning that the callee unpreserved registers can be left
+  // alone.
+  asm volatile("mov r0, pc\n"          // Move PC to r0 (Before pipeline)
+               "stmia %0, {r4-r12}\n"  // Store r4 to r12 into the array
+               "str sp, [%0, #52]\n"   // Store SP @ 52
+               "str lr, [%0, #56]\n"   // Store LR @ 56
+               "str r0, [%0, #60]\n"   // Store PC @ 60
                :                       // no output
                : "r"(&p_cpu_core)      // input is the address of the array
                : "r0"                  // r0 is being modified
   );
 }
-
 
 struct index_less_than
 {
@@ -169,9 +169,9 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 }
 
 template<typename T>
-T const volatile* as(void const volatile* p_ptr)
+T const* as(void const* p_ptr)
 {
-  return reinterpret_cast<T const volatile*>(p_ptr);
+  return reinterpret_cast<T const*>(p_ptr);
 }
 
 /**
@@ -309,6 +309,8 @@ public:
 
   std::type_info const* get_next_catch_type()
   {
+    // TODO(kammce): This isn't how it actually works. This needs to be
+    // corrected.
     if (m_action == nullptr) {
       return nullptr;
     }
@@ -345,25 +347,26 @@ private:
 
 inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
+#if 0
   asm volatile(
-    "ldr r0, [%[regs], #0]\n"  // Load R0
-    "ldr r1, [%[regs], #4]\n"  // Load R1
-    "ldr r2, [%[regs], #8]\n"  // Load R2
+    "ldr r0, [%[reg], #0]\n"  // Load R0
+    "ldr r1, [%[reg], #4]\n"  // Load R1
+    "ldr r2, [%[reg], #8]\n"  // Load R2
     // Skip loading R3, R3 will be used for loading all other registers
-    "ldr r4, [%[regs], #16]\n"   // Load R4
-    "ldr r5, [%[regs], #20]\n"   // Load R5
-    "ldr r6, [%[regs], #24]\n"   // Load R6
-    "ldr r7, [%[regs], #28]\n"   // Load R7
-    "ldr r8, [%[regs], #32]\n"   // Load R8
-    "ldr r9, [%[regs], #36]\n"   // Load R9
-    "ldr r10, [%[regs], #40]\n"  // Load R10
-    "ldr r11, [%[regs], #44]\n"  // Load R11
-    "ldr r12, [%[regs], #48]\n"  // Load R12
-    "ldr sp, [%[regs], #52]\n"   // Load SP
-    "ldr lr, [%[regs], #56]\n"   // Load LR
-    "ldr pc, [%[regs], #60]\n"   // Load PC
+    "ldr r4, [%[reg], #16]\n"   // Load R4
+    "ldr r5, [%[reg], #20]\n"   // Load R5
+    "ldr r6, [%[reg], #24]\n"   // Load R6
+    "ldr r7, [%[reg], #28]\n"   // Load R7
+    "ldr r8, [%[reg], #32]\n"   // Load R8
+    "ldr r9, [%[reg], #36]\n"   // Load R9
+    "ldr r10, [%[reg], #40]\n"  // Load R10
+    "ldr r11, [%[reg], #44]\n"  // Load R11
+    "ldr r12, [%[reg], #48]\n"  // Load R12
+    "ldr sp, [%[reg], #52]\n"   // Load SP
+    "ldr lr, [%[reg], #56]\n"   // Load LR
+    "ldr pc, [%[reg], #60]\n"   // Load PC
     :
-    : [regs] "r"(&p_cpu_core)
+    : [reg] "r"(&p_cpu_core)
     : "memory",
       "r0",
       "r1",
@@ -381,6 +384,33 @@ inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
       "r12",
       "lr",
       "pc");
+#else
+  asm volatile("ldmia.w	%[reg], {r0, r1, r2}\n"
+               "add     %[reg], #12\n"
+               "ldmia.w	%[reg], {r4, r5, r6, r7, r8, r9, r10, r11, r12}\n"
+               "ldr sp, [%[reg], #40]\n"  // Load SP
+               "ldr lr, [%[reg], #44]\n"  // Load LR
+               "ldr pc, [%[reg], #48]\n"  // Load PC
+               :
+               : [reg] "r"(&p_cpu_core)
+               : "memory",
+                 "r0",
+                 "r1",
+                 "r2",
+                 // skip r3 & use it as the offset register
+                 "r4",
+                 "r5",
+                 "r6",
+                 "r7",
+                 "fp",
+                 "r8",
+                 "r9",
+                 "r10",
+                 "r11",
+                 "r12",
+                 "lr",
+                 "pc");
+#endif
 }
 
 inline void enter_function(exception_object& p_exception_object)
@@ -461,7 +491,7 @@ inline void enter_function(exception_object& p_exception_object)
 template<size_t Amount>
 constexpr std::uint32_t vsp_deallocate_amount()
 {
-  return (Amount << 2);
+  return Amount + 1;
 }
 
 enum class pop_lr
@@ -510,16 +540,20 @@ inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
     *(r4_pointer++) = *(sp_ptr++);
   }
 #else
-  for (std::size_t i = 0; i < PopCount + 1; i++) {
-    *(r4_pointer++) = *(sp_ptr++);
+  if constexpr (PopCount == 0) {
+    *r4_pointer = *(sp_ptr++);
+  } else {
+    for (std::size_t i = 0; i < PopCount + 1; i++) {
+      r4_pointer[i] = sp_ptr[i];
+    }
   }
 #endif
 
   if constexpr (PopLinkRegister == pop_lr::do_it) {
-    p_virtual_cpu.lr = *(sp_ptr++);
+    p_virtual_cpu.lr = sp_ptr[PopCount + 1];
   }
 
-  return sp_ptr;
+  return sp_ptr + PopCount + 1 + unsigned{ PopLinkRegister == pop_lr::do_it };
 }
 
 void unwind_frame(instructions_t const& p_instructions,
@@ -904,42 +938,44 @@ void unwind_frame(instructions_t const& p_instructions,
     // loop here rather than unroll this loop. Unless there is some incentive to
     // improve the performance for this instruction.
 
-    // Get the previous instruction and save it to the u32_storage
-    u32_storage = *(instruction_ptr - 1);
+    // Save the lower 4-bits of the previous instruction and the 8-bits of the
+    // current instruction and combine them.
+    u32_storage = *(instruction_ptr - 1) & 0xF;
+    u32_storage <<= 8;
+    u32_storage |= *(instruction_ptr);
 
     if (u32_storage & (1 << 3)) {
       move_lr_to_pc = false;
     }
+
+    // TODO(kammce): consider (remark b)
+    // ========================================================================
+    // > ‘Pop’ generally denotes removal from the stack commencing at current
+    // > vsp, with subsequent increment of vsp to beyond the removed quantities.
+    // > The sole exception to this rule is popping r13, when the writeback of
+    // > the loaded value to vsp is delayed until after the whole instruction
+    // > has completed. When multiple registers are popped by a single
+    // > instruction they are taken as lowest numbered register at lowest stack
+    // > address.
+    // =========================================================================
 
     while (u32_storage) {
       // Get the first 1's distance from the right. We add 12 because the
       // mask's first bit represents r4 and increases from there. The first
       // byte, the instruction byte, only contains the registers from 12
       // to 15.
-      std::uint32_t lsb_bit_position = std::countr_zero(u32_storage) + 12U;
-      // Copy value from the stack, increment stack pointer.
-      virtual_cpu[lsb_bit_position] = *(sp_ptr++);
+      std::uint32_t lsb_bit_position = std::countr_zero(u32_storage);
       // Clear the bit for the lsb_bit_position
       u32_storage = u32_storage & ~(1 << lsb_bit_position);
-    }
-
-    u32_storage = *(instruction_ptr);
-
-    while (u32_storage) {
-      // Get the first 1's distance from the right. We add 4 because the mask's
-      // first bit represents r4 and increases from there.
-      std::uint32_t lsb_bit_position = std::countr_zero(u32_storage) + 4U;
       // Copy value from the stack, increment stack pointer.
-      virtual_cpu[lsb_bit_position] = *(sp_ptr++);
-      // Clear the bit for the lsb_bit_position
-      u32_storage = u32_storage & ~(1 << lsb_bit_position);
+      virtual_cpu[lsb_bit_position + 4U] = *(sp_ptr++);
     }
 
     instruction_ptr++;
     continue;
 
   // +=========================================================================+
-  // |                              VSP = R[nnnn]                              |
+  // |                            VSP = R[nnnn]                                |
   // +=========================================================================+
   assign_to_vsp_to_reg_nnnn:
     // Get the current instruction and get all lower 4-bits
@@ -1007,392 +1043,392 @@ void unwind_frame(instructions_t const& p_instructions,
   // |                                Add VSP                                  |
   // +=========================================================================+
   vsp_add_0:
-    sp_ptr += vsp_deallocate_amount<0>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<0>();
     continue;
   vsp_add_1:
-    sp_ptr += vsp_deallocate_amount<1>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<1>();
     continue;
   vsp_add_2:
-    sp_ptr += vsp_deallocate_amount<2>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<2>();
     continue;
   vsp_add_3:
-    sp_ptr += vsp_deallocate_amount<3>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<3>();
     continue;
   vsp_add_4:
-    sp_ptr += vsp_deallocate_amount<4>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<4>();
     continue;
   vsp_add_5:
-    sp_ptr += vsp_deallocate_amount<5>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<5>();
     continue;
   vsp_add_6:
-    sp_ptr += vsp_deallocate_amount<6>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<6>();
     continue;
   vsp_add_7:
-    sp_ptr += vsp_deallocate_amount<7>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<7>();
     continue;
   vsp_add_8:
-    sp_ptr += vsp_deallocate_amount<8>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<8>();
     continue;
   vsp_add_9:
-    sp_ptr += vsp_deallocate_amount<9>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<9>();
     continue;
   vsp_add_10:
-    sp_ptr += vsp_deallocate_amount<10>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<10>();
     continue;
   vsp_add_11:
-    sp_ptr += vsp_deallocate_amount<11>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<11>();
     continue;
   vsp_add_12:
-    sp_ptr += vsp_deallocate_amount<12>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<12>();
     continue;
   vsp_add_13:
-    sp_ptr += vsp_deallocate_amount<13>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<13>();
     continue;
   vsp_add_14:
-    sp_ptr += vsp_deallocate_amount<14>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<14>();
     continue;
   vsp_add_15:
-    sp_ptr += vsp_deallocate_amount<15>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<15>();
     continue;
   vsp_add_16:
-    sp_ptr += vsp_deallocate_amount<16>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<16>();
     continue;
   vsp_add_17:
-    sp_ptr += vsp_deallocate_amount<17>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<17>();
     continue;
   vsp_add_18:
-    sp_ptr += vsp_deallocate_amount<18>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<18>();
     continue;
   vsp_add_19:
-    sp_ptr += vsp_deallocate_amount<19>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<19>();
     continue;
   vsp_add_20:
-    sp_ptr += vsp_deallocate_amount<20>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<20>();
     continue;
   vsp_add_21:
-    sp_ptr += vsp_deallocate_amount<21>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<21>();
     continue;
   vsp_add_22:
-    sp_ptr += vsp_deallocate_amount<22>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<22>();
     continue;
   vsp_add_23:
-    sp_ptr += vsp_deallocate_amount<23>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<23>();
     continue;
   vsp_add_24:
-    sp_ptr += vsp_deallocate_amount<24>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<24>();
     continue;
   vsp_add_25:
-    sp_ptr += vsp_deallocate_amount<25>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<25>();
     continue;
   vsp_add_26:
-    sp_ptr += vsp_deallocate_amount<26>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<26>();
     continue;
   vsp_add_27:
-    sp_ptr += vsp_deallocate_amount<27>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<27>();
     continue;
   vsp_add_28:
-    sp_ptr += vsp_deallocate_amount<28>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<28>();
     continue;
   vsp_add_29:
-    sp_ptr += vsp_deallocate_amount<29>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<29>();
     continue;
   vsp_add_30:
-    sp_ptr += vsp_deallocate_amount<30>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<30>();
     continue;
   vsp_add_31:
-    sp_ptr += vsp_deallocate_amount<31>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<31>();
     continue;
   vsp_add_32:
-    sp_ptr += vsp_deallocate_amount<32>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<32>();
     continue;
   vsp_add_33:
-    sp_ptr += vsp_deallocate_amount<33>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<33>();
     continue;
   vsp_add_34:
-    sp_ptr += vsp_deallocate_amount<34>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<34>();
     continue;
   vsp_add_35:
-    sp_ptr += vsp_deallocate_amount<35>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<35>();
     continue;
   vsp_add_36:
-    sp_ptr += vsp_deallocate_amount<36>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<36>();
     continue;
   vsp_add_37:
-    sp_ptr += vsp_deallocate_amount<37>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<37>();
     continue;
   vsp_add_38:
-    sp_ptr += vsp_deallocate_amount<38>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<38>();
     continue;
   vsp_add_39:
-    sp_ptr += vsp_deallocate_amount<39>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<39>();
     continue;
   vsp_add_40:
-    sp_ptr += vsp_deallocate_amount<40>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<40>();
     continue;
   vsp_add_41:
-    sp_ptr += vsp_deallocate_amount<41>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<41>();
     continue;
   vsp_add_42:
-    sp_ptr += vsp_deallocate_amount<42>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<42>();
     continue;
   vsp_add_43:
-    sp_ptr += vsp_deallocate_amount<43>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<43>();
     continue;
   vsp_add_44:
-    sp_ptr += vsp_deallocate_amount<44>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<44>();
     continue;
   vsp_add_45:
-    sp_ptr += vsp_deallocate_amount<45>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<45>();
     continue;
   vsp_add_46:
-    sp_ptr += vsp_deallocate_amount<46>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<46>();
     continue;
   vsp_add_47:
-    sp_ptr += vsp_deallocate_amount<47>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<47>();
     continue;
   vsp_add_48:
-    sp_ptr += vsp_deallocate_amount<48>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<48>();
     continue;
   vsp_add_49:
-    sp_ptr += vsp_deallocate_amount<49>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<49>();
     continue;
   vsp_add_50:
-    sp_ptr += vsp_deallocate_amount<50>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<50>();
     continue;
   vsp_add_51:
-    sp_ptr += vsp_deallocate_amount<51>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<51>();
     continue;
   vsp_add_52:
-    sp_ptr += vsp_deallocate_amount<52>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<52>();
     continue;
   vsp_add_53:
-    sp_ptr += vsp_deallocate_amount<53>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<53>();
     continue;
   vsp_add_54:
-    sp_ptr += vsp_deallocate_amount<54>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<54>();
     continue;
   vsp_add_55:
-    sp_ptr += vsp_deallocate_amount<55>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<55>();
     continue;
   vsp_add_56:
-    sp_ptr += vsp_deallocate_amount<56>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<56>();
     continue;
   vsp_add_57:
-    sp_ptr += vsp_deallocate_amount<57>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<57>();
     continue;
   vsp_add_58:
-    sp_ptr += vsp_deallocate_amount<58>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<58>();
     continue;
   vsp_add_59:
-    sp_ptr += vsp_deallocate_amount<59>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<59>();
     continue;
   vsp_add_60:
-    sp_ptr += vsp_deallocate_amount<60>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<60>();
     continue;
   vsp_add_61:
-    sp_ptr += vsp_deallocate_amount<61>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<61>();
     continue;
   vsp_add_62:
-    sp_ptr += vsp_deallocate_amount<62>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<62>();
     continue;
   vsp_add_63:
-    sp_ptr += vsp_deallocate_amount<63>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<63>();
     continue;
 
   // +=========================================================================+
   // |                                Sub VSP                                  |
   // +=========================================================================+
   vsp_sub_0:
-    sp_ptr -= vsp_deallocate_amount<0>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<0>();
     continue;
   vsp_sub_1:
-    sp_ptr -= vsp_deallocate_amount<1>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<1>();
     continue;
   vsp_sub_2:
-    sp_ptr -= vsp_deallocate_amount<2>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<2>();
     continue;
   vsp_sub_3:
-    sp_ptr -= vsp_deallocate_amount<3>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<3>();
     continue;
   vsp_sub_4:
-    sp_ptr -= vsp_deallocate_amount<4>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<4>();
     continue;
   vsp_sub_5:
-    sp_ptr -= vsp_deallocate_amount<5>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<5>();
     continue;
   vsp_sub_6:
-    sp_ptr -= vsp_deallocate_amount<6>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<6>();
     continue;
   vsp_sub_7:
-    sp_ptr -= vsp_deallocate_amount<7>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<7>();
     continue;
   vsp_sub_8:
-    sp_ptr -= vsp_deallocate_amount<8>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<8>();
     continue;
   vsp_sub_9:
-    sp_ptr -= vsp_deallocate_amount<9>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<9>();
     continue;
   vsp_sub_10:
-    sp_ptr -= vsp_deallocate_amount<10>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<10>();
     continue;
   vsp_sub_11:
-    sp_ptr -= vsp_deallocate_amount<11>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<11>();
     continue;
   vsp_sub_12:
-    sp_ptr -= vsp_deallocate_amount<12>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<12>();
     continue;
   vsp_sub_13:
-    sp_ptr -= vsp_deallocate_amount<13>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<13>();
     continue;
   vsp_sub_14:
-    sp_ptr -= vsp_deallocate_amount<14>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<14>();
     continue;
   vsp_sub_15:
-    sp_ptr -= vsp_deallocate_amount<15>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<15>();
     continue;
   vsp_sub_16:
-    sp_ptr -= vsp_deallocate_amount<16>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<16>();
     continue;
   vsp_sub_17:
-    sp_ptr -= vsp_deallocate_amount<17>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<17>();
     continue;
   vsp_sub_18:
-    sp_ptr -= vsp_deallocate_amount<18>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<18>();
     continue;
   vsp_sub_19:
-    sp_ptr -= vsp_deallocate_amount<19>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<19>();
     continue;
   vsp_sub_20:
-    sp_ptr -= vsp_deallocate_amount<20>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<20>();
     continue;
   vsp_sub_21:
-    sp_ptr -= vsp_deallocate_amount<21>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<21>();
     continue;
   vsp_sub_22:
-    sp_ptr -= vsp_deallocate_amount<22>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<22>();
     continue;
   vsp_sub_23:
-    sp_ptr -= vsp_deallocate_amount<23>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<23>();
     continue;
   vsp_sub_24:
-    sp_ptr -= vsp_deallocate_amount<24>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<24>();
     continue;
   vsp_sub_25:
-    sp_ptr -= vsp_deallocate_amount<25>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<25>();
     continue;
   vsp_sub_26:
-    sp_ptr -= vsp_deallocate_amount<26>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<26>();
     continue;
   vsp_sub_27:
-    sp_ptr -= vsp_deallocate_amount<27>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<27>();
     continue;
   vsp_sub_28:
-    sp_ptr -= vsp_deallocate_amount<28>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<28>();
     continue;
   vsp_sub_29:
-    sp_ptr -= vsp_deallocate_amount<29>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<29>();
     continue;
   vsp_sub_30:
-    sp_ptr -= vsp_deallocate_amount<30>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<30>();
     continue;
   vsp_sub_31:
-    sp_ptr -= vsp_deallocate_amount<31>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<31>();
     continue;
   vsp_sub_32:
-    sp_ptr -= vsp_deallocate_amount<32>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<32>();
     continue;
   vsp_sub_33:
-    sp_ptr -= vsp_deallocate_amount<33>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<33>();
     continue;
   vsp_sub_34:
-    sp_ptr -= vsp_deallocate_amount<34>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<34>();
     continue;
   vsp_sub_35:
-    sp_ptr -= vsp_deallocate_amount<35>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<35>();
     continue;
   vsp_sub_36:
-    sp_ptr -= vsp_deallocate_amount<36>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<36>();
     continue;
   vsp_sub_37:
-    sp_ptr -= vsp_deallocate_amount<37>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<37>();
     continue;
   vsp_sub_38:
-    sp_ptr -= vsp_deallocate_amount<38>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<38>();
     continue;
   vsp_sub_39:
-    sp_ptr -= vsp_deallocate_amount<39>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<39>();
     continue;
   vsp_sub_40:
-    sp_ptr -= vsp_deallocate_amount<40>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<40>();
     continue;
   vsp_sub_41:
-    sp_ptr -= vsp_deallocate_amount<41>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<41>();
     continue;
   vsp_sub_42:
-    sp_ptr -= vsp_deallocate_amount<42>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<42>();
     continue;
   vsp_sub_43:
-    sp_ptr -= vsp_deallocate_amount<43>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<43>();
     continue;
   vsp_sub_44:
-    sp_ptr -= vsp_deallocate_amount<44>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<44>();
     continue;
   vsp_sub_45:
-    sp_ptr -= vsp_deallocate_amount<45>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<45>();
     continue;
   vsp_sub_46:
-    sp_ptr -= vsp_deallocate_amount<46>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<46>();
     continue;
   vsp_sub_47:
-    sp_ptr -= vsp_deallocate_amount<47>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<47>();
     continue;
   vsp_sub_48:
-    sp_ptr -= vsp_deallocate_amount<48>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<48>();
     continue;
   vsp_sub_49:
-    sp_ptr -= vsp_deallocate_amount<49>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<49>();
     continue;
   vsp_sub_50:
-    sp_ptr -= vsp_deallocate_amount<50>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<50>();
     continue;
   vsp_sub_51:
-    sp_ptr -= vsp_deallocate_amount<51>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<51>();
     continue;
   vsp_sub_52:
-    sp_ptr -= vsp_deallocate_amount<52>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<52>();
     continue;
   vsp_sub_53:
-    sp_ptr -= vsp_deallocate_amount<53>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<53>();
     continue;
   vsp_sub_54:
-    sp_ptr -= vsp_deallocate_amount<54>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<54>();
     continue;
   vsp_sub_55:
-    sp_ptr -= vsp_deallocate_amount<55>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<55>();
     continue;
   vsp_sub_56:
-    sp_ptr -= vsp_deallocate_amount<56>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<56>();
     continue;
   vsp_sub_57:
-    sp_ptr -= vsp_deallocate_amount<57>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<57>();
     continue;
   vsp_sub_58:
-    sp_ptr -= vsp_deallocate_amount<58>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<58>();
     continue;
   vsp_sub_59:
-    sp_ptr -= vsp_deallocate_amount<59>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<59>();
     continue;
   vsp_sub_60:
-    sp_ptr -= vsp_deallocate_amount<60>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<60>();
     continue;
   vsp_sub_61:
-    sp_ptr -= vsp_deallocate_amount<61>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<61>();
     continue;
   vsp_sub_62:
-    sp_ptr -= vsp_deallocate_amount<62>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<62>();
     continue;
   vsp_sub_63:
-    sp_ptr -= vsp_deallocate_amount<63>();
+    sp_ptr = sp_ptr + vsp_deallocate_amount<63>();
     continue;
   }
 
@@ -1709,7 +1745,12 @@ extern "C"
     exception_object.cpu.pc = stack_pointer[1];
     exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == Release
-#error "Sorry Release mode unwinding is not supported yet.";
+    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
+    exception_object.cpu.r3 = stack_pointer[0];
+    exception_object.cpu.r4 = stack_pointer[1];
+    exception_object.cpu.r5 = stack_pointer[2];
+    exception_object.cpu.pc = stack_pointer[3];
+    exception_object.cpu.sp = stack_pointer + 4;
 #elif OPTIMIZATION_LEVEL == RelWithDebInfo
 #error "Sorry Release mode unwinding is not supported yet.";
 #endif
@@ -1745,7 +1786,10 @@ extern "C"
     exception_object.cpu.pc = stack_pointer[1];
     exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == Release
-#error "Sorry Release mode unwinding is not supported yet.";
+    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
+    exception_object.cpu.r4 = stack_pointer[0];
+    exception_object.cpu.pc = stack_pointer[1];
+    exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == RelWithDebInfo
 #error "Sorry Release mode unwinding is not supported yet.";
 #endif

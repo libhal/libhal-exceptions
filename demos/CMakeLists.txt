@@ -19,6 +19,7 @@ project(demos LANGUAGES CXX)
 libhal_build_demos(
   DEMOS
   single_level
+  multi_levels
 
   PACKAGES
   libhal-exceptions
