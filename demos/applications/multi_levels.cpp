@@ -20,13 +20,13 @@ struct my_error_t
 
 int funct_group0_0();
 int funct_group1_0();
-// int funct_group2_0();
-// int funct_group3_0();
-// int funct_group4_0();
-// int funct_group5_0();
-// int funct_group6_0();
-// int funct_group7_0();
-// int funct_group8_0();
+int funct_group2_0();
+int funct_group3_0();
+int funct_group4_0();
+int funct_group5_0();
+int funct_group6_0();
+int funct_group7_0();
+int funct_group8_0();
 // int funct_group9_0();
 // int funct_group10_0();
 // int funct_group11_0();
@@ -46,13 +46,12 @@ int funct_group1_0();
 
 using signature = int(void);
 
-std::array<signature*, 2> functions = {
-  &funct_group0_0,
-  &funct_group1_0,
+std::array<signature*, 9> functions = {
+  &funct_group0_0, &funct_group1_0, &funct_group2_0,
+  &funct_group3_0, &funct_group4_0, &funct_group5_0,
+  &funct_group6_0, &funct_group7_0, &funct_group8_0,
 #if 0
- funct_group2_0, funct_group3_0,
-  funct_group4_0, funct_group5_0, funct_group6_0, funct_group7_0,
-  funct_group8_0,  funct_group9_0,  funct_group10_0, funct_group11_0,
+  funct_group9_0,  funct_group10_0, funct_group11_0,
   funct_group12_0, funct_group13_0, funct_group14_0, funct_group15_0,
   funct_group16_0,
   funct_group17_0, funct_group18_0, funct_group19_0,
@@ -82,7 +81,7 @@ void application(resource_list& p_resources)
     }
   }
 
-#if 0
+#if 1
   for (std::size_t i = 0; i < functions.size(); i++) {
     bool was_caught = false;
     try {
@@ -149,9 +148,9 @@ public:
   class_1& operator=(class_1&) = delete;
   class_1(class_1&&) noexcept = default;
   class_1& operator=(class_1&&) noexcept = default;
-#if 1
+#if 0
   ~class_1() = default;
-#elif
+#else
   ~class_1()
   {
     side_effect = side_effect & ~(1 << m_channel);
@@ -2932,7 +2931,6 @@ int funct_group7_23()
   return side_effect;
 }
 
-#if 0
 int funct_group8_1();
 
 int funct_group8_0()
@@ -3511,6 +3509,8 @@ int funct_group8_47()
 
   return side_effect;
 }
+
+#if 0
 
 int funct_group9_1();
 

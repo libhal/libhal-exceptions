@@ -251,9 +251,15 @@ personality_encoding operator&(personality_encoding const& p_encoding,
       result = *as<int32_t>(ptr);
       ptr += sizeof(int32_t);
       break;
-    case personality_encoding::sleb128:
     case personality_encoding::sdata8:
+      result = *as<int64_t>(ptr);
+      ptr += sizeof(int64_t);
+      break;
     case personality_encoding::udata8:
+      result = *as<uint64_t>(ptr);
+      ptr += sizeof(uint64_t);
+      break;
+    case personality_encoding::sleb128:
     default:
       std::terminate();
       break;
