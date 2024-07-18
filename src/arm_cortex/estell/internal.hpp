@@ -66,6 +66,7 @@ constexpr std::uint32_t su16_mask = 0b1111'1111'1111'1110;
 
 inline std::uint32_t to_absolute_address(void const* p_object)
 {
+#if 0
   constexpr auto signed_bit_31 = hal::bit_mask::from<30>();
   constexpr auto signed_bit_32 = hal::bit_mask::from<31>();
   auto object_address = std::bit_cast<std::int32_t>(p_object);
@@ -81,6 +82,19 @@ inline std::uint32_t to_absolute_address(void const* p_object)
   auto signed_offset = static_cast<std::int32_t>(offset);
   std::int32_t final_address = object_address + signed_offset;
   return static_cast<std::uint32_t>(final_address);
+#else
+  auto const object_address = std::bit_cast<std::int32_t>(p_object);
+  auto offset = *std::bit_cast<std::int32_t const*>(p_object);
+
+  // Shift bits to the end
+  offset <<= 1;
+  // Arithmetic shift to the right to sign extend.
+  offset >>= 1;
+
+  auto const final_address = object_address + offset;
+  return static_cast<std::uint32_t>(final_address);
+
+#endif
 }
 
 [[gnu::used]] inline std::uint32_t runtime_to_absolute_address(
@@ -248,8 +262,10 @@ enum class runtime_state : std::uint8_t
 
 struct cache_t
 {
-  std::uint32_t state_and_rel_address;
+  std::uint32_t rel_address;
   index_entry_t const* entry_ptr = nullptr;
+  runtime_state inner_state;
+  bool previously_rethrown = false;
 
   static constexpr auto state_mask = hal::bit_mask{
     .position = 24,
@@ -266,35 +282,32 @@ struct cache_t
 
   constexpr inline runtime_state state() const
   {
-    auto state_integer = hal::bit_extract<state_mask>(state_and_rel_address);
-    return static_cast<runtime_state>(state_integer);
+    return inner_state;
   }
 
   constexpr inline std::uint32_t relative_address() const
   {
-    return hal::bit_extract<relative_address_mask>(state_and_rel_address);
+    return rel_address;
   }
 
-  inline void state(runtime_state p_state)
+  constexpr inline void state(runtime_state p_state)
   {
-    auto state_int = static_cast<std::uint8_t>(p_state);
-    hal::bit_modify(state_and_rel_address).insert<state_mask>(state_int);
+    inner_state = p_state;
   }
 
-  inline void rethrown(bool p_rethrown)
+  constexpr inline void rethrown(bool p_rethrown)
   {
-    hal::bit_modify(state_and_rel_address).insert<rethrown_mask>(p_rethrown);
+    previously_rethrown = p_rethrown;
   }
 
   constexpr inline bool rethrown() const
   {
-    return hal::bit_extract<rethrown_mask>(state_and_rel_address);
+    return previously_rethrown;
   }
 
-  inline void relative_address(std::uint32_t p_rel_address)
+  constexpr inline void relative_address(std::uint32_t p_rel_address)
   {
-    hal::bit_modify(state_and_rel_address)
-      .insert<relative_address_mask>(p_rel_address);
+    rel_address = p_rel_address;
   }
 };
 

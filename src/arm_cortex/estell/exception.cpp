@@ -14,10 +14,8 @@
 
 #include <algorithm>
 #include <bit>
-#include <concepts>
 #include <exception>
 #include <span>
-#include <type_traits>
 #include <typeinfo>
 
 #include "internal.hpp"
@@ -66,19 +64,20 @@ exception_ptr current_exception() noexcept
 
 inline void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
+  register std::uint32_t* res asm("r3") = &p_cpu_core.r4.data;
+
   // We only capture r4 to r12 because __cxa_throw & __cxa_rethrow should be
   // normal functions. Meaning they will not utilize the `sp = r[nnnn]`
   // instruction, meaning that the callee unpreserved registers can be left
   // alone.
   asm volatile("mov r0, pc\n"          // Move PC to r0 (Before pipeline)
-               "stmia %0, {r4-r12}\n"  // Store r4 to r12 into the array
-               "str sp, [%0, #52]\n"   // Store SP @ 52
-               "str lr, [%0, #56]\n"   // Store LR @ 56
-               "str r0, [%0, #60]\n"   // Store PC @ 60
+               "stmia r3, {r4-r12}\n"  // Store r4 to r12 into the array @ &r4
+               "str sp, [r3, #36]\n"   // Store SP @ 36
+               "str lr, [r3, #40]\n"   // Store LR @ 40
+               "str r0, [r3, #44]\n"   // Store PC @ 44
                :                       // no output
-               : "r"(&p_cpu_core)      // input is the address of the array
-               : "r0"                  // r0 is being modified
-  );
+               : "r"(res)              // input is the address of the array
+               : "memory", "r0");
 }
 
 struct index_less_than
@@ -149,20 +148,20 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
   std::uint8_t const** p_ptr)
 {
   std::uint32_t result = 0;
-  std::uint8_t shift_amount = 0;
 
   while (true) {
     constexpr auto more_data = hal::bit_mask::from<7>();
     constexpr auto data = hal::bit_mask::from<0, 6>();
     std::uint8_t const uleb128 = **p_ptr;
 
-    result |= hal::bit_extract<data>(uleb128) << shift_amount;
-    shift_amount += 7;
+    result |= hal::bit_extract<data>(uleb128);
     (*p_ptr)++;
 
     if (not hal::bit_extract<more_data>(uleb128)) {
       break;
     }
+
+    result <<= 7;
   }
 
   return result;
@@ -347,50 +346,14 @@ private:
 
 inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
-#if 0
-  asm volatile(
-    "ldr r0, [%[reg], #0]\n"  // Load R0
-    "ldr r1, [%[reg], #4]\n"  // Load R1
-    "ldr r2, [%[reg], #8]\n"  // Load R2
-    // Skip loading R3, R3 will be used for loading all other registers
-    "ldr r4, [%[reg], #16]\n"   // Load R4
-    "ldr r5, [%[reg], #20]\n"   // Load R5
-    "ldr r6, [%[reg], #24]\n"   // Load R6
-    "ldr r7, [%[reg], #28]\n"   // Load R7
-    "ldr r8, [%[reg], #32]\n"   // Load R8
-    "ldr r9, [%[reg], #36]\n"   // Load R9
-    "ldr r10, [%[reg], #40]\n"  // Load R10
-    "ldr r11, [%[reg], #44]\n"  // Load R11
-    "ldr r12, [%[reg], #48]\n"  // Load R12
-    "ldr sp, [%[reg], #52]\n"   // Load SP
-    "ldr lr, [%[reg], #56]\n"   // Load LR
-    "ldr pc, [%[reg], #60]\n"   // Load PC
-    :
-    : [reg] "r"(&p_cpu_core)
-    : "memory",
-      "r0",
-      "r1",
-      "r2",
-      // skip r3 & use it as the offset register
-      "r4",
-      "r5",
-      "r6",
-      "r7",
-      "fp",
-      "r8",
-      "r9",
-      "r10",
-      "r11",
-      "r12",
-      "lr",
-      "pc");
-#else
-  asm volatile("ldmia.w	%[reg], {r0, r1, r2}\n"
-               "add     %[reg], #12\n"
+  // Skip R2 because it is not used in the exception unwinding
+  // Skip R3 because we are using it
+  asm volatile("ldmia.w	%[reg], {r0, r1}\n"  // R3 is incremented by 8
+               "add     %[reg], #16\n"       // Skip Past R2 + R3
                "ldmia.w	%[reg], {r4, r5, r6, r7, r8, r9, r10, r11, r12}\n"
-               "ldr sp, [%[reg], #40]\n"  // Load SP
-               "ldr lr, [%[reg], #44]\n"  // Load LR
-               "ldr pc, [%[reg], #48]\n"  // Load PC
+               "ldr sp, [%[reg], #36]\n"  // Load SP
+               "ldr lr, [%[reg], #40]\n"  // Load LR
+               "ldr pc, [%[reg], #44]\n"  // Load PC
                :
                : [reg] "r"(&p_cpu_core)
                : "memory",
@@ -408,9 +371,9 @@ inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
                  "r10",
                  "r11",
                  "r12",
+                 // sp skipped here as it is deprecated
                  "lr",
                  "pc");
-#endif
 }
 
 inline void enter_function(exception_object& p_exception_object)
@@ -541,7 +504,7 @@ inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
   }
 #else
   if constexpr (PopCount == 0) {
-    *r4_pointer = *(sp_ptr++);
+    *r4_pointer = *sp_ptr;
   } else {
     for (std::size_t i = 0; i < PopCount + 1; i++) {
       r4_pointer[i] = sp_ptr[i];
@@ -895,8 +858,8 @@ void unwind_frame(instructions_t const& p_instructions,
     break;
 
   subtract_vsp_using_uleb128:
-    u32_storage = read_uleb128(&instruction_ptr);
-    sp_ptr += u32_storage;
+    static constexpr auto uleb128_offset = 0x204 / sizeof(std::uint32_t);
+    sp_ptr += read_uleb128(&instruction_ptr) + uleb128_offset;
     continue;
 
   pop_integer_registers_under_mask_r3_r2_r1_r0:

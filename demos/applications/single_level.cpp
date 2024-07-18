@@ -26,6 +26,9 @@ struct error
 std::uint64_t start = 0;
 std::uint64_t end = 0;
 
+std::uint64_t volatile entry_search_start = 0;
+std::uint64_t volatile entry_search_end = 0;
+
 void foo()
 {
   if (value) {
@@ -33,16 +36,34 @@ void foo()
     throw error{ .data = value };
   }
 }
+namespace ke {
+struct index_entry_t
+{
+  uint32_t a;
+  uint32_t b;
+};
+extern index_entry_t const& get_index_entry(std::uint32_t p_program_counter);
+}  // namespace ke
+
+ke::index_entry_t const* global_index = nullptr;
+std::uint64_t volatile search_time = 0;
 
 void application(resource_list& p_resources)
 {
   resources = &p_resources;
+
+  entry_search_start = resources->clock->uptime();
+  global_index = &ke::get_index_entry(reinterpret_cast<std::uint32_t>(&foo));
+  entry_search_end = resources->clock->uptime();
+
+  search_time = entry_search_end - entry_search_start;
+
   try {
     foo();
   } catch (error const& p_error) {
     end = resources->clock->uptime();
-    while (true) {
-      continue;
-    }
+  }
+  while (true) {
+    continue;
   }
 }

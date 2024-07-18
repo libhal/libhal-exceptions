@@ -69,7 +69,6 @@ void application(resource_list& p_resources)
 
   cycle_map.fill(0);
   happy_cycle_map.fill(std::numeric_limits<std::int32_t>::max());
-  std::uint32_t index = 0;
   for (std::size_t i = 0; i < functions.size(); i++) {
     try {
       functions.at(i)();
@@ -79,12 +78,11 @@ void application(resource_list& p_resources)
       // is not in the correct location.
     } catch ([[maybe_unused]] my_error_t const& p_error) {
       end_cycles = resources->clock->uptime();
-      cycle_map[index++] = end_cycles - start_cycles;
+      cycle_map[i] = end_cycles - start_cycles;
     }
   }
 
-  index = 0;
-
+#if 0
   for (std::size_t i = 0; i < functions.size(); i++) {
     bool was_caught = false;
     try {
@@ -96,9 +94,10 @@ void application(resource_list& p_resources)
     }
     if (!was_caught) {
       end_cycles = resources->clock->uptime();
-      happy_cycle_map[index++] = end_cycles - start_cycles;
+      happy_cycle_map[i] = end_cycles - start_cycles;
     }
   }
+#endif
 
   while (true) {
     continue;
