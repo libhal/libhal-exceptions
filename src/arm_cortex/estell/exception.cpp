@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstdlib>
 #include <exception>
 #include <span>
 #include <typeinfo>
@@ -176,8 +177,10 @@ T const* as(void const* p_ptr)
 /**
  * @brief Dwarf exception handling personality encodings
  *
+ * Spec:
+ * https://refspecs.linuxfoundation.org/LSB_1.3.0/gLSB/gLSB/ehframehdr.html
  */
-enum class personality_encoding : std::uint8_t
+enum class lsda_encoding : std::uint8_t
 {
   absptr = 0x00,
   uleb128 = 0x01,
@@ -199,28 +202,27 @@ enum class personality_encoding : std::uint8_t
   omit = 0xff,
 };
 
-personality_encoding operator&(personality_encoding const& p_encoding,
-                               std::uint8_t const& p_byte)
+constexpr lsda_encoding operator&(lsda_encoding const& p_encoding,
+                                  std::uint8_t const& p_byte)
 {
-  return static_cast<personality_encoding>(
-    static_cast<std::uint8_t>(p_encoding) & p_byte);
+  return static_cast<lsda_encoding>(static_cast<std::uint8_t>(p_encoding) &
+                                    p_byte);
 }
-personality_encoding operator&(personality_encoding const& p_encoding,
-                               personality_encoding const& p_byte)
+constexpr lsda_encoding operator&(lsda_encoding const& p_encoding,
+                                  lsda_encoding const& p_byte)
 {
-  return static_cast<personality_encoding>(
-    static_cast<std::uint8_t>(p_encoding) & static_cast<std::uint8_t>(p_byte));
+  return static_cast<lsda_encoding>(static_cast<std::uint8_t>(p_encoding) &
+                                    static_cast<std::uint8_t>(p_byte));
 }
 
 [[gnu::always_inline]] inline std::uintptr_t read_encoded_data(
   std::uint8_t const** p_data,
-  personality_encoding p_encoding)
+  lsda_encoding p_encoding)
 {
   std::uint8_t const* ptr = *p_data;
   std::uintptr_t result = 0;
-  auto const encoding = static_cast<personality_encoding>(p_encoding);
 
-  if (encoding == personality_encoding::omit) {
+  if (p_encoding == lsda_encoding::omit) {
     return 0;
   }
 
@@ -228,38 +230,38 @@ personality_encoding operator&(personality_encoding const& p_encoding,
   auto const encoding_type = p_encoding & 0x0F;
 
   switch (encoding_type) {
-    case personality_encoding::absptr:
+    case lsda_encoding::absptr:
       result = *as<uintptr_t>(ptr);
       ptr += sizeof(uintptr_t);
       break;
-    case personality_encoding::uleb128:
+    case lsda_encoding::uleb128:
       result = read_uleb128(&ptr);
       break;
-    case personality_encoding::udata2:
+    case lsda_encoding::udata2:
       result = *as<uint16_t>(ptr);
       ptr += sizeof(uint16_t);
       break;
-    case personality_encoding::udata4:
+    case lsda_encoding::udata4:
       result = *as<uint32_t>(ptr);
       ptr += sizeof(uint32_t);
       break;
-    case personality_encoding::sdata2:
+    case lsda_encoding::sdata2:
       result = *as<int16_t>(ptr);
       ptr += sizeof(int16_t);
       break;
-    case personality_encoding::sdata4:
+    case lsda_encoding::sdata4:
       result = *as<int32_t>(ptr);
       ptr += sizeof(int32_t);
       break;
-    case personality_encoding::sdata8:
+    case lsda_encoding::sdata8:
       result = *as<int64_t>(ptr);
       ptr += sizeof(int64_t);
       break;
-    case personality_encoding::udata8:
+    case lsda_encoding::udata8:
       result = *as<uint64_t>(ptr);
       ptr += sizeof(uint64_t);
       break;
-    case personality_encoding::sleb128:
+    case lsda_encoding::sleb128:
     default:
       std::terminate();
       break;
@@ -269,12 +271,12 @@ personality_encoding operator&(personality_encoding const& p_encoding,
   auto const encoding_offset = p_encoding & 0x70;
 
   switch (encoding_offset) {
-    case personality_encoding::pcrel:
-    case personality_encoding::absptr:
-    case personality_encoding::textrel:
-    case personality_encoding::datarel:
-    case personality_encoding::funcrel:
-    case personality_encoding::aligned:
+    case lsda_encoding::pcrel:
+    case lsda_encoding::absptr:
+    case lsda_encoding::textrel:
+    case lsda_encoding::datarel:
+    case lsda_encoding::funcrel:
+    case lsda_encoding::aligned:
     default:
       break;
   }
@@ -384,20 +386,33 @@ inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 
 inline void enter_function(exception_object& p_exception_object)
 {
-  std::uint8_t const* lsda_data = reinterpret_cast<std::uint8_t const*>(
-    p_exception_object.cache.entry_ptr->lsda_data());
+  auto const* lsda_word = p_exception_object.cache.entry_ptr->lsda_data();
+  auto const* lsda_data = reinterpret_cast<std::uint8_t const*>(lsda_word);
 
-  auto const dwarf_offset_info_format = personality_encoding{ *(lsda_data++) };
-  if (dwarf_offset_info_format != personality_encoding::omit) {
+#if 0
+  // [Omit dwarf]-[uleb128 encoding]-[offset uleb128]-[uleb128 encoding]
+  static constexpr std::uint32_t small_lsda = 0xFF'01'80'01;
+  static constexpr std::uint32_t small_lsda_go = 0xFF'01'00'01;
+  static constexpr std::uint32_t medium_lsda = 0xFF'01'80'80;
+#endif
+
+  auto const dwarf_offset_info_format = lsda_encoding{ *(lsda_data++) };
+  if (dwarf_offset_info_format != lsda_encoding::omit) {
     // Ignore this because we don't need it for unwinding.
-    read_encoded_data(&lsda_data, dwarf_offset_info_format);
+    [[maybe_unused]] auto const _ =
+      read_encoded_data(&lsda_data, dwarf_offset_info_format);
   }
 
-  [[maybe_unused]] auto const end_of_type_table_format =
-    personality_encoding{ *(lsda_data++) };
-  auto const offset_to_end_of_tt_table = read_uleb128(&lsda_data);
+  auto const type_table_format = lsda_encoding{ *(lsda_data++) };
+  std::uint32_t offset_to_end_of_tt_table = 0;
+  // if type table offset does not exist then there is only cleanup within
+  // this function.
+  if (type_table_format != lsda_encoding::omit) {
+    offset_to_end_of_tt_table = read_uleb128(&lsda_data);
+  }
   auto const* end_of_tt_table = lsda_data + offset_to_end_of_tt_table;
-  auto const call_site_format = personality_encoding{ *(lsda_data++) };
+
+  auto const call_site_format = lsda_encoding{ *(lsda_data++) };
   auto const call_site_length = read_uleb128(&lsda_data);
   auto const* call_site_end = lsda_data + call_site_length;
 
@@ -406,7 +421,7 @@ inline void enter_function(exception_object& p_exception_object)
   std::uint32_t action = 0;
 
   // Optimize for the most common use case and encouraged
-  if (call_site_format == personality_encoding::uleb128) {
+  if (call_site_format == lsda_encoding::uleb128) {
     do {
       auto start = read_uleb128(&lsda_data);
       auto length = read_uleb128(&lsda_data);
@@ -455,6 +470,247 @@ inline void enter_function(exception_object& p_exception_object)
       restore_cpu_core(cpu);
     }
   }
+}
+
+template<lsda_encoding encoding>
+inline void parse_call_site(std::uint32_t p_rel_pc, std::uint8_t const** p_lsda)
+{
+}
+
+inline void skip_dwarf_info(std::uint8_t const** p_lsda)
+{
+  auto const* lsda = *p_lsda;
+  auto const format = lsda_encoding{ *(lsda++) };
+  if (format != lsda_encoding::omit) {
+    // Ignore this because we don't need it for unwinding.
+    read_encoded_data(&lsda, format);
+  }
+  *p_lsda = lsda;
+}
+
+struct lsda_header_info
+{
+  std::uint8_t const* call_site_end = nullptr;
+  /// If this pointer is behind the call_site end, then there is no type table
+  /// available.
+  std::uint8_t const* type_table_end = nullptr;
+  lsda_encoding type_table_encoding;
+  lsda_encoding call_site_encoding;
+};
+
+inline lsda_header_info parse_header(std::uint8_t const** p_lsda)
+{
+  lsda_header_info info{};
+
+  skip_dwarf_info(p_lsda);
+
+  // Capture type table end. Will be before call_site_end if it did not exist
+  auto const* lsda = *p_lsda;
+  info.type_table_encoding = lsda_encoding{ *(lsda++) };
+  info.type_table_end = lsda;
+  if (info.type_table_encoding != lsda_encoding::omit) {
+    info.type_table_end += read_uleb128(&lsda);
+  }
+
+  info.call_site_encoding = lsda_encoding{ *(lsda++) };
+  info.call_site_end = lsda;
+  info.call_site_end += read_uleb128(&lsda);
+
+  *p_lsda = lsda;
+
+  return info;
+}
+
+inline auto const* to_lsda(exception_object& p_exception_object)
+{
+  return reinterpret_cast<std::uint8_t const*>(
+    p_exception_object.cache.entry_ptr->lsda_data());
+}
+
+inline auto calculate_relative_pc(exception_object& p_exception_object)
+{
+  return p_exception_object.cache.relative_address() & ~1;
+}
+
+template<lsda_encoding encoding>
+[[gnu::always_inline]] inline std::uintptr_t read_encoded_data(
+  std::uint8_t const** p_data)
+{
+  std::uint8_t const* ptr = *p_data;
+  std::uintptr_t result = 0;
+
+  if constexpr (encoding == lsda_encoding::omit) {
+    return 0;
+  }
+
+  static constexpr auto encoding_type = encoding & 0x0F;
+
+  if constexpr (encoding_type == lsda_encoding::absptr) {
+    result = *as<uintptr_t>(ptr);
+    ptr += sizeof(uintptr_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::uleb128) {
+    result = read_uleb128(&ptr);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata2) {
+    result = *as<uint16_t>(ptr);
+    ptr += sizeof(uint16_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata4) {
+    result = *as<uint32_t>(ptr);
+    ptr += sizeof(uint32_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata2) {
+    result = *as<int16_t>(ptr);
+    ptr += sizeof(int16_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata4) {
+    result = *as<int32_t>(ptr);
+    ptr += sizeof(int32_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata8) {
+    result = *as<int64_t>(ptr);
+    ptr += sizeof(int64_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata8) {
+    result = *as<uint64_t>(ptr);
+    ptr += sizeof(uint64_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sleb128) {
+  }
+
+  // NOTE: we currently ignore bits in the mask 0x70.
+
+  // Handle indirection GCC extension
+  if constexpr (static_cast<bool>(encoding & 0x80)) {
+    result = *reinterpret_cast<std::uintptr_t const*>(result);
+  }
+
+  *p_data = ptr;
+
+  return result;
+}
+
+#if 0
+inline void enter_catch_block_or_cleanup(exception_object& p_exception_object,
+                                         std::uint8_t const* p_lsda,
+                                         std::uint32_t p_relative_pc)
+{
+  // fill out later
+}
+#endif
+
+struct call_site_info
+{
+  std::uint32_t start = 0;
+  std::uint32_t length = 0;
+  std::uint32_t landing_pad = 0;
+  std::uint32_t action = 0;
+  bool unwind = false;
+};
+
+template<lsda_encoding encoding>
+inline call_site_info parse_call_site(std::uint8_t const** p_lsda,
+                                      std::uint32_t p_rel_pc,
+                                      std::uint8_t const* p_call_site_end)
+{
+  call_site_info info;
+
+  do {
+    info.start = read_encoded_data<encoding>(p_lsda);
+    info.length = read_encoded_data<encoding>(p_lsda);
+    info.landing_pad = read_encoded_data<encoding>(p_lsda);
+    info.action = read_encoded_data<encoding>(p_lsda);
+
+    if (info.start <= p_rel_pc && p_rel_pc <= info.start + info.length) {
+      if (info.landing_pad == 0) {
+        info.unwind = true;
+      }
+      break;
+    }
+  } while (*p_lsda < p_call_site_end);
+
+  return info;
+}
+
+inline void enter_function2(exception_object& p_exception_object)
+{
+  auto const* lsda = to_lsda(p_exception_object);
+  auto info = parse_header(&lsda);
+  auto const rel_pc = calculate_relative_pc(p_exception_object);
+
+  call_site_info site_info{};
+
+  switch (info.call_site_encoding) {
+    case lsda_encoding::uleb128: {
+      site_info = parse_call_site<lsda_encoding::uleb128>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::udata2: {
+      site_info = parse_call_site<lsda_encoding::udata2>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::udata4: {
+      site_info = parse_call_site<lsda_encoding::udata4>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::udata8: {
+      site_info = parse_call_site<lsda_encoding::udata8>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::sdata2: {
+      site_info = parse_call_site<lsda_encoding::sdata2>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::sdata4: {
+      site_info = parse_call_site<lsda_encoding::sdata4>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::sdata8: {
+      site_info = parse_call_site<lsda_encoding::sdata8>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::sleb128: {
+      site_info = parse_call_site<lsda_encoding::sleb128>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    default: {
+      std::terminate();
+    }
+  }
+
+  if (site_info.unwind) {
+    p_exception_object.cache.state(runtime_state::unwind_frame);
+    return;
+  }
+
+#if 0  // figure out how to do this
+  action_decoder a_decoder(end_of_tt_table, call_site_end, action);
+
+  auto& cpu = p_exception_object.cpu;
+  auto* entry_ptr = p_exception_object.cache.entry_ptr;
+  for (auto const* type_info = a_decoder.get_next_catch_type();
+       type_info != nullptr;
+       type_info = a_decoder.get_next_catch_type()) {
+    if (type_info == p_exception_object.type_info ||
+        type_info == action_decoder::install_context_type()) {
+      cpu[0] = &p_exception_object;
+      cpu[1] = a_decoder.filter();
+      // Set the LSB to 1 for some reason. Cortex-mX is interesting
+      auto final_destination = (entry_ptr->function() + landing_pad) | 0b1;
+      cpu.pc = final_destination;
+      restore_cpu_core(cpu);
+    }
+  }
+#endif
 }
 
 template<size_t Amount>

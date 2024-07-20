@@ -2634,7 +2634,7 @@ int funct_group6_11()
 
   if (side_effect > 0) {
     start_cycles = resources->clock->uptime();
-    throw my_error_t{ .data = { 0xDE, 0xAD } };
+    throw my_error_t{ .data = { 0x11, 0x22 } };
   }
 
   return side_effect;
