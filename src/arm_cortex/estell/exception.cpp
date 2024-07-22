@@ -149,24 +149,129 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
   std::uint8_t const** p_ptr)
 {
   std::uint32_t result = 0;
+  std::uint8_t shift_amount = 0;
 
   while (true) {
-    constexpr auto more_data = hal::bit_mask::from<7>();
-    constexpr auto data = hal::bit_mask::from<0, 6>();
     std::uint8_t const uleb128 = **p_ptr;
 
-    result |= hal::bit_extract<data>(uleb128);
+    result |= (uleb128 & 0x7F) << shift_amount;
     (*p_ptr)++;
 
-    if (not hal::bit_extract<more_data>(uleb128)) {
+    if ((uleb128 == 0x80) == 0x00) {
       break;
     }
 
-    result <<= 7;
+    shift_amount += 7;
   }
 
   return result;
 }
+
+#if 0
+0100'0100
+<< 1 ----> 8 - (7*1)
+100'01000
+>> 1
+1100'0100
+#endif
+
+[[gnu::always_inline]] inline constexpr std::int32_t read_sleb128(
+  std::uint8_t const** p_ptr)
+{
+  constexpr std::uint8_t leb128_bits = 7;
+  std::int32_t result = 0;
+  std::uint32_t shift_amount = 0;
+
+  // No number we deal with on the 32-bit system will or should exceed 31-bits
+  // of information
+  for (std::size_t i = 0; i < sizeof(std::int32_t); i++) {
+    std::uint8_t const sleb128 = **p_ptr;
+
+    result |= (sleb128 & 0x7F) << shift_amount;
+    (*p_ptr)++;
+
+    if ((sleb128 & 0x80) == 0x00) {
+      auto const bytes_consumed = i + 1;
+      auto const loaded_bits = bytes_consumed * leb128_bits;
+      auto const ext_shift_amount = (30 - loaded_bits);
+      // Shift to the left up to the signed MSB bit
+      result <<= ext_shift_amount;
+      // Arithmetic shift right to sign extend number
+      result >>= ext_shift_amount;
+      break;
+    }
+
+    shift_amount += 7;
+  }
+
+  return result;
+}
+
+template<size_t DecodedCount>
+struct decoded_uleb128_t
+{
+  std::array<std::uint32_t, DecodedCount> data{};
+  std::uint8_t const* last_read;
+};
+
+template<size_t N>
+inline constexpr decoded_uleb128_t<N> multi_read_uleb128(
+  std::uint8_t const* p_ptr)
+{
+  decoded_uleb128_t<N> result{};
+  auto iter = result.data.begin();
+  std::uint32_t shift_amount = 0;
+
+  // THIS IS WRONG! ULEB is LSB first then ends on MSB. This is big endian
+  while (iter != result.data.end()) {
+    std::uint8_t const uleb128 = *(p_ptr++);
+
+    *iter |= (uleb128 & 0x7F) << shift_amount;
+
+    if ((uleb128 & 0x80) == 0x00) {
+      iter++;
+      shift_amount = 0;
+      continue;
+    }
+
+    shift_amount += 7;
+  }
+
+  result.last_read = p_ptr;
+
+  return result;
+}
+
+#if 0
+template<size_t DecodedCount>
+[[gnu::always_inline]] inline constexpr decoded_uleb128_t<DecodedCount>
+fast_read_uleb128(std::uint8_t const* p_ptr)
+{
+  decoded_uleb128_t<DecodedCount> decoded{};
+
+  while (true) {
+    std::uint32_t storage = *p_ptr++ << 24;
+    storage |= *p_ptr++ << 16;
+    storage |= *p_ptr++ << 8;
+    storage |= *p_ptr++ << 0;
+
+    constexpr std::uint32_t uleb128_32_bit_mask = 0x80'80'80'80;
+    std::uint32_t bit_mask = storage & uleb128_32_bit_mask;
+    std::uint32_t result = ((bit_mask >> 24) & 0x01) << 3 |
+                           ((bit_mask >> 16) & 0x01) << 2 |
+                           ((bit_mask >> 8) & 0x01) << 1 | ((bit_mask) & 0x01);
+
+    static constexpr std::array<void*, 16> jump_table{};
+
+    while (true) {
+      auto* jump_location = jump_table[result];
+      goto* jump_location;
+    }
+  }
+
+  return decoded;
+}
+#endif
 
 template<typename T>
 T const* as(void const* p_ptr)
@@ -317,7 +422,11 @@ public:
   std::type_info const* get_next_catch_type()
   {
     // TODO(kammce): This isn't how it actually works. This needs to be
-    // corrected.
+    // corrected. This kinda works, but the action is biased by 1 and needs to
+    // be subtracted. I don't understand how I made the old m_action[-1] and
+    // m_action[0] | 0x80 work. Or why it even works. Seems crazy to me. But it
+    // do work. I bet it breaks at a specific point. Like if the offset is large
+    // or the filter number ends up being two bytes. Which would be really rare.
     if (m_action == nullptr) {
       return nullptr;
     }
@@ -472,11 +581,6 @@ inline void enter_function(exception_object& p_exception_object)
   }
 }
 
-template<lsda_encoding encoding>
-inline void parse_call_site(std::uint32_t p_rel_pc, std::uint8_t const** p_lsda)
-{
-}
-
 inline void skip_dwarf_info(std::uint8_t const** p_lsda)
 {
   auto const* lsda = *p_lsda;
@@ -507,14 +611,16 @@ inline lsda_header_info parse_header(std::uint8_t const** p_lsda)
   // Capture type table end. Will be before call_site_end if it did not exist
   auto const* lsda = *p_lsda;
   info.type_table_encoding = lsda_encoding{ *(lsda++) };
-  info.type_table_end = lsda;
   if (info.type_table_encoding != lsda_encoding::omit) {
-    info.type_table_end += read_uleb128(&lsda);
+    auto const offset = read_uleb128(&lsda);
+    info.type_table_end = lsda + offset;
+  } else {
+    info.type_table_end = lsda;
   }
 
   info.call_site_encoding = lsda_encoding{ *(lsda++) };
-  info.call_site_end = lsda;
-  info.call_site_end += read_uleb128(&lsda);
+  auto const offset = read_uleb128(&lsda);
+  info.call_site_end = lsda + offset;
 
   *p_lsda = lsda;
 
@@ -602,8 +708,6 @@ inline void enter_catch_block_or_cleanup(exception_object& p_exception_object,
 
 struct call_site_info
 {
-  std::uint32_t start = 0;
-  std::uint32_t length = 0;
   std::uint32_t landing_pad = 0;
   std::uint32_t action = 0;
   bool unwind = false;
@@ -617,13 +721,13 @@ inline call_site_info parse_call_site(std::uint8_t const** p_lsda,
   call_site_info info;
 
   do {
-    info.start = read_encoded_data<encoding>(p_lsda);
-    info.length = read_encoded_data<encoding>(p_lsda);
+    auto start = read_encoded_data<encoding>(p_lsda);
+    auto length = read_encoded_data<encoding>(p_lsda);
     info.landing_pad = read_encoded_data<encoding>(p_lsda);
     info.action = read_encoded_data<encoding>(p_lsda);
 
-    if (info.start <= p_rel_pc && p_rel_pc <= info.start + info.length) {
-      if (info.landing_pad == 0) {
+    if (start <= p_rel_pc && p_rel_pc <= start + length) {
+      if (info.landing_pad == 0 || info.action == 0) {
         info.unwind = true;
       }
       break;
@@ -632,6 +736,112 @@ inline call_site_info parse_call_site(std::uint8_t const** p_lsda,
 
   return info;
 }
+
+inline call_site_info parse_uleb128_call_site(
+  std::uint8_t const* p_lsda,
+  std::uint32_t p_rel_pc,
+  std::uint8_t const* p_call_site_end)
+{
+  call_site_info info;
+
+  do {
+    auto const values = multi_read_uleb128<4>(p_lsda);
+    auto const& start = values.data[0];
+    auto const& length = values.data[1];
+    auto const& landing_pad = values.data[2];
+    auto const& action = values.data[3];
+    if (start <= p_rel_pc && p_rel_pc <= start + length) {
+      if (landing_pad == 0 || action == 0) {
+        info.unwind = true;
+      } else {
+        info.landing_pad = landing_pad;
+        info.action = action;
+      }
+      break;
+    }
+    p_lsda = values.last_read;
+  } while (p_lsda < p_call_site_end);
+
+  return info;
+}
+
+class action_decoder2
+{
+public:
+  action_decoder2(std::uint8_t const* p_type_table_end,
+                  std::uint8_t const* p_end_of_callsite,
+                  std::uint32_t p_action)
+    : m_type_table_end(p_type_table_end)
+    , m_action_position(p_end_of_callsite + (p_action - 1))
+  {
+  }
+
+  static std::type_info const* to_type_info(void const* p_type_info_address)
+  {
+    return reinterpret_cast<std::type_info const*>(
+      to_absolute_address(p_type_info_address));
+  }
+
+  static std::type_info const* install_context_type()
+  {
+    return reinterpret_cast<std::type_info const*>(0xFFFF'FFFF);
+  }
+
+  std::type_info const* get_current_type_info_from_filter()
+  {
+    auto const* type_table = as<std::uintptr_t const*>(m_type_table_end);
+
+    // We assume absptr here because its easier
+    // TODO(#___): Consider using the type table encoding format for decoding
+    // the type table info rather than assuming that the values here are
+    // prel31_offsets
+    auto const* current_type = &type_table[-m_filter];
+
+    if (*current_type == 0x0) {
+      return install_context_type();
+    }
+
+    auto const* test = to_absolute_address_ptr(current_type);
+    return reinterpret_cast<std::type_info const*>(test);
+  }
+
+  std::type_info const* get_next_catch_type()
+  {
+    if (m_action_position == nullptr) {
+      return nullptr;
+    }
+
+    do {
+      m_filter = read_sleb128(&m_action_position);
+      auto const next_action_offset = read_sleb128(&m_action_position);
+
+      if (next_action_offset == 0) {
+        m_action_position = nullptr;
+      } else {
+        m_action_position += next_action_offset;
+      }
+      // Negative numbers are for the deprecated `throws()` specifier that we do
+      // not support. We throw those away and continue looking through the
+      // action table.
+    } while (m_filter < 0);
+
+    if (m_filter == 0) {
+      return install_context_type();
+    }
+
+    return get_current_type_info_from_filter();
+  }
+
+  std::uint8_t filter()
+  {
+    return m_filter;
+  }
+
+private:
+  std::uint8_t const* m_type_table_end = nullptr;
+  std::uint8_t const* m_action_position = nullptr;
+  std::int32_t m_filter = 0;
+};
 
 inline void enter_function2(exception_object& p_exception_object)
 {
@@ -643,8 +853,7 @@ inline void enter_function2(exception_object& p_exception_object)
 
   switch (info.call_site_encoding) {
     case lsda_encoding::uleb128: {
-      site_info = parse_call_site<lsda_encoding::uleb128>(
-        &lsda, rel_pc, info.call_site_end);
+      site_info = parse_uleb128_call_site(lsda, rel_pc, info.call_site_end);
       break;
     }
     case lsda_encoding::udata2: {
@@ -692,23 +901,71 @@ inline void enter_function2(exception_object& p_exception_object)
     return;
   }
 
-#if 0  // figure out how to do this
-  action_decoder a_decoder(end_of_tt_table, call_site_end, action);
-
   auto& cpu = p_exception_object.cpu;
   auto* entry_ptr = p_exception_object.cache.entry_ptr;
+
+  // This occurs when a frame has destructors that need cleaning up but no
+  // try/catch blocks. In such a case, if we found a scope we need to enter, we
+  // should enter it immediately!
+  if (info.type_table_end < info.call_site_end) {
+    // LSB must be set to 1 to jump to an address
+    auto const final_destination =
+      (entry_ptr->function() + site_info.landing_pad) | 0b1;
+
+    // Set PC to the cleanup destination
+    cpu.pc = final_destination;
+
+    // Install CPU state
+    restore_cpu_core(cpu);
+  }
+
+  action_decoder2 a_decoder(
+    info.type_table_end, info.call_site_end, site_info.action);
+
   for (auto const* type_info = a_decoder.get_next_catch_type();
        type_info != nullptr;
        type_info = a_decoder.get_next_catch_type()) {
-    if (type_info == p_exception_object.type_info ||
-        type_info == action_decoder::install_context_type()) {
-      cpu[0] = &p_exception_object;
-      cpu[1] = a_decoder.filter();
-      // Set the LSB to 1 for some reason. Cortex-mX is interesting
-      auto final_destination = (entry_ptr->function() + landing_pad) | 0b1;
-      cpu.pc = final_destination;
-      restore_cpu_core(cpu);
+
+    if (type_info != p_exception_object.type_info &&
+        type_info != action_decoder2::install_context_type()) {
+      continue;
     }
+
+    // ====== Prepare to Install context!! =====
+    cpu[0] = &p_exception_object;
+    cpu[1] = a_decoder.filter();
+
+    // LSB must be set to 1 to jump to an address
+    auto const final_destination =
+      (entry_ptr->function() + site_info.landing_pad) | 0b1;
+
+    // Set PC to the cleanup destination
+    cpu.pc = final_destination;
+
+    // Install CPU state
+    restore_cpu_core(cpu);
+  }
+
+#if 0
+  for (auto const* type_info : a_decoder) {
+    if (type_info != p_exception_object.type_info &&
+        type_info != action_decoder2::install_context_type()) {
+      continue;
+    }
+
+    // ====== Prepare to Install context!! =====
+    cpu[0] = &p_exception_object;
+    cpu[1] = a_decoder.filter();
+
+    // LSB must be set to 1 to jump to an address
+    auto const final_destination =
+      (entry_ptr->function() + site_info.landing_pad) | 0b1;
+
+    // Set PC to the cleanup destination
+    cpu.pc = final_destination;
+
+    // Install CPU state
+    restore_cpu_core(cpu);
   }
 #endif
 }
@@ -1880,7 +2137,7 @@ void raise_exception(exception_object& p_exception_object)
         [[fallthrough]];
       }
       case runtime_state::enter_function: {
-        enter_function(p_exception_object);
+        enter_function2(p_exception_object);
         // enter function returns normally if it determines that there was no
         // reason to enter the function, thus the function should be unwound.
         [[fallthrough]];
@@ -1961,9 +2218,9 @@ extern "C"
 #if defined(OPTIMIZATION_LEVEL)
 #if OPTIMIZATION_LEVEL == Debug
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    stack_pointer += 5;
-    exception_object.cpu.pc = stack_pointer[0];
-    exception_object.cpu.sp = stack_pointer + 1;
+    exception_object.cpu.r3 = stack_pointer[0];
+    exception_object.cpu.pc = stack_pointer[1];
+    exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == MinSizeRel
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r4 = stack_pointer[0];
@@ -1972,10 +2229,8 @@ extern "C"
 #elif OPTIMIZATION_LEVEL == Release
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.r4 = stack_pointer[1];
-    exception_object.cpu.r5 = stack_pointer[2];
-    exception_object.cpu.pc = stack_pointer[3];
-    exception_object.cpu.sp = stack_pointer + 4;
+    exception_object.cpu.pc = stack_pointer[1];
+    exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == RelWithDebInfo
 #error "Sorry Release mode unwinding is not supported yet.";
 #endif
@@ -2001,10 +2256,9 @@ extern "C"
 #if OPTIMIZATION_LEVEL == Debug
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.r4 = stack_pointer[1];
-    exception_object.cpu.r5 = stack_pointer[2];
-    exception_object.cpu.pc = stack_pointer[3];
-    exception_object.cpu.sp = stack_pointer + 5;
+    exception_object.cpu.pc = stack_pointer[1];
+    exception_object.cpu.sp = stack_pointer + 2;
+#elif OPTIMIZATION_LEVEL == MinSizeRel
 #elif OPTIMIZATION_LEVEL == MinSizeRel
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r4 = stack_pointer[0];
@@ -2012,7 +2266,7 @@ extern "C"
     exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == Release
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    exception_object.cpu.r4 = stack_pointer[0];
+    exception_object.cpu.r3 = stack_pointer[0];
     exception_object.cpu.pc = stack_pointer[1];
     exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == RelWithDebInfo

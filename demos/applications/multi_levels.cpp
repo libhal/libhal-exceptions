@@ -66,7 +66,7 @@ void application(resource_list& p_resources)
 {
   resources = &p_resources;
 
-  cycle_map.fill(0);
+  cycle_map.fill(std::numeric_limits<std::int32_t>::max());
   happy_cycle_map.fill(std::numeric_limits<std::int32_t>::max());
   for (std::size_t i = 0; i < functions.size(); i++) {
     try {
