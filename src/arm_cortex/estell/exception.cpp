@@ -320,11 +320,68 @@ constexpr lsda_encoding operator&(lsda_encoding const& p_encoding,
                                     static_cast<std::uint8_t>(p_byte));
 }
 
+template<lsda_encoding encoding>
+[[gnu::always_inline]] inline std::uintptr_t read_encoded_data(
+  std::uint8_t const** p_data)
+{
+  std::uint8_t const* ptr = *p_data;
+  std::uintptr_t result = 0;
+
+  if constexpr (encoding == lsda_encoding::omit) {
+    return 0;
+  }
+
+  static constexpr auto encoding_type = encoding & 0x0F;
+
+  if constexpr (encoding_type == lsda_encoding::absptr) {
+    result = *as<uintptr_t>(ptr);
+    ptr += sizeof(uintptr_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::uleb128) {
+    result = read_uleb128(&ptr);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata2) {
+    result = *as<uint16_t>(ptr);
+    ptr += sizeof(uint16_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata4) {
+    result = *as<uint32_t>(ptr);
+    ptr += sizeof(uint32_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata2) {
+    result = *as<int16_t>(ptr);
+    ptr += sizeof(int16_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata4) {
+    result = *as<int32_t>(ptr);
+    ptr += sizeof(int32_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata8) {
+    result = *as<int64_t>(ptr);
+    ptr += sizeof(int64_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata8) {
+    result = *as<uint64_t>(ptr);
+    ptr += sizeof(uint64_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sleb128) {
+    result = read_sleb128(&ptr);
+  }
+
+  // Handle indirection GCC extension
+  if constexpr (static_cast<bool>(encoding & 0x80)) {
+    result = *reinterpret_cast<std::uintptr_t const*>(result);
+  }
+
+  *p_data = ptr;
+
+  return result;
+}
+
 [[gnu::always_inline]] inline std::uintptr_t read_encoded_data(
   std::uint8_t const** p_data,
   lsda_encoding p_encoding)
 {
-  std::uint8_t const* ptr = *p_data;
   std::uintptr_t result = 0;
 
   if (p_encoding == lsda_encoding::omit) {
@@ -336,130 +393,44 @@ constexpr lsda_encoding operator&(lsda_encoding const& p_encoding,
 
   switch (encoding_type) {
     case lsda_encoding::absptr:
-      result = *as<uintptr_t>(ptr);
-      ptr += sizeof(uintptr_t);
+      result = read_encoded_data<lsda_encoding::absptr>(p_data);
       break;
     case lsda_encoding::uleb128:
-      result = read_uleb128(&ptr);
+      result = read_encoded_data<lsda_encoding::uleb128>(p_data);
       break;
     case lsda_encoding::udata2:
-      result = *as<uint16_t>(ptr);
-      ptr += sizeof(uint16_t);
+      result = read_encoded_data<lsda_encoding::udata2>(p_data);
       break;
     case lsda_encoding::udata4:
-      result = *as<uint32_t>(ptr);
-      ptr += sizeof(uint32_t);
+      result = read_encoded_data<lsda_encoding::udata4>(p_data);
       break;
     case lsda_encoding::sdata2:
-      result = *as<int16_t>(ptr);
-      ptr += sizeof(int16_t);
+      result = read_encoded_data<lsda_encoding::sdata2>(p_data);
       break;
     case lsda_encoding::sdata4:
-      result = *as<int32_t>(ptr);
-      ptr += sizeof(int32_t);
+      result = read_encoded_data<lsda_encoding::sdata4>(p_data);
       break;
     case lsda_encoding::sdata8:
-      result = *as<int64_t>(ptr);
-      ptr += sizeof(int64_t);
+      result = read_encoded_data<lsda_encoding::sdata8>(p_data);
       break;
     case lsda_encoding::udata8:
-      result = *as<uint64_t>(ptr);
-      ptr += sizeof(uint64_t);
+      result = read_encoded_data<lsda_encoding::udata8>(p_data);
       break;
     case lsda_encoding::sleb128:
+      result = read_encoded_data<lsda_encoding::sleb128>(p_data);
+      break;
     default:
       std::terminate();
       break;
   }
 
-  // TODO: convert to hal::bit_extract w/ bit mask
-  auto const encoding_offset = p_encoding & 0x70;
-
-  switch (encoding_offset) {
-    case lsda_encoding::pcrel:
-    case lsda_encoding::absptr:
-    case lsda_encoding::textrel:
-    case lsda_encoding::datarel:
-    case lsda_encoding::funcrel:
-    case lsda_encoding::aligned:
-    default:
-      break;
-  }
-
   // Handle indirection GCC extension
-  // TODO: convert to hal::bit_extract w/ bit mask
   if (static_cast<bool>(p_encoding & 0x80)) {
     result = *reinterpret_cast<std::uintptr_t const*>(result);
   }
 
-  *p_data = ptr;
   return result;
 }
-
-class action_decoder
-{
-public:
-  action_decoder(std::uint8_t const volatile* p_type_table_end,
-                 std::uint8_t const volatile* p_action_table_start,
-                 std::uint32_t p_action)
-    : m_type_table_end(
-        reinterpret_cast<std::uint32_t const volatile*>(p_type_table_end))
-    , m_action(p_action_table_start + p_action)
-  {
-  }
-
-  static std::type_info const* to_type_info(void const* p_type_info_address)
-  {
-    return reinterpret_cast<std::type_info const*>(
-      to_absolute_address(p_type_info_address));
-  }
-
-  static std::type_info const* install_context_type()
-  {
-    return reinterpret_cast<std::type_info const*>(0xFFFF'FFFF);
-  }
-
-  std::type_info const* get_next_catch_type()
-  {
-    // TODO(kammce): This isn't how it actually works. This needs to be
-    // corrected. This kinda works, but the action is biased by 1 and needs to
-    // be subtracted. I don't understand how I made the old m_action[-1] and
-    // m_action[0] | 0x80 work. Or why it even works. Seems crazy to me. But it
-    // do work. I bet it breaks at a specific point. Like if the offset is large
-    // or the filter number ends up being two bytes. Which would be really rare.
-    if (m_action == nullptr) {
-      return nullptr;
-    }
-
-    m_filter = m_action[-1];
-    auto const unsigned_offset = m_action[0] | 0x80;
-    auto const offset = static_cast<std::int8_t>(unsigned_offset);
-
-    if (offset == 0) {
-      m_action = nullptr;
-    } else {
-      m_action += (offset + 1);
-    }
-
-    std::uint32_t const volatile* current_type = &m_type_table_end[-m_filter];
-
-    if (m_filter == 0 || *current_type == 0x0) {
-      return install_context_type();
-    }
-
-    return to_type_info(const_cast<std::uint32_t const*>(current_type));
-  }
-
-  std::uint8_t filter()
-  {
-    return m_filter;
-  }
-
-private:
-  std::uint32_t const volatile* m_type_table_end = nullptr;
-  std::uint8_t const volatile* m_action = nullptr;
-  std::uint8_t m_filter = 0;
-};
 
 inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
@@ -491,95 +462,6 @@ inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
                  // sp skipped here as it is deprecated
                  "lr",
                  "pc");
-}
-
-inline void enter_function(exception_object& p_exception_object)
-{
-  auto const* lsda_word =
-    index_entry_t::lsda_data(p_exception_object.cache.personality);
-  auto const* lsda_data = reinterpret_cast<std::uint8_t const*>(lsda_word);
-
-#if 0
-  // [Omit dwarf]-[uleb128 encoding]-[offset uleb128]-[uleb128 encoding]
-  static constexpr std::uint32_t small_lsda = 0xFF'01'80'01;
-  static constexpr std::uint32_t small_lsda_go = 0xFF'01'00'01;
-  static constexpr std::uint32_t medium_lsda = 0xFF'01'80'80;
-#endif
-
-  auto const dwarf_offset_info_format = lsda_encoding{ *(lsda_data++) };
-  if (dwarf_offset_info_format != lsda_encoding::omit) {
-    // Ignore this because we don't need it for unwinding.
-    [[maybe_unused]] auto const _ =
-      read_encoded_data(&lsda_data, dwarf_offset_info_format);
-  }
-
-  auto const type_table_format = lsda_encoding{ *(lsda_data++) };
-  std::uint32_t offset_to_end_of_tt_table = 0;
-  // if type table offset does not exist then there is only cleanup within
-  // this function.
-  if (type_table_format != lsda_encoding::omit) {
-    offset_to_end_of_tt_table = read_uleb128(&lsda_data);
-  }
-  auto const* end_of_tt_table = lsda_data + offset_to_end_of_tt_table;
-
-  auto const call_site_format = lsda_encoding{ *(lsda_data++) };
-  auto const call_site_length = read_uleb128(&lsda_data);
-  auto const* call_site_end = lsda_data + call_site_length;
-
-  auto const rel_pc = p_exception_object.cache.relative_address() & ~1;
-  std::uint32_t landing_pad = 0;
-  std::uint32_t action = 0;
-
-  // Optimize for the most common use case and encouraged
-  if (call_site_format == lsda_encoding::uleb128) {
-    do {
-      auto start = read_uleb128(&lsda_data);
-      auto length = read_uleb128(&lsda_data);
-      landing_pad = read_uleb128(&lsda_data);
-      action = read_uleb128(&lsda_data);
-
-      if (start <= rel_pc && rel_pc <= start + length) {
-        if (landing_pad == 0) {
-          p_exception_object.cache.state(runtime_state::unwind_frame);
-          return;
-        }
-        break;
-      }
-    } while (lsda_data < call_site_end);
-  } else {
-    do {
-      auto start = read_encoded_data(&lsda_data, call_site_format);
-      auto length = read_encoded_data(&lsda_data, call_site_format);
-      landing_pad = read_encoded_data(&lsda_data, call_site_format);
-      action = read_uleb128(&lsda_data);
-
-      if (start <= rel_pc && rel_pc <= start + length) {
-        if (landing_pad == 0) {
-          p_exception_object.cache.state(runtime_state::unwind_frame);
-          return;
-        }
-        break;
-      }
-    } while (lsda_data < call_site_end);
-  }
-
-  action_decoder a_decoder(end_of_tt_table, call_site_end, action);
-
-  auto& cpu = p_exception_object.cpu;
-  auto* entry_ptr = p_exception_object.cache.entry_ptr;
-  for (auto const* type_info = a_decoder.get_next_catch_type();
-       type_info != nullptr;
-       type_info = a_decoder.get_next_catch_type()) {
-    if (type_info == p_exception_object.type_info ||
-        type_info == action_decoder::install_context_type()) {
-      cpu[0] = &p_exception_object;
-      cpu[1] = a_decoder.filter();
-      // Set the LSB to 1 for some reason. Cortex-mX is interesting
-      auto final_destination = (entry_ptr->function() + landing_pad) | 0b1;
-      cpu.pc = final_destination;
-      restore_cpu_core(cpu);
-    }
-  }
 }
 
 inline void skip_dwarf_info(std::uint8_t const** p_lsda)
@@ -638,74 +520,6 @@ inline auto calculate_relative_pc(exception_object& p_exception_object)
 {
   return p_exception_object.cache.relative_address() & ~1;
 }
-
-template<lsda_encoding encoding>
-[[gnu::always_inline]] inline std::uintptr_t read_encoded_data(
-  std::uint8_t const** p_data)
-{
-  std::uint8_t const* ptr = *p_data;
-  std::uintptr_t result = 0;
-
-  if constexpr (encoding == lsda_encoding::omit) {
-    return 0;
-  }
-
-  static constexpr auto encoding_type = encoding & 0x0F;
-
-  if constexpr (encoding_type == lsda_encoding::absptr) {
-    result = *as<uintptr_t>(ptr);
-    ptr += sizeof(uintptr_t);
-  }
-  if constexpr (encoding_type == lsda_encoding::uleb128) {
-    result = read_uleb128(&ptr);
-  }
-  if constexpr (encoding_type == lsda_encoding::udata2) {
-    result = *as<uint16_t>(ptr);
-    ptr += sizeof(uint16_t);
-  }
-  if constexpr (encoding_type == lsda_encoding::udata4) {
-    result = *as<uint32_t>(ptr);
-    ptr += sizeof(uint32_t);
-  }
-  if constexpr (encoding_type == lsda_encoding::sdata2) {
-    result = *as<int16_t>(ptr);
-    ptr += sizeof(int16_t);
-  }
-  if constexpr (encoding_type == lsda_encoding::sdata4) {
-    result = *as<int32_t>(ptr);
-    ptr += sizeof(int32_t);
-  }
-  if constexpr (encoding_type == lsda_encoding::sdata8) {
-    result = *as<int64_t>(ptr);
-    ptr += sizeof(int64_t);
-  }
-  if constexpr (encoding_type == lsda_encoding::udata8) {
-    result = *as<uint64_t>(ptr);
-    ptr += sizeof(uint64_t);
-  }
-  if constexpr (encoding_type == lsda_encoding::sleb128) {
-  }
-
-  // NOTE: we currently ignore bits in the mask 0x70.
-
-  // Handle indirection GCC extension
-  if constexpr (static_cast<bool>(encoding & 0x80)) {
-    result = *reinterpret_cast<std::uintptr_t const*>(result);
-  }
-
-  *p_data = ptr;
-
-  return result;
-}
-
-#if 0
-inline void enter_catch_block_or_cleanup(exception_object& p_exception_object,
-                                         std::uint8_t const* p_lsda,
-                                         std::uint32_t p_relative_pc)
-{
-  // fill out later
-}
-#endif
 
 struct call_site_info
 {
@@ -766,12 +580,12 @@ inline call_site_info parse_uleb128_call_site(
   return info;
 }
 
-class action_decoder2
+class action_decoder
 {
 public:
-  action_decoder2(std::uint8_t const* p_type_table_end,
-                  std::uint8_t const* p_end_of_callsite,
-                  std::uint32_t p_action)
+  action_decoder(std::uint8_t const* p_type_table_end,
+                 std::uint8_t const* p_end_of_callsite,
+                 std::uint32_t p_action)
     : m_type_table_end(p_type_table_end)
     , m_action_position(p_end_of_callsite + (p_action - 1))
   {
@@ -920,7 +734,7 @@ inline void enter_function2(exception_object& p_exception_object)
     restore_cpu_core(cpu);
   }
 
-  action_decoder2 a_decoder(
+  action_decoder a_decoder(
     info.type_table_end, info.call_site_end, site_info.action);
 
   for (auto const* type_info = a_decoder.get_next_catch_type();
@@ -928,7 +742,7 @@ inline void enter_function2(exception_object& p_exception_object)
        type_info = a_decoder.get_next_catch_type()) {
 
     if (type_info != p_exception_object.type_info &&
-        type_info != action_decoder2::install_context_type()) {
+        type_info != action_decoder::install_context_type()) {
       continue;
     }
 
@@ -946,29 +760,6 @@ inline void enter_function2(exception_object& p_exception_object)
     // Install CPU state
     restore_cpu_core(cpu);
   }
-
-#if 0
-  for (auto const* type_info : a_decoder) {
-    if (type_info != p_exception_object.type_info &&
-        type_info != action_decoder2::install_context_type()) {
-      continue;
-    }
-
-    // ====== Prepare to Install context!! =====
-    cpu[0] = &p_exception_object;
-    cpu[1] = a_decoder.filter();
-
-    // LSB must be set to 1 to jump to an address
-    auto const final_destination =
-      (entry_ptr->function() + site_info.landing_pad) | 0b1;
-
-    // Set PC to the cleanup destination
-    cpu.pc = final_destination;
-
-    // Install CPU state
-    restore_cpu_core(cpu);
-  }
-#endif
 }
 
 template<size_t Amount>
