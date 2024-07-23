@@ -606,7 +606,7 @@ public:
   {
     auto const* type_table = as<std::uintptr_t const*>(m_type_table_end);
 
-    // We assume absptr here because its easier
+    // We assume prel here because all other options are deprecated
     // TODO(#___): Consider using the type table encoding format for decoding
     // the type table info rather than assuming that the values here are
     // prel31_offsets
@@ -658,7 +658,7 @@ private:
   std::int32_t m_filter = 0;
 };
 
-inline void enter_function2(exception_object& p_exception_object)
+inline void enter_function(exception_object& p_exception_object)
 {
   auto const* lsda = to_lsda(p_exception_object);
   auto info = parse_header(&lsda);
@@ -1685,7 +1685,7 @@ void unwind_frame(instructions_t const& p_instructions,
 
 [[gnu::always_inline]]
 inline instructions_t create_instructions_from_entry(
-  index_entry_t const& p_entry)
+  exception_object const& p_exception_object)
 {
   constexpr auto personality_type = hal::bit_mask::from<24, 27>();
   constexpr auto generic = hal::bit_mask::from<31>();
@@ -1693,11 +1693,11 @@ inline instructions_t create_instructions_from_entry(
   instructions_t unwind{};
 
   std::uint32_t const* handler_data = nullptr;
-
-  if (p_entry.has_inlined_personality()) {
-    handler_data = &p_entry.personality_offset;
+  auto const& entry = *p_exception_object.cache.entry_ptr;
+  if (entry.has_inlined_personality()) {
+    handler_data = &entry.personality_offset;
   } else {
-    auto const* personality = p_entry.personality();
+    auto const* personality = p_exception_object.cache.personality;
     if (hal::bit_extract<generic>(personality[0])) {
       handler_data = &personality[0];
     } else {
@@ -1785,14 +1785,14 @@ void raise_exception(exception_object& p_exception_object)
         [[fallthrough]];
       }
       case runtime_state::enter_function: {
-        enter_function2(p_exception_object);
+        enter_function(p_exception_object);
         // enter function returns normally if it determines that there was no
         // reason to enter the function, thus the function should be unwound.
         [[fallthrough]];
       }
       case runtime_state::unwind_frame: {
-        auto const& entry = *p_exception_object.cache.entry_ptr;
-        auto const instructions = create_instructions_from_entry(entry);
+        auto const instructions =
+          create_instructions_from_entry(p_exception_object);
         unwind_frame(instructions, p_exception_object);
         p_exception_object.cache.state(runtime_state::get_next_frame);
       }
