@@ -727,7 +727,7 @@ inline call_site_info parse_call_site(std::uint8_t const** p_lsda,
     info.action = read_encoded_data<encoding>(p_lsda);
 
     if (start <= p_rel_pc && p_rel_pc <= start + length) {
-      if (info.landing_pad == 0 || info.action == 0) {
+      if (info.landing_pad == 0) {
         info.unwind = true;
       }
       break;
@@ -751,7 +751,7 @@ inline call_site_info parse_uleb128_call_site(
     auto const& landing_pad = values.data[2];
     auto const& action = values.data[3];
     if (start <= p_rel_pc && p_rel_pc <= start + length) {
-      if (landing_pad == 0 || action == 0) {
+      if (landing_pad == 0) {
         info.unwind = true;
       } else {
         info.landing_pad = landing_pad;
@@ -1038,6 +1038,7 @@ inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
   return sp_ptr + PopCount + 1 + unsigned{ PopLinkRegister == pop_lr::do_it };
 }
 
+#if 1
 void unwind_frame(instructions_t const& p_instructions,
                   exception_object& p_exception_object)
 {
@@ -1358,9 +1359,9 @@ void unwind_frame(instructions_t const& p_instructions,
   auto const* sp_ptr = *virtual_cpu.sp;
 
   while (true) {
-    auto const* jump_location = jump_table[*instruction_ptr];
+    auto const* instruction_handler = jump_table[*instruction_ptr];
     instruction_ptr++;
-    goto* jump_location;
+    goto* instruction_handler;
 
   // +=========================================================================+
   // |                                 Finish!                                 |
@@ -2044,8 +2045,927 @@ exit_loop:
   }
 #endif
 }
+#endif
 
-instructions_t create_instructions_from_entry(index_entry_t const& p_entry)
+#if 0
+void unwind_frame2(exception_object& p_exception_object)
+{
+  static constexpr std::array<void*, 256> jump_table{
+    &&vsp_add_0,   // [0]
+    &&vsp_add_1,   // [1]
+    &&vsp_add_2,   // [2]
+    &&vsp_add_3,   // [3]
+    &&vsp_add_4,   // [4]
+    &&vsp_add_5,   // [5]
+    &&vsp_add_6,   // [6]
+    &&vsp_add_7,   // [7]
+    &&vsp_add_8,   // [8]
+    &&vsp_add_9,   // [9]
+    &&vsp_add_10,  // [10]
+    &&vsp_add_11,  // [11]
+    &&vsp_add_12,  // [12]
+    &&vsp_add_13,  // [13]
+    &&vsp_add_14,  // [14]
+    &&vsp_add_15,  // [15]
+    &&vsp_add_16,  // [16]
+    &&vsp_add_17,  // [17]
+    &&vsp_add_18,  // [18]
+    &&vsp_add_19,  // [19]
+    &&vsp_add_20,  // [20]
+    &&vsp_add_21,  // [21]
+    &&vsp_add_22,  // [22]
+    &&vsp_add_23,  // [23]
+    &&vsp_add_24,  // [24]
+    &&vsp_add_25,  // [25]
+    &&vsp_add_26,  // [26]
+    &&vsp_add_27,  // [27]
+    &&vsp_add_28,  // [28]
+    &&vsp_add_29,  // [29]
+    &&vsp_add_30,  // [30]
+    &&vsp_add_31,  // [31]
+    &&vsp_add_32,  // [32]
+    &&vsp_add_33,  // [33]
+    &&vsp_add_34,  // [34]
+    &&vsp_add_35,  // [35]
+    &&vsp_add_36,  // [36]
+    &&vsp_add_37,  // [37]
+    &&vsp_add_38,  // [38]
+    &&vsp_add_39,  // [39]
+    &&vsp_add_40,  // [40]
+    &&vsp_add_41,  // [41]
+    &&vsp_add_42,  // [42]
+    &&vsp_add_43,  // [43]
+    &&vsp_add_44,  // [44]
+    &&vsp_add_45,  // [45]
+    &&vsp_add_46,  // [46]
+    &&vsp_add_47,  // [47]
+    &&vsp_add_48,  // [48]
+    &&vsp_add_49,  // [49]
+    &&vsp_add_50,  // [50]
+    &&vsp_add_51,  // [51]
+    &&vsp_add_52,  // [52]
+    &&vsp_add_53,  // [53]
+    &&vsp_add_54,  // [54]
+    &&vsp_add_55,  // [55]
+    &&vsp_add_56,  // [56]
+    &&vsp_add_57,  // [57]
+    &&vsp_add_58,  // [58]
+    &&vsp_add_59,  // [59]
+    &&vsp_add_60,  // [60]
+    &&vsp_add_61,  // [61]
+    &&vsp_add_62,  // [62]
+    &&vsp_add_63,  // [63]
+
+    &&vsp_sub_0,   // [64]
+    &&vsp_sub_1,   // [65]
+    &&vsp_sub_2,   // [66]
+    &&vsp_sub_3,   // [67]
+    &&vsp_sub_4,   // [68]
+    &&vsp_sub_5,   // [69]
+    &&vsp_sub_6,   // [70]
+    &&vsp_sub_7,   // [71]
+    &&vsp_sub_8,   // [72]
+    &&vsp_sub_9,   // [73]
+    &&vsp_sub_10,  // [74]
+    &&vsp_sub_11,  // [75]
+    &&vsp_sub_12,  // [76]
+    &&vsp_sub_13,  // [77]
+    &&vsp_sub_14,  // [78]
+    &&vsp_sub_15,  // [79]
+    &&vsp_sub_16,  // [80]
+    &&vsp_sub_17,  // [81]
+    &&vsp_sub_18,  // [82]
+    &&vsp_sub_19,  // [83]
+    &&vsp_sub_20,  // [84]
+    &&vsp_sub_21,  // [85]
+    &&vsp_sub_22,  // [86]
+    &&vsp_sub_23,  // [87]
+    &&vsp_sub_24,  // [88]
+    &&vsp_sub_25,  // [89]
+    &&vsp_sub_26,  // [90]
+    &&vsp_sub_27,  // [91]
+    &&vsp_sub_28,  // [92]
+    &&vsp_sub_29,  // [93]
+    &&vsp_sub_30,  // [94]
+    &&vsp_sub_31,  // [95]
+    &&vsp_sub_32,  // [96]
+    &&vsp_sub_33,  // [97]
+    &&vsp_sub_34,  // [98]
+    &&vsp_sub_35,  // [99]
+    &&vsp_sub_36,  // [100]
+    &&vsp_sub_37,  // [101]
+    &&vsp_sub_38,  // [102]
+    &&vsp_sub_39,  // [103]
+    &&vsp_sub_40,  // [104]
+    &&vsp_sub_41,  // [105]
+    &&vsp_sub_42,  // [106]
+    &&vsp_sub_43,  // [107]
+    &&vsp_sub_44,  // [108]
+    &&vsp_sub_45,  // [109]
+    &&vsp_sub_46,  // [110]
+    &&vsp_sub_47,  // [111]
+    &&vsp_sub_48,  // [112]
+    &&vsp_sub_49,  // [113]
+    &&vsp_sub_50,  // [114]
+    &&vsp_sub_51,  // [115]
+    &&vsp_sub_52,  // [116]
+    &&vsp_sub_53,  // [117]
+    &&vsp_sub_54,  // [118]
+    &&vsp_sub_55,  // [119]
+    &&vsp_sub_56,  // [120]
+    &&vsp_sub_57,  // [121]
+    &&vsp_sub_58,  // [122]
+    &&vsp_sub_59,  // [123]
+    &&vsp_sub_60,  // [124]
+    &&vsp_sub_61,  // [125]
+    &&vsp_sub_62,  // [126]
+    &&vsp_sub_63,  // [127]
+
+    // 10000000
+    &&refuse_unwind_or_pop,  // [0b1000'0000 = 128]
+
+    // 1000iiii ...
+    &&pop_under_mask,  // [0b1000'0001 = 129]
+    &&pop_under_mask,  // [0b1000'0010 = 130]
+    &&pop_under_mask,  // [0b1000'0011 = 131]
+    &&pop_under_mask,  // [0b1000'0100 = 132]
+    &&pop_under_mask,  // [0b1000'0101 = 133]
+    &&pop_under_mask,  // [0b1000'0110 = 134]
+    &&pop_under_mask,  // [0b1000'0111 = 135]
+    &&pop_under_mask,  // [0b1000'1000 = 136]
+    &&pop_under_mask,  // [0b1000'1001 = 137]
+    &&pop_under_mask,  // [0b1000'1010 = 138]
+    &&pop_under_mask,  // [0b1000'1011 = 139]
+    &&pop_under_mask,  // [0b1000'1100 = 140]
+    &&pop_under_mask,  // [0b1000'1101 = 141]
+    &&pop_under_mask,  // [0b1000'1110 = 142]
+    &&pop_under_mask,  // [0b1000'1111 = 143] (128 + 15)
+
+    // 1001nnnn
+    // TODO: Split up assignments to make them faster
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0000 = 144]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0001 = 145]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0010 = 146]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0011 = 147]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0100 = 148]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0101 = 149]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0110 = 150]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0111 = 151]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1000 = 152]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1001 = 153]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1010 = 154]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1011 = 155]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1100 = 156]
+    // Reserved as prefix for Arm register to register moves
+    &&reserved_or_spare_thus_terminate,  // [0b1001'1101 = 157]
+    // Reserved as prefix for Intel Wireless MMX register to register moves
+    &&assign_to_vsp_to_reg_nnnn,         // [0b1001'1110 = 158]
+    &&reserved_or_spare_thus_terminate,  // [0b1001'1111 = 159 reg 15 reserved]
+
+    // 10100nnn
+    &&pop_off_stack_r4_to_r4,   // 0b10100'000 [160]
+    &&pop_off_stack_r4_to_r5,   // 0b10100'001 [161]
+    &&pop_off_stack_r4_to_r6,   // 0b10100'010 [162]
+    &&pop_off_stack_r4_to_r7,   // 0b10100'011 [163]
+    &&pop_off_stack_r4_to_r8,   // 0b10100'100 [164]
+    &&pop_off_stack_r4_to_r9,   // 0b10100'101 [165]
+    &&pop_off_stack_r4_to_r10,  // 0b10100'110 [166]
+    &&pop_off_stack_r4_to_r11,  // 0b10100'111 [167]
+
+    // 10101nnn
+    &&pop_off_stack_r4_to_r4_and_lr,   // 0b10101'000 [168]
+    &&pop_off_stack_r4_to_r5_and_lr,   // 0b10101'001 [169]
+    &&pop_off_stack_r4_to_r6_and_lr,   // 0b10101'010 [170]
+    &&pop_off_stack_r4_to_r7_and_lr,   // 0b10101'011 [171]
+    &&pop_off_stack_r4_to_r8_and_lr,   // 0b10101'100 [172]
+    &&pop_off_stack_r4_to_r9_and_lr,   // 0b10101'101 [173]
+    &&pop_off_stack_r4_to_r10_and_lr,  // 0b10101'110 [174]
+    &&pop_off_stack_r4_to_r11_and_lr,  // 0b10101'111 [175]
+
+    // Finish (0xB0)
+    &&finish_unwind,  // 10110000 [176]
+
+    // Spare (refuse unwind)
+    &&pop_integer_registers_under_mask_r3_r2_r1_r0,  // 10110001 [177]
+
+    // Subtract VSP using uleb128
+    &&subtract_vsp_using_uleb128,  // 10110010 [178]
+
+    // Pop VFP double-precision registers (not supported currently)
+    &&reserved_or_spare_thus_terminate,  // 10110011 [179]
+
+    // Pop Return Address Authentication Code pseudo-register
+    &&reserved_or_spare_thus_terminate,  // 10110100 [180]
+
+    // Use current vsp as modifier in Return Address Authentication
+    &&reserved_or_spare_thus_terminate,  // 10110101 [181]
+
+    // Spare (was Pop FPA) 1011011n
+    &&reserved_or_spare_thus_terminate,  // 10110110 [182]
+    &&reserved_or_spare_thus_terminate,  // 10110111 [183]
+
+    // Pop VFP double-precision registers D[8]-D[8+nnn] saved 10111nnn
+    &&reserved_or_spare_thus_terminate,  // 10111'000 [184]
+    &&reserved_or_spare_thus_terminate,  // 10111'001 [185]
+    &&reserved_or_spare_thus_terminate,  // 10111'010 [186]
+    &&reserved_or_spare_thus_terminate,  // 10111'011 [187]
+    &&reserved_or_spare_thus_terminate,  // 10111'100 [188]
+    &&reserved_or_spare_thus_terminate,  // 10111'101 [189]
+    &&reserved_or_spare_thus_terminate,  // 10111'110 [190]
+    &&reserved_or_spare_thus_terminate,  // 10111'111 [191]
+
+    // Intel Wireless MMX pop wR[10]-wR[10+nnn] 11000nnn
+    &&reserved_or_spare_thus_terminate,  // 11000'000 [192]
+    &&reserved_or_spare_thus_terminate,  // 11000'001 [193]
+    &&reserved_or_spare_thus_terminate,  // 11000'010 [194]
+    &&reserved_or_spare_thus_terminate,  // 11000'011 [195]
+    &&reserved_or_spare_thus_terminate,  // 11000'100 [196]
+    &&reserved_or_spare_thus_terminate,  // 11000'101 [197]
+
+    // Intel Wireless MMX pop wR[ssss]-wR[ssss+cccc]
+    &&reserved_or_spare_thus_terminate,  // 11000'110 [198]
+
+    // Spare (11000111)
+    &&reserved_or_spare_thus_terminate,  // 11000'111 [199]
+
+    // Pop VFP double precision registers D[ssss]-D[ssss+cccc] saved (as if) by
+    // VPUSH (11001000)
+    &&reserved_or_spare_thus_terminate,  // 11001000 [200]
+
+    // Pop VFP double precision registers D[ssss]-D[ssss+cccc] saved (as if) by
+    // VPUSH (11001001)
+    &&reserved_or_spare_thus_terminate,  // 11001001 [201]
+
+    // Spare (yyy != 000, 001) 11001yyy
+    &&reserved_or_spare_thus_terminate,  // 11001'010 [202]
+    &&reserved_or_spare_thus_terminate,  // 11001'011 [203]
+    &&reserved_or_spare_thus_terminate,  // 11001'100 [204]
+    &&reserved_or_spare_thus_terminate,  // 11001'101 [205]
+    &&reserved_or_spare_thus_terminate,  // 11001'110 [206]
+    &&reserved_or_spare_thus_terminate,  // 11001'111 [207]
+
+    // Pop VFP double-precision registers D[8]-D[8+nnn] saved by VPUSH 11010nnn
+    &&reserved_or_spare_thus_terminate,  // 11010'000 [208]
+    &&reserved_or_spare_thus_terminate,  // 11010'001 [209]
+    &&reserved_or_spare_thus_terminate,  // 11010'010 [210]
+    &&reserved_or_spare_thus_terminate,  // 11010'011 [211]
+    &&reserved_or_spare_thus_terminate,  // 11010'100 [212]
+    &&reserved_or_spare_thus_terminate,  // 11010'101 [213]
+    &&reserved_or_spare_thus_terminate,  // 11010'110 [214]
+    &&reserved_or_spare_thus_terminate,  // 11010'111 [215]
+
+    // Spare (xxx != 000, 001, 010) 11xxxyyy
+
+    &&reserved_or_spare_thus_terminate,  // 11011'000 [216]
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 []
+    &&reserved_or_spare_thus_terminate,  // 11011'000 []
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 [231]
+    &&reserved_or_spare_thus_terminate,  // 11011'000 []
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 []
+    &&reserved_or_spare_thus_terminate,  // 11011'000 []
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 [247]
+
+    &&reserved_or_spare_thus_terminate,  // 11011'000 [248]
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    // TODO(kammce): change this back to `&&reserved_or_spare_thus_terminate`
+    // Using this last instruction to mean "0xB0" finish. Because the LSDA data
+    // will typically as the DWARF offset encoding type set to 0xFF OMIT, we can
+    // utilize this to end the unwinding when the word boundary is hit.
+    &&finish_unwind,  // 11111'111 [255]
+  };
+
+  static constexpr std::array<uint8_t, 8> big_to_little_endian_sequencer{
+    2, 1, 0, 7, 6, 5, 4, 11
+  };
+
+  constexpr auto personality_type = hal::bit_mask::from<24, 27>();
+  constexpr auto generic = hal::bit_mask::from<31>();
+
+  std::uint8_t const* unwind_instructions = nullptr;
+  auto const& entry = *p_exception_object.cache.entry_ptr;
+  if (entry.has_inlined_personality()) {
+    unwind_instructions = as<std::uint8_t>(&entry.personality_offset);
+  } else {
+    auto const* personality = entry.personality();
+    if (hal::bit_extract<generic>(personality[0])) {
+      unwind_instructions = as<std::uint8_t>(&personality[0]);
+    } else {
+      // If the generic bit is not set, then this is an LSDA.
+      //
+      // The first 4-byte word [0] will be the prel31 offset to GCC's
+      // __gcc_personality_v0 as per the Itanium EH spec. The next word(s) [1]
+      // are the native unwind instructions. Following the unwind information is
+      // the LSDA area.
+      unwind_instructions = as<std::uint8_t>(&personality[1]);
+    }
+  }
+
+  auto byte_sequencer = big_to_little_endian_sequencer.begin();
+
+  if (hal::bit_extract<personality_type>(unwind_instructions[0]) != 0x0) {
+    byte_sequencer++;
+  }
+
+  auto& virtual_cpu = p_exception_object.cpu;
+  bool move_lr_to_pc = true;
+  std::uint32_t u32_storage = 0;
+  auto const* sp_ptr = *virtual_cpu.sp;
+
+  while (true) {
+    auto const instruction = unwind_instructions[*byte_sequencer++];
+    auto const next_instruction = unwind_instructions[*byte_sequencer];
+    auto const* instruction_handler = jump_table[instruction];
+    goto* instruction_handler;
+
+  // +=========================================================================+
+  // |                                 Finish!                                 |
+  // +=========================================================================+
+  finish_unwind:
+    virtual_cpu.sp = sp_ptr;
+    [[likely]] if (move_lr_to_pc) {
+      virtual_cpu.pc = virtual_cpu.lr;
+    }
+    break;
+
+  reserved_or_spare_thus_terminate:
+    std::terminate();
+    break;
+
+  subtract_vsp_using_uleb128:
+    static constexpr auto uleb128_offset = 0x204 / sizeof(std::uint32_t);
+    // TODO(kammce): this is obviously broken. You may need to write this in
+    // from scratch to manage the fact that the bytes are in big endian sequence
+    // vs the native little endian.
+    sp_ptr += read_uleb128(nullptr) + uleb128_offset;
+    continue;
+
+  pop_integer_registers_under_mask_r3_r2_r1_r0:
+    // If the next unwind instruction equals 0, or if the bits from 4 or 7
+    // contains any 1s, then its time to terminate
+    if (next_instruction == 0b0000'0000 || (next_instruction & 0xF0) != 0) {
+      goto reserved_or_spare_thus_terminate;
+    }
+
+    u32_storage = next_instruction;
+
+    while (u32_storage) {
+      // The first bit corresponds to the R0
+      std::uint32_t lsb_bit_position = std::countr_zero(u32_storage);
+      // Copy value from the stack, increment stack pointer.
+      virtual_cpu[lsb_bit_position] = *(sp_ptr++);
+      // Clear the bit for the lsb_bit_position
+      u32_storage = u32_storage & ~(1 << lsb_bit_position);
+    }
+    byte_sequencer++;
+    continue;
+
+  refuse_unwind_or_pop:
+    // If the next unwind instruction equals 0, then its time to terminate
+    if (next_instruction == 0b0000'0000) {
+      goto reserved_or_spare_thus_terminate;
+    }
+
+    // *************************************************************************
+    //                            !!!! WARNING !!!!
+    //
+    //     `refuse_unwind_or_pop` MUST BE directly above `pop_under_mask`
+    //
+    //      refuse_unwind_or_pop ---> [[fallthrough]] --> pop_under_mask
+    // *************************************************************************
+
+  pop_under_mask:
+    // Because this unwind instruction is meant to be rare, we will use a while
+    // loop here rather than unroll this loop. Unless there is some incentive to
+    // improve the performance for this instruction.
+
+    // Save the lower 4-bits of the previous instruction and the 8-bits of the
+    // current instruction and combine them.
+    u32_storage = instruction & 0xF;
+    u32_storage <<= 8;
+    u32_storage |= next_instruction;
+
+    if (u32_storage & (1 << 3)) {
+      move_lr_to_pc = false;
+    }
+
+    // TODO(kammce): consider (remark b)
+    // ========================================================================
+    // > ‘Pop’ generally denotes removal from the stack commencing at current
+    // > vsp, with subsequent increment of vsp to beyond the removed quantities.
+    // > The sole exception to this rule is popping r13, when the writeback of
+    // > the loaded value to vsp is delayed until after the whole instruction
+    // > has completed. When multiple registers are popped by a single
+    // > instruction they are taken as lowest numbered register at lowest stack
+    // > address.
+    // =========================================================================
+
+    while (u32_storage) {
+      // Get the first 1's distance from the right. We add 12 because the
+      // mask's first bit represents r4 and increases from there. The first
+      // byte, the instruction byte, only contains the registers from 12
+      // to 15.
+      std::uint32_t lsb_bit_position = std::countr_zero(u32_storage);
+      // Clear the bit for the lsb_bit_position
+      u32_storage = u32_storage & ~(1 << lsb_bit_position);
+      // Copy value from the stack, increment stack pointer.
+      virtual_cpu[lsb_bit_position + 4U] = *(sp_ptr++);
+    }
+
+    byte_sequencer++;
+    continue;
+
+  // +=========================================================================+
+  // |                            VSP = R[nnnn]                                |
+  // +=========================================================================+
+  assign_to_vsp_to_reg_nnnn:
+    // Get the current instruction and get all lower 4-bits
+    u32_storage = instruction & 0xF;
+    sp_ptr = *virtual_cpu[u32_storage];
+    continue;
+
+  // +=========================================================================+
+  // |                     Sequentially Pop Registers + LR                     |
+  // +=========================================================================+
+  pop_off_stack_r4_to_r11_and_lr:
+    sp_ptr = pop_register_range<7, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r10_and_lr:
+    sp_ptr = pop_register_range<6, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r9_and_lr:
+    sp_ptr = pop_register_range<5, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r8_and_lr:
+    sp_ptr = pop_register_range<4, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r7_and_lr:
+    sp_ptr = pop_register_range<3, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r6_and_lr:
+    sp_ptr = pop_register_range<2, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r5_and_lr:
+    sp_ptr = pop_register_range<1, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r4_and_lr:
+    sp_ptr = pop_register_range<0, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    continue;
+
+  // +=========================================================================+
+  // |                      Sequentially Pop Registers                         |
+  // +=========================================================================+
+  pop_off_stack_r4_to_r11:
+    sp_ptr = pop_register_range<7>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r10:
+    sp_ptr = pop_register_range<6>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r9:
+    sp_ptr = pop_register_range<5>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r8:
+    sp_ptr = pop_register_range<4>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r7:
+    sp_ptr = pop_register_range<3>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r6:
+    sp_ptr = pop_register_range<2>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r5:
+    sp_ptr = pop_register_range<1>(sp_ptr, virtual_cpu);
+    continue;
+  pop_off_stack_r4_to_r4:
+    sp_ptr = pop_register_range<0>(sp_ptr, virtual_cpu);
+    continue;
+
+  // +=========================================================================+
+  // |                                Add VSP                                  |
+  // +=========================================================================+
+  vsp_add_0:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<0>();
+    continue;
+  vsp_add_1:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<1>();
+    continue;
+  vsp_add_2:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<2>();
+    continue;
+  vsp_add_3:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<3>();
+    continue;
+  vsp_add_4:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<4>();
+    continue;
+  vsp_add_5:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<5>();
+    continue;
+  vsp_add_6:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<6>();
+    continue;
+  vsp_add_7:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<7>();
+    continue;
+  vsp_add_8:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<8>();
+    continue;
+  vsp_add_9:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<9>();
+    continue;
+  vsp_add_10:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<10>();
+    continue;
+  vsp_add_11:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<11>();
+    continue;
+  vsp_add_12:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<12>();
+    continue;
+  vsp_add_13:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<13>();
+    continue;
+  vsp_add_14:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<14>();
+    continue;
+  vsp_add_15:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<15>();
+    continue;
+  vsp_add_16:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<16>();
+    continue;
+  vsp_add_17:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<17>();
+    continue;
+  vsp_add_18:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<18>();
+    continue;
+  vsp_add_19:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<19>();
+    continue;
+  vsp_add_20:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<20>();
+    continue;
+  vsp_add_21:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<21>();
+    continue;
+  vsp_add_22:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<22>();
+    continue;
+  vsp_add_23:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<23>();
+    continue;
+  vsp_add_24:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<24>();
+    continue;
+  vsp_add_25:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<25>();
+    continue;
+  vsp_add_26:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<26>();
+    continue;
+  vsp_add_27:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<27>();
+    continue;
+  vsp_add_28:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<28>();
+    continue;
+  vsp_add_29:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<29>();
+    continue;
+  vsp_add_30:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<30>();
+    continue;
+  vsp_add_31:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<31>();
+    continue;
+  vsp_add_32:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<32>();
+    continue;
+  vsp_add_33:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<33>();
+    continue;
+  vsp_add_34:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<34>();
+    continue;
+  vsp_add_35:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<35>();
+    continue;
+  vsp_add_36:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<36>();
+    continue;
+  vsp_add_37:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<37>();
+    continue;
+  vsp_add_38:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<38>();
+    continue;
+  vsp_add_39:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<39>();
+    continue;
+  vsp_add_40:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<40>();
+    continue;
+  vsp_add_41:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<41>();
+    continue;
+  vsp_add_42:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<42>();
+    continue;
+  vsp_add_43:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<43>();
+    continue;
+  vsp_add_44:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<44>();
+    continue;
+  vsp_add_45:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<45>();
+    continue;
+  vsp_add_46:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<46>();
+    continue;
+  vsp_add_47:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<47>();
+    continue;
+  vsp_add_48:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<48>();
+    continue;
+  vsp_add_49:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<49>();
+    continue;
+  vsp_add_50:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<50>();
+    continue;
+  vsp_add_51:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<51>();
+    continue;
+  vsp_add_52:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<52>();
+    continue;
+  vsp_add_53:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<53>();
+    continue;
+  vsp_add_54:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<54>();
+    continue;
+  vsp_add_55:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<55>();
+    continue;
+  vsp_add_56:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<56>();
+    continue;
+  vsp_add_57:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<57>();
+    continue;
+  vsp_add_58:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<58>();
+    continue;
+  vsp_add_59:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<59>();
+    continue;
+  vsp_add_60:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<60>();
+    continue;
+  vsp_add_61:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<61>();
+    continue;
+  vsp_add_62:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<62>();
+    continue;
+  vsp_add_63:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<63>();
+    continue;
+
+  // +=========================================================================+
+  // |                                Sub VSP                                  |
+  // +=========================================================================+
+  vsp_sub_0:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<0>();
+    continue;
+  vsp_sub_1:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<1>();
+    continue;
+  vsp_sub_2:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<2>();
+    continue;
+  vsp_sub_3:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<3>();
+    continue;
+  vsp_sub_4:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<4>();
+    continue;
+  vsp_sub_5:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<5>();
+    continue;
+  vsp_sub_6:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<6>();
+    continue;
+  vsp_sub_7:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<7>();
+    continue;
+  vsp_sub_8:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<8>();
+    continue;
+  vsp_sub_9:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<9>();
+    continue;
+  vsp_sub_10:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<10>();
+    continue;
+  vsp_sub_11:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<11>();
+    continue;
+  vsp_sub_12:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<12>();
+    continue;
+  vsp_sub_13:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<13>();
+    continue;
+  vsp_sub_14:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<14>();
+    continue;
+  vsp_sub_15:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<15>();
+    continue;
+  vsp_sub_16:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<16>();
+    continue;
+  vsp_sub_17:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<17>();
+    continue;
+  vsp_sub_18:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<18>();
+    continue;
+  vsp_sub_19:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<19>();
+    continue;
+  vsp_sub_20:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<20>();
+    continue;
+  vsp_sub_21:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<21>();
+    continue;
+  vsp_sub_22:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<22>();
+    continue;
+  vsp_sub_23:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<23>();
+    continue;
+  vsp_sub_24:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<24>();
+    continue;
+  vsp_sub_25:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<25>();
+    continue;
+  vsp_sub_26:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<26>();
+    continue;
+  vsp_sub_27:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<27>();
+    continue;
+  vsp_sub_28:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<28>();
+    continue;
+  vsp_sub_29:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<29>();
+    continue;
+  vsp_sub_30:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<30>();
+    continue;
+  vsp_sub_31:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<31>();
+    continue;
+  vsp_sub_32:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<32>();
+    continue;
+  vsp_sub_33:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<33>();
+    continue;
+  vsp_sub_34:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<34>();
+    continue;
+  vsp_sub_35:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<35>();
+    continue;
+  vsp_sub_36:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<36>();
+    continue;
+  vsp_sub_37:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<37>();
+    continue;
+  vsp_sub_38:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<38>();
+    continue;
+  vsp_sub_39:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<39>();
+    continue;
+  vsp_sub_40:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<40>();
+    continue;
+  vsp_sub_41:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<41>();
+    continue;
+  vsp_sub_42:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<42>();
+    continue;
+  vsp_sub_43:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<43>();
+    continue;
+  vsp_sub_44:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<44>();
+    continue;
+  vsp_sub_45:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<45>();
+    continue;
+  vsp_sub_46:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<46>();
+    continue;
+  vsp_sub_47:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<47>();
+    continue;
+  vsp_sub_48:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<48>();
+    continue;
+  vsp_sub_49:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<49>();
+    continue;
+  vsp_sub_50:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<50>();
+    continue;
+  vsp_sub_51:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<51>();
+    continue;
+  vsp_sub_52:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<52>();
+    continue;
+  vsp_sub_53:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<53>();
+    continue;
+  vsp_sub_54:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<54>();
+    continue;
+  vsp_sub_55:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<55>();
+    continue;
+  vsp_sub_56:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<56>();
+    continue;
+  vsp_sub_57:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<57>();
+    continue;
+  vsp_sub_58:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<58>();
+    continue;
+  vsp_sub_59:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<59>();
+    continue;
+  vsp_sub_60:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<60>();
+    continue;
+  vsp_sub_61:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<61>();
+    continue;
+  vsp_sub_62:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<62>();
+    continue;
+  vsp_sub_63:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<63>();
+    continue;
+  }
+}
+#endif
+
+[[gnu::always_inline]]
+inline instructions_t create_instructions_from_entry(
+  index_entry_t const& p_entry)
 {
   constexpr auto personality_type = hal::bit_mask::from<24, 27>();
   constexpr auto generic = hal::bit_mask::from<31>();
@@ -2056,10 +2976,13 @@ instructions_t create_instructions_from_entry(index_entry_t const& p_entry)
 
   if (p_entry.has_inlined_personality()) {
     handler_data = &p_entry.personality_offset;
-  } else if (hal::bit_extract<generic>(p_entry.personality()[0])) {
-    handler_data = &p_entry.personality()[0];
   } else {
-    handler_data = &p_entry.personality()[1];
+    auto const* personality = p_entry.personality();
+    if (hal::bit_extract<generic>(personality[0])) {
+      handler_data = &personality[0];
+    } else {
+      handler_data = &personality[1];
+    }
   }
 
   std::uint32_t header = handler_data[0];
