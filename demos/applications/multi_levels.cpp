@@ -51,16 +51,13 @@ std::array<signature*, 9> functions = {
   &funct_group3_0, &funct_group4_0, &funct_group5_0,
   &funct_group6_0, &funct_group7_0, &funct_group8_0,
 #if 0
-  funct_group9_0,  funct_group10_0, funct_group11_0,
-  funct_group12_0, funct_group13_0, funct_group14_0, funct_group15_0,
-  funct_group16_0,
-  funct_group17_0, funct_group18_0, funct_group19_0,
-  funct_group20_0, funct_group21_0, funct_group22_0, funct_group23_0,
-  funct_group24_0
+  &funct_group9_0,
+  &funct_group10_0, &funct_group11_0, &funct_group12_0, &funct_group13_0,
+  &funct_group14_0, &funct_group15_0, &funct_group16_0, &funct_group17_0,
+  &funct_group18_0, &funct_group19_0, &funct_group20_0, &funct_group21_0,
+  &funct_group22_0, &funct_group23_0, &funct_group24_0
 #endif
 };
-
-std::uint64_t allocation_cycles = 0;
 
 void application(resource_list& p_resources)
 {
@@ -71,17 +68,12 @@ void application(resource_list& p_resources)
   for (std::size_t i = 0; i < functions.size(); i++) {
     try {
       functions.at(i)();
-      // NOTE to Khalil before submission. Something is wrong with the unwinder
-      // and we are jumping to different locations when it completes the first
-      // time. Local variables are probably being damaged or the stack pointer
-      // is not in the correct location.
     } catch ([[maybe_unused]] my_error_t const& p_error) {
       end_cycles = resources->clock->uptime();
       cycle_map[i] = end_cycles - start_cycles;
     }
   }
 
-#if 1
   for (std::size_t i = 0; i < functions.size(); i++) {
     bool was_caught = false;
     try {
@@ -96,7 +88,6 @@ void application(resource_list& p_resources)
       happy_cycle_map[i] = end_cycles - start_cycles;
     }
   }
-#endif
 
   while (true) {
     continue;
@@ -11407,4 +11398,5 @@ int funct_group24_95()
 
   return side_effect;
 }
+
 #endif

@@ -495,7 +495,8 @@ inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 
 inline void enter_function(exception_object& p_exception_object)
 {
-  auto const* lsda_word = p_exception_object.cache.entry_ptr->lsda_data();
+  auto const* lsda_word =
+    index_entry_t::lsda_data(p_exception_object.cache.personality);
   auto const* lsda_data = reinterpret_cast<std::uint8_t const*>(lsda_word);
 
 #if 0
@@ -630,7 +631,7 @@ inline lsda_header_info parse_header(std::uint8_t const** p_lsda)
 inline auto const* to_lsda(exception_object& p_exception_object)
 {
   return reinterpret_cast<std::uint8_t const*>(
-    p_exception_object.cache.entry_ptr->lsda_data());
+    index_entry_t::lsda_data(p_exception_object.cache.personality));
 }
 
 inline auto calculate_relative_pc(exception_object& p_exception_object)
@@ -1973,15 +1974,20 @@ void raise_exception(exception_object& p_exception_object)
       case runtime_state::get_next_frame: {
         auto const& index_entry = get_index_entry(p_exception_object.cpu.pc);
         p_exception_object.cache.entry_ptr = &index_entry;
+        // SU16 data
         if (index_entry.has_inlined_personality()) {
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
-        auto const* descriptor_start = index_entry.descriptor_start();
+        p_exception_object.cache.personality = index_entry.personality();
+        auto const* descriptor_start =
+          index_entry_t::descriptor_start(p_exception_object.cache.personality);
+        // LU16 data no LSDA
         if (*descriptor_start == 0x0000'0000) {
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
+        // LSDA
         p_exception_object.cache.relative_address(
           (p_exception_object.cpu.pc - index_entry.function()));
         p_exception_object.cache.state(runtime_state::enter_function);

@@ -133,7 +133,7 @@ struct function_t
 
   bool operator<(function_t const& p_other) const
   {
-    return address < p_other.address;
+    return address < p_other.address;  // NOLINT
   }
 
   bool operator==(function_t const& p_other) const
@@ -182,11 +182,12 @@ struct index_entry_t
     return to_absolute_address_ptr(&personality_offset);
   }
 
-  [[gnu::always_inline]] inline std::uint32_t const* lsda_data() const
+  [[gnu::always_inline]] static inline std::uint32_t const* lsda_data(
+    std::uint32_t const* p_personality)
   {
     constexpr auto personality_type = hal::bit_mask::from<24, 27>();
     // +1 to skip the prel31 offset to the personality function
-    auto const* header = personality() + 1;
+    auto const* header = p_personality + 1;
     if (hal::bit_extract<personality_type>(*header) == 0x0) {
       return header + 1;
     }
@@ -199,22 +200,22 @@ struct index_entry_t
     return header + 3;
   }
 
-  [[gnu::always_inline]] inline std::uint32_t const* descriptor_start() const
+  [[gnu::always_inline]] inline static std::uint32_t const* descriptor_start(
+    std::uint32_t const* p_personality)
   {
     constexpr auto type_mask = hal::bit_mask{ .position = 24, .width = 8 };
 
-    auto* personality_address = personality();
-    auto type = hal::bit_extract<type_mask>(*personality_address);
+    auto type = hal::bit_extract<type_mask>(*p_personality);
 
     // TODO(kammce): comment why each of these works!
     if (type == 0x0) {
-      return personality_address + 1;
+      return p_personality + 1;
     }
 
     // The limit for ARM exceptions instructions is 7. LD optimizes the ARM
     // exception spec by removing the "word length" specifier allowing the
     // instructions to fit in 2 words.
-    return personality_address + 2;
+    return p_personality + 2;
   }
 
   [[gnu::always_inline]] function_t function() const
@@ -262,8 +263,9 @@ enum class runtime_state : std::uint8_t
 
 struct cache_t
 {
-  std::uint32_t rel_address;
   index_entry_t const* entry_ptr = nullptr;
+  std::uint32_t const* personality = nullptr;
+  std::uint32_t rel_address;
   runtime_state inner_state;
   bool previously_rethrown = false;
 
