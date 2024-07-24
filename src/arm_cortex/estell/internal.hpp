@@ -66,23 +66,6 @@ constexpr std::uint32_t su16_mask = 0b1111'1111'1111'1110;
 
 inline std::uint32_t to_absolute_address(void const* p_object)
 {
-#if 0
-  constexpr auto signed_bit_31 = hal::bit_mask::from<30>();
-  constexpr auto signed_bit_32 = hal::bit_mask::from<31>();
-  auto object_address = std::bit_cast<std::int32_t>(p_object);
-  auto offset = *std::bit_cast<std::uint32_t const*>(p_object);
-
-  // Sign extend the offset to 32-bits
-  if (hal::bit_extract<signed_bit_31>(offset)) {
-    hal::bit_modify(offset).set<signed_bit_32>();
-  } else {
-    hal::bit_modify(offset).clear<signed_bit_32>();
-  }
-
-  auto signed_offset = static_cast<std::int32_t>(offset);
-  std::int32_t final_address = object_address + signed_offset;
-  return static_cast<std::uint32_t>(final_address);
-#else
   auto const object_address = std::bit_cast<std::int32_t>(p_object);
   auto offset = *std::bit_cast<std::int32_t const*>(p_object);
 
@@ -93,8 +76,6 @@ inline std::uint32_t to_absolute_address(void const* p_object)
 
   auto const final_address = object_address + offset;
   return static_cast<std::uint32_t>(final_address);
-
-#endif
 }
 
 [[gnu::used]] inline std::uint32_t runtime_to_absolute_address(
@@ -200,15 +181,25 @@ struct index_entry_t
     return header + 3;
   }
 
+  /**
+   * @brief Returns the pointer to the personality's descriptor data
+   *
+   * Descriptor data is data that comes after the unwind instructions.
+   *
+   * @param p_personality - pointer to the function's personality data within
+   * the exception table.
+   * @return std::uint32_t const* - pointer to the descriptor start area. Always
+   * valid so long as p_personality is valid.
+   */
   [[gnu::always_inline]] inline static std::uint32_t const* descriptor_start(
     std::uint32_t const* p_personality)
   {
-    constexpr auto type_mask = hal::bit_mask{ .position = 24, .width = 8 };
+    constexpr hal::bit_mask personality_type_mask{ .position = 24, .width = 4 };
+    auto const type = hal::bit_extract<personality_type_mask>(*p_personality);
 
-    auto type = hal::bit_extract<type_mask>(*p_personality);
-
-    // TODO(kammce): comment why each of these works!
-    if (type == 0x0) {
+    // If the personality type is 0 (SU16), then the descriptor start is right
+    // after the first word.
+    if (type == 0) {
       return p_personality + 1;
     }
 
@@ -226,10 +217,18 @@ struct index_entry_t
 
 struct cortex_m_cpu
 {
-  register_t r0;  // Remove?
-  register_t r1;  // Remove?
-  register_t r2;  // Remove?
-  register_t r3;  // Remove?
+  // NOTE: We could consider removing r0 to r3. Technically, these are not
+  // callee preserved. We also destroy the state of R0 and R1 when we drop into
+  // a function to either run destructors or to execute a catch block.
+  //
+  // The only real issue issue is vsp = r[nnnn] where `nnnn` can be 0
+  // to 3. Pop r0 to r3 could be instructions we ignore by moving the stack
+  // pointer but ignoring the results. For now, we will support all operations
+  // on these registers until we know we can safely remove them.
+  register_t r0;
+  register_t r1;
+  register_t r2;
+  register_t r3;
   register_t r4;
   register_t r5;
   register_t r6;
@@ -259,6 +258,7 @@ enum class runtime_state : std::uint8_t
   get_next_frame = 0,
   enter_function = 1,
   unwind_frame = 2,
+  // TODO(#37): Add handled state
 };
 
 struct cache_t

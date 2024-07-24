@@ -45,7 +45,10 @@ union instructions_t
 };
 
 namespace {
+// TODO(#19): Make this thread local and figure out how to support is using
+// emutls.
 exception_ptr active_exception = nullptr;
+// TODO(#42): Use the applications's polymorphic allocator, not our own space.
 std::array<std::uint8_t, 256> exception_buffer{};
 }  // namespace
 
@@ -388,7 +391,6 @@ template<lsda_encoding encoding>
     return 0;
   }
 
-  // TODO: convert to hal::bit_extract w/ bit mask
   auto const encoding_type = p_encoding & 0x0F;
 
   switch (encoding_type) {
@@ -607,7 +609,7 @@ public:
     auto const* type_table = as<std::uintptr_t const*>(m_type_table_end);
 
     // We assume prel here because all other options are deprecated
-    // TODO(#___): Consider using the type table encoding format for decoding
+    // TODO(#39): Consider using the type table encoding format for decoding
     // the type table info rather than assuming that the values here are
     // prel31_offsets
     auto const* current_type = &type_table[-m_filter];
@@ -720,8 +722,8 @@ inline void enter_function(exception_object& p_exception_object)
   auto* entry_ptr = p_exception_object.cache.entry_ptr;
 
   // This occurs when a frame has destructors that need cleaning up but no
-  // try/catch blocks. In such a case, if we found a scope we need to enter, we
-  // should enter it immediately!
+  // try/catch blocks resulting in there being no action table or type table. In
+  // such a case, then the scope found should be entered immediately!
   if (info.type_table_end < info.call_site_end) {
     // LSB must be set to 1 to jump to an address
     auto const final_destination =
@@ -741,6 +743,7 @@ inline void enter_function(exception_object& p_exception_object)
        type_info != nullptr;
        type_info = a_decoder.get_next_catch_type()) {
 
+    // TODO(#6): Replace with dynamic cast
     if (type_info != p_exception_object.type_info &&
         type_info != action_decoder::install_context_type()) {
       continue;
@@ -778,12 +781,12 @@ template<size_t PopCount, pop_lr PopLinkRegister = pop_lr::skip>
 [[nodiscard("You MUST set the unwind function's stack pointer to this "
             "value after executing it!")]]
 inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
-                                               cortex_m_cpu& p_virtual_cpu)
+                                               cortex_m_cpu& p_cpu)
 {
   // We pull these pointers out in order to access them incrementally, which
   // will give the hint to the compiler to convert them into a sequence of
   // immediate load and stores.
-  auto* r4_pointer = &p_virtual_cpu.r4.data;
+  auto* r4_pointer = &p_cpu.r4.data;
 
   static_assert(PopCount <= 7, "Pop Count cannot be above 7");
 
@@ -798,15 +801,13 @@ inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
   }
 
   if constexpr (PopLinkRegister == pop_lr::do_it) {
-    p_virtual_cpu.lr = sp_ptr[PopCount + 1];
+    p_cpu.lr = sp_ptr[PopCount + 1];
   }
 
   return sp_ptr + PopCount + 1 + unsigned{ PopLinkRegister == pop_lr::do_it };
 }
 
-#if 1
-void unwind_frame(instructions_t const& p_instructions,
-                  exception_object& p_exception_object)
+void unwind_frame(instructions_t const& p_instructions, cortex_m_cpu& p_cpu)
 {
   static constexpr std::array<void*, 256> jump_table{
     &&vsp_add_0,   // [0]
@@ -960,7 +961,13 @@ void unwind_frame(instructions_t const& p_instructions,
     &&pop_under_mask,  // [0b1000'1111 = 143] (128 + 15)
 
     // 1001nnnn
-    // TODO: Split up assignments to make them faster
+    // NOTE: Consider split up assignments to make them faster. We can remove
+    // the need to actually compute the register and then assign it to vsp when
+    // the register number is encoded in the instruction. This would add more
+    // space cost though. It is an option. But this particular instruction
+    // should be very rare and typically never used in almost any code so making
+    // this faster is not a priority. Only do this if there is a client need for
+    // such a feature.
     &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0000 = 144]
     &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0001 = 145]
     &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0010 = 146]
@@ -1009,13 +1016,16 @@ void unwind_frame(instructions_t const& p_instructions,
     // Subtract VSP using uleb128
     &&subtract_vsp_using_uleb128,  // 10110010 [178]
 
-    // Pop VFP double-precision registers (not supported currently)
+    // Pop VFP double-precision registers
+    // TODO(#27): Add support for this
     &&reserved_or_spare_thus_terminate,  // 10110011 [179]
 
     // Pop Return Address Authentication Code pseudo-register
+    // TODO(#28): Add support for this
     &&reserved_or_spare_thus_terminate,  // 10110100 [180]
 
     // Use current vsp as modifier in Return Address Authentication
+    // TODO(#29): Add support for this
     &&reserved_or_spare_thus_terminate,  // 10110101 [181]
 
     // Spare (was Pop FPA) 1011011n
@@ -1023,6 +1033,7 @@ void unwind_frame(instructions_t const& p_instructions,
     &&reserved_or_spare_thus_terminate,  // 10110111 [183]
 
     // Pop VFP double-precision registers D[8]-D[8+nnn] saved 10111nnn
+    // TODO(#30): Add support for this
     &&reserved_or_spare_thus_terminate,  // 10111'000 [184]
     &&reserved_or_spare_thus_terminate,  // 10111'001 [185]
     &&reserved_or_spare_thus_terminate,  // 10111'010 [186]
@@ -1033,6 +1044,10 @@ void unwind_frame(instructions_t const& p_instructions,
     &&reserved_or_spare_thus_terminate,  // 10111'111 [191]
 
     // Intel Wireless MMX pop wR[10]-wR[10+nnn] 11000nnn
+    // NOTE: We will probably never support these. No modern ARM device is still
+    // using the Intel MMX registers. We will only consider adding support for
+    // this if a user/client/developer specifically requests it and has a dire
+    // need for it.
     &&reserved_or_spare_thus_terminate,  // 11000'000 [192]
     &&reserved_or_spare_thus_terminate,  // 11000'001 [193]
     &&reserved_or_spare_thus_terminate,  // 11000'010 [194]
@@ -1041,6 +1056,7 @@ void unwind_frame(instructions_t const& p_instructions,
     &&reserved_or_spare_thus_terminate,  // 11000'101 [197]
 
     // Intel Wireless MMX pop wR[ssss]-wR[ssss+cccc]
+    // See NOTE in above section...
     &&reserved_or_spare_thus_terminate,  // 11000'110 [198]
 
     // Spare (11000111)
@@ -1048,10 +1064,12 @@ void unwind_frame(instructions_t const& p_instructions,
 
     // Pop VFP double precision registers D[ssss]-D[ssss+cccc] saved (as if) by
     // VPUSH (11001000)
+    // TODO(#31): Add support for this
     &&reserved_or_spare_thus_terminate,  // 11001000 [200]
 
     // Pop VFP double precision registers D[ssss]-D[ssss+cccc] saved (as if) by
     // VPUSH (11001001)
+    // TODO(#32): Add support for this
     &&reserved_or_spare_thus_terminate,  // 11001001 [201]
 
     // Spare (yyy != 000, 001) 11001yyy
@@ -1063,6 +1081,7 @@ void unwind_frame(instructions_t const& p_instructions,
     &&reserved_or_spare_thus_terminate,  // 11001'111 [207]
 
     // Pop VFP double-precision registers D[8]-D[8+nnn] saved by VPUSH 11010nnn
+    // TODO(#33): Add support for this
     &&reserved_or_spare_thus_terminate,  // 11010'000 [208]
     &&reserved_or_spare_thus_terminate,  // 11010'001 [209]
     &&reserved_or_spare_thus_terminate,  // 11010'010 [210]
@@ -1115,14 +1134,12 @@ void unwind_frame(instructions_t const& p_instructions,
     &&reserved_or_spare_thus_terminate,  // 11011'101 []
     &&reserved_or_spare_thus_terminate,  // 11011'110 []
     &&reserved_or_spare_thus_terminate,  // 11111'111 [255]
-
   };
 
-  auto& virtual_cpu = p_exception_object.cpu;
   bool move_lr_to_pc = true;
   std::uint32_t u32_storage = 0;
   auto const* instruction_ptr = p_instructions.data.data();
-  auto const* sp_ptr = *virtual_cpu.sp;
+  auto const* sp_ptr = *p_cpu.sp;
 
   while (true) {
     auto const* instruction_handler = jump_table[*instruction_ptr];
@@ -1133,9 +1150,9 @@ void unwind_frame(instructions_t const& p_instructions,
   // |                                 Finish!                                 |
   // +=========================================================================+
   finish_unwind:
-    virtual_cpu.sp = sp_ptr;
+    p_cpu.sp = sp_ptr;
     [[likely]] if (move_lr_to_pc) {
-      virtual_cpu.pc = virtual_cpu.lr;
+      p_cpu.pc = p_cpu.lr;
     }
     break;
 
@@ -1161,7 +1178,7 @@ void unwind_frame(instructions_t const& p_instructions,
       // The first bit corresponds to the R0
       std::uint32_t lsb_bit_position = std::countr_zero(u32_storage);
       // Copy value from the stack, increment stack pointer.
-      virtual_cpu[lsb_bit_position] = *(sp_ptr++);
+      p_cpu[lsb_bit_position] = *(sp_ptr++);
       // Clear the bit for the lsb_bit_position
       u32_storage = u32_storage & ~(1 << lsb_bit_position);
     }
@@ -1197,7 +1214,7 @@ void unwind_frame(instructions_t const& p_instructions,
       move_lr_to_pc = false;
     }
 
-    // TODO(kammce): consider (remark b)
+    // TODO(#40): consider (remark b)
     // ========================================================================
     // > ‘Pop’ generally denotes removal from the stack commencing at current
     // > vsp, with subsequent increment of vsp to beyond the removed quantities.
@@ -1217,7 +1234,7 @@ void unwind_frame(instructions_t const& p_instructions,
       // Clear the bit for the lsb_bit_position
       u32_storage = u32_storage & ~(1 << lsb_bit_position);
       // Copy value from the stack, increment stack pointer.
-      virtual_cpu[lsb_bit_position + 4U] = *(sp_ptr++);
+      p_cpu[lsb_bit_position + 4U] = *(sp_ptr++);
     }
 
     instruction_ptr++;
@@ -1229,63 +1246,63 @@ void unwind_frame(instructions_t const& p_instructions,
   assign_to_vsp_to_reg_nnnn:
     // Get the current instruction and get all lower 4-bits
     u32_storage = *(instruction_ptr - 1U) & 0xF;
-    sp_ptr = *virtual_cpu[u32_storage];
+    sp_ptr = *p_cpu[u32_storage];
     continue;
 
   // +=========================================================================+
   // |                     Sequentially Pop Registers + LR                     |
   // +=========================================================================+
   pop_off_stack_r4_to_r11_and_lr:
-    sp_ptr = pop_register_range<7, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<7, pop_lr::do_it>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r10_and_lr:
-    sp_ptr = pop_register_range<6, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<6, pop_lr::do_it>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r9_and_lr:
-    sp_ptr = pop_register_range<5, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<5, pop_lr::do_it>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r8_and_lr:
-    sp_ptr = pop_register_range<4, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<4, pop_lr::do_it>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r7_and_lr:
-    sp_ptr = pop_register_range<3, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<3, pop_lr::do_it>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r6_and_lr:
-    sp_ptr = pop_register_range<2, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<2, pop_lr::do_it>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r5_and_lr:
-    sp_ptr = pop_register_range<1, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<1, pop_lr::do_it>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r4_and_lr:
-    sp_ptr = pop_register_range<0, pop_lr::do_it>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<0, pop_lr::do_it>(sp_ptr, p_cpu);
     continue;
 
   // +=========================================================================+
   // |                      Sequentially Pop Registers                         |
   // +=========================================================================+
   pop_off_stack_r4_to_r11:
-    sp_ptr = pop_register_range<7>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<7>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r10:
-    sp_ptr = pop_register_range<6>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<6>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r9:
-    sp_ptr = pop_register_range<5>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<5>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r8:
-    sp_ptr = pop_register_range<4>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<4>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r7:
-    sp_ptr = pop_register_range<3>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<3>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r6:
-    sp_ptr = pop_register_range<2>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<2>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r5:
-    sp_ptr = pop_register_range<1>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<1>(sp_ptr, p_cpu);
     continue;
   pop_off_stack_r4_to_r4:
-    sp_ptr = pop_register_range<0>(sp_ptr, virtual_cpu);
+    sp_ptr = pop_register_range<0>(sp_ptr, p_cpu);
     continue;
 
   // +=========================================================================+
@@ -1681,7 +1698,6 @@ void unwind_frame(instructions_t const& p_instructions,
     continue;
   }
 }
-#endif
 
 [[gnu::always_inline]]
 inline instructions_t create_instructions_from_entry(
@@ -1773,12 +1789,13 @@ void raise_exception(exception_object& p_exception_object)
         p_exception_object.cache.personality = index_entry.personality();
         auto const* descriptor_start =
           index_entry_t::descriptor_start(p_exception_object.cache.personality);
-        // LU16 data no LSDA
+        // The descriptor start value can only be 0x0 if there is LU16 data and
+        // no LSDA. In such cases, simply unwind the frame.
         if (*descriptor_start == 0x0000'0000) {
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
-        // LSDA
+        // LSDA is present!
         p_exception_object.cache.relative_address(
           (p_exception_object.cpu.pc - index_entry.function()));
         p_exception_object.cache.state(runtime_state::enter_function);
@@ -1793,7 +1810,7 @@ void raise_exception(exception_object& p_exception_object)
       case runtime_state::unwind_frame: {
         auto const instructions =
           create_instructions_from_entry(p_exception_object);
-        unwind_frame(instructions, p_exception_object);
+        unwind_frame(instructions, p_exception_object.cpu);
         p_exception_object.cache.state(runtime_state::get_next_frame);
       }
     }
@@ -1803,12 +1820,11 @@ void raise_exception(exception_object& p_exception_object)
 
 extern "C"
 {
-
   void _exit([[maybe_unused]] int rc)  // NOLINT
   {
     std::terminate();
   }
-
+  // TODO(#42): Use the applications's polymorphic allocator, not our own space.
   void* __wrap___cxa_allocate_exception(size_t p_thrown_size)
   {
     if (p_thrown_size >
@@ -1862,8 +1878,10 @@ extern "C"
     exception_object.cache.state(ke::runtime_state::get_next_frame);
     exception_object.cache.rethrown(true);
 
-    // Perform an inline trivial unwind __cxa_throw:
+    // TODO(35): Replace this with an immediate call to unwind_frame(). What we
+    // have below is fragile and can break very easily.
 #if defined(OPTIMIZATION_LEVEL)
+    // Perform an inline trivial unwind __cxa_throw:
 #if OPTIMIZATION_LEVEL == Debug
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r3 = stack_pointer[0];
@@ -1886,6 +1904,8 @@ extern "C"
 
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(exception_object);
+    // TODO(#38): this area is considered a catch block, meaning that the
+    // exception is handled at this point. We should mark it as such.
     std::terminate();
   }
 
@@ -1899,8 +1919,10 @@ extern "C"
     exception_object.destructor = p_destructor;
     ke::capture_cpu_core(exception_object.cpu);
 
-    // Perform an inline trivial unwind __cxa_throw:
+    // TODO(35): Replace this with an immediate call to unwind_frame(). What we
+    // have below is fragile and can break very easily.
 #if defined(OPTIMIZATION_LEVEL)
+    // Perform an inline trivial unwind __cxa_throw:
 #if OPTIMIZATION_LEVEL == Debug
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r3 = stack_pointer[0];
