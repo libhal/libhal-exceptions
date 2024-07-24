@@ -132,11 +132,6 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
   // The mask may not demand that the stack pointer be popped, but the
   // stack pointer will still need to be popped anyway, so this check
   // determines if the mask handles this or not.
-#if 0
-  constexpr auto sp_mask = hal::bit_mask::from<cortex_m_cpu::sp_index>();
-  bool set_stack_pointer_afterwards = hal::bit_extract<sp_mask>(mask);
-#endif
-
   std::uint32_t const* stack_pointer = *p_cpu.sp;
 
   while (mask) {
@@ -169,14 +164,6 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 
   return result;
 }
-
-#if 0
-0100'0100
-<< 1 ----> 8 - (7*1)
-100'01000
->> 1
-1100'0100
-#endif
 
 [[gnu::always_inline]] inline constexpr std::int32_t read_sleb128(
   std::uint8_t const** p_ptr)
@@ -244,37 +231,6 @@ inline constexpr decoded_uleb128_t<N> multi_read_uleb128(
 
   return result;
 }
-
-#if 0
-template<size_t DecodedCount>
-[[gnu::always_inline]] inline constexpr decoded_uleb128_t<DecodedCount>
-fast_read_uleb128(std::uint8_t const* p_ptr)
-{
-  decoded_uleb128_t<DecodedCount> decoded{};
-
-  while (true) {
-    std::uint32_t storage = *p_ptr++ << 24;
-    storage |= *p_ptr++ << 16;
-    storage |= *p_ptr++ << 8;
-    storage |= *p_ptr++ << 0;
-
-    constexpr std::uint32_t uleb128_32_bit_mask = 0x80'80'80'80;
-    std::uint32_t bit_mask = storage & uleb128_32_bit_mask;
-    std::uint32_t result = ((bit_mask >> 24) & 0x01) << 3 |
-                           ((bit_mask >> 16) & 0x01) << 2 |
-                           ((bit_mask >> 8) & 0x01) << 1 | ((bit_mask) & 0x01);
-
-    static constexpr std::array<void*, 16> jump_table{};
-
-    while (true) {
-      auto* jump_location = jump_table[result];
-      goto* jump_location;
-    }
-  }
-
-  return decoded;
-}
-#endif
 
 template<typename T>
 T const* as(void const* p_ptr)
