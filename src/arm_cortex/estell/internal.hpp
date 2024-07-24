@@ -15,8 +15,10 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <typeinfo>
 
 #include <libhal-util/bit.hpp>
 
@@ -50,9 +52,9 @@ struct register_t
     return data;
   }
 
-  std::uint32_t const* operator*()
+  std::uint32_t* operator*()
   {
-    return reinterpret_cast<std::uint32_t const*>(data);
+    return reinterpret_cast<std::uint32_t*>(data);
   }
 };
 
@@ -61,6 +63,31 @@ constexpr std::uint8_t finish = 0xb0;
 constexpr std::uint32_t end_descriptor = 0x0000'0000;
 constexpr std::uint32_t su16_mask = 0b1111'1111'1111'1110;
 }  // namespace arm_ehabi
+
+inline std::uint32_t to_absolute_address(void const* p_object)
+{
+  auto const object_address = std::bit_cast<std::int32_t>(p_object);
+  auto offset = *std::bit_cast<std::int32_t const*>(p_object);
+
+  // Shift bits to the end
+  offset <<= 1;
+  // Arithmetic shift to the right to sign extend.
+  offset >>= 1;
+
+  auto const final_address = object_address + offset;
+  return static_cast<std::uint32_t>(final_address);
+}
+
+[[gnu::used]] inline std::uint32_t runtime_to_absolute_address(
+  void const* p_object)
+{
+  return to_absolute_address(p_object);
+}
+
+inline std::uint32_t* to_absolute_address_ptr(void const* p_object)
+{
+  return std::bit_cast<std::uint32_t*>(to_absolute_address(p_object));
+}
 
 // This is only to make GDB debugging easier, the functions are never actually
 // called so it is not important to include the correct types.
@@ -87,7 +114,7 @@ struct function_t
 
   bool operator<(function_t const& p_other) const
   {
-    return address < p_other.address;
+    return address < p_other.address;  // NOLINT
   }
 
   bool operator==(function_t const& p_other) const
@@ -96,26 +123,112 @@ struct function_t
   }
 };
 
+namespace su16 {
+constexpr auto instruction0 = hal::bit_mask{ .position = 16, .width = 8 };
+constexpr auto instruction1 = hal::bit_mask{ .position = 8, .width = 8 };
+constexpr auto instruction2 = hal::bit_mask{ .position = 0, .width = 8 };
+}  // namespace su16
+
+namespace lu16_32 {
+constexpr auto length = hal::bit_mask::from<16, 23>();
+constexpr auto instruction0 = hal::bit_mask::from<15, 8>();
+constexpr auto instruction1 = hal::bit_mask::from<7, 0>();
+constexpr auto instruction2 = hal::bit_mask::from<31, 24>();
+constexpr auto instruction3 = hal::bit_mask::from<23, 16>();
+constexpr auto instruction4 = hal::bit_mask::from<15, 8>();
+constexpr auto instruction5 = hal::bit_mask::from<7, 0>();
+constexpr auto instruction6 = hal::bit_mask::from<24, 31>();
+}  // namespace lu16_32
+
 struct index_entry_t
 {
   std::uint32_t function_offset;
   std::uint32_t personality_offset;
 
-  bool has_inlined_personality() const;
-  bool is_noexcept() const;
-  bool short_instructions() const;
-  std::uint32_t const* personality() const;
-  std::uint32_t const* lsda_data() const;
-  std::uint32_t const* descriptor_start() const;
-  function_t function() const;
+  [[gnu::always_inline]] inline constexpr bool has_inlined_personality() const
+  {
+    // 31st bit is `1` when the personality/unwind information is inlined, other
+    // otherwise, personality_offset is an offset.
+    constexpr auto mask = hal::bit_mask::from<31>();
+    return hal::bit_extract<mask>(personality_offset);
+  }
+
+  [[gnu::always_inline]] inline bool is_noexcept() const
+  {
+    return personality_offset == 0x1;
+  }
+
+  [[gnu::always_inline]] inline std::uint32_t const* personality() const
+  {
+    return to_absolute_address_ptr(&personality_offset);
+  }
+
+  [[gnu::always_inline]] static inline std::uint32_t const* lsda_data(
+    std::uint32_t const* p_personality)
+  {
+    constexpr auto personality_type = hal::bit_mask::from<24, 27>();
+    // +1 to skip the prel31 offset to the personality function
+    auto const* header = p_personality + 1;
+    if (hal::bit_extract<personality_type>(*header) == 0x0) {
+      return header + 1;
+    }
+    if (hal::bit_extract<lu16_32::length>(*header) == 1) {
+      return header + 2;
+    }
+    if (hal::bit_extract<lu16_32::length>(*header) > 2) {
+      return header + 2;
+    }
+    return header + 3;
+  }
+
+  /**
+   * @brief Returns the pointer to the personality's descriptor data
+   *
+   * Descriptor data is data that comes after the unwind instructions.
+   *
+   * @param p_personality - pointer to the function's personality data within
+   * the exception table.
+   * @return std::uint32_t const* - pointer to the descriptor start area. Always
+   * valid so long as p_personality is valid.
+   */
+  [[gnu::always_inline]] inline static std::uint32_t const* descriptor_start(
+    std::uint32_t const* p_personality)
+  {
+    constexpr hal::bit_mask personality_type_mask{ .position = 24, .width = 4 };
+    auto const type = hal::bit_extract<personality_type_mask>(*p_personality);
+
+    // If the personality type is 0 (SU16), then the descriptor start is right
+    // after the first word.
+    if (type == 0) {
+      return p_personality + 1;
+    }
+
+    // The limit for ARM exceptions instructions is 7. LD optimizes the ARM
+    // exception spec by removing the "word length" specifier allowing the
+    // instructions to fit in 2 words.
+    return p_personality + 2;
+  }
+
+  [[gnu::always_inline]] function_t function() const
+  {
+    return function_t(to_absolute_address(&function_offset));
+  }
 };
 
 struct cortex_m_cpu
 {
-  register_t r0;  // Remove?
-  register_t r1;  // Remove?
-  register_t r2;  // Remove?
-  register_t r3;  // Remove?
+  // NOTE: We could consider removing r0 to r3. Technically, these are not
+  // callee preserved. We also destroy the state of R0 and R1 when we drop into
+  // a function to either run destructors or to execute a catch block.
+  //
+  // The only real issue issue is vsp = r[nnnn] where `nnnn` can be 0
+  // to 3. Pop r0 to r3 could be instructions we ignore by moving the stack
+  // pointer but ignoring the results. For now, we will support all operations
+  // on these registers until we know we can safely remove them.
+  register_t r0;
+  register_t r1;
+  register_t r2;
+  register_t r3;
   register_t r4;
   register_t r5;
   register_t r6;
@@ -140,34 +253,21 @@ struct cortex_m_cpu
   }
 };
 
-namespace su16 {
-constexpr auto instruction0 = hal::bit_mask{ .position = 16, .width = 8 };
-constexpr auto instruction1 = hal::bit_mask{ .position = 8, .width = 8 };
-constexpr auto instruction2 = hal::bit_mask{ .position = 0, .width = 8 };
-}  // namespace su16
-
-namespace lu16_32 {
-constexpr auto length = hal::bit_mask::from<16, 23>();
-constexpr auto instruction0 = hal::bit_mask::from<15, 8>();
-constexpr auto instruction1 = hal::bit_mask::from<7, 0>();
-constexpr auto instruction2 = hal::bit_mask::from<31, 24>();
-constexpr auto instruction3 = hal::bit_mask::from<23, 16>();
-constexpr auto instruction4 = hal::bit_mask::from<15, 8>();
-constexpr auto instruction5 = hal::bit_mask::from<7, 0>();
-constexpr auto instruction6 = hal::bit_mask::from<24, 31>();
-}  // namespace lu16_32
-
 enum class runtime_state : std::uint8_t
 {
   get_next_frame = 0,
   enter_function = 1,
   unwind_frame = 2,
+  // TODO(#37): Add handled state
 };
 
 struct cache_t
 {
-  std::uint32_t state_and_rel_address;
   index_entry_t const* entry_ptr = nullptr;
+  std::uint32_t const* personality = nullptr;
+  std::uint32_t rel_address;
+  runtime_state inner_state;
+  bool previously_rethrown = false;
 
   static constexpr auto state_mask = hal::bit_mask{
     .position = 24,
@@ -182,37 +282,34 @@ struct cache_t
     .width = 24,
   };
 
-  constexpr runtime_state state() const
+  constexpr inline runtime_state state() const
   {
-    auto state_integer = hal::bit_extract<state_mask>(state_and_rel_address);
-    return static_cast<runtime_state>(state_integer);
+    return inner_state;
   }
 
-  constexpr std::uint32_t relative_address() const
+  constexpr inline std::uint32_t relative_address() const
   {
-    return hal::bit_extract<relative_address_mask>(state_and_rel_address);
+    return rel_address;
   }
 
-  void state(runtime_state p_state)
+  constexpr inline void state(runtime_state p_state)
   {
-    auto state_int = static_cast<std::uint8_t>(p_state);
-    hal::bit_modify(state_and_rel_address).insert<state_mask>(state_int);
+    inner_state = p_state;
   }
 
-  void rethrown(bool p_rethrown)
+  constexpr inline void rethrown(bool p_rethrown)
   {
-    hal::bit_modify(state_and_rel_address).insert<rethrown_mask>(p_rethrown);
+    previously_rethrown = p_rethrown;
   }
 
-  constexpr bool rethrown() const
+  constexpr inline bool rethrown() const
   {
-    return hal::bit_extract<rethrown_mask>(state_and_rel_address);
+    return previously_rethrown;
   }
 
-  void relative_address(std::uint32_t p_rel_address)
+  constexpr inline void relative_address(std::uint32_t p_rel_address)
   {
-    hal::bit_modify(state_and_rel_address)
-      .insert<relative_address_mask>(p_rel_address);
+    rel_address = p_rel_address;
   }
 };
 
@@ -240,80 +337,6 @@ inline void* extract_thrown_object(void* p_exception_object)
   auto object_address = reinterpret_cast<std::intptr_t>(p_exception_object);
   auto start_of_thrown = object_address + sizeof(exception_object);
   return reinterpret_cast<exception_object*>(start_of_thrown);
-}
-
-[[gnu::always_inline]] inline void restore_cpu_core(
-  ke::cortex_m_cpu& p_cpu_core)
-{
-  asm volatile(
-    "ldr r0, [%[regs], #0]\n"  // Load R0
-    "ldr r1, [%[regs], #4]\n"  // Load R1
-    "ldr r2, [%[regs], #8]\n"  // Load R2
-    // "ldr r3, [%[regs], #12]\n"   // Load R3
-    "ldr r4, [%[regs], #16]\n"   // Load R4
-    "ldr r5, [%[regs], #20]\n"   // Load R5
-    "ldr r6, [%[regs], #24]\n"   // Load R6
-    "ldr r7, [%[regs], #28]\n"   // Load R7
-    "ldr r8, [%[regs], #32]\n"   // Load R8
-    "ldr r9, [%[regs], #36]\n"   // Load R9
-    "ldr r10, [%[regs], #40]\n"  // Load R10
-    "ldr r11, [%[regs], #44]\n"  // Load R11
-    "ldr r12, [%[regs], #48]\n"  // Load R12
-    // Stack Pointer (R13/SP) and Link Register (R14/LR) require special
-    // handling
-    "ldr sp, [%[regs], #52]\n"  // Load SP
-    "ldr lr, [%[regs], #56]\n"  // Load LR
-    // PC and xPSR restoration is more complex due to ARM's execution state and
-    // alignment requirements Directly loading PC can be dangerous and is
-    // typically managed through a pop or an exception return mechanism
-    "ldr pc, [%[regs], #60]\n"
-    :
-    : [regs] "r"(&p_cpu_core)
-    : "memory",
-      "r0",
-      "r1",
-      "r2",
-      // "r3",
-      "r4",
-      "r5",
-      "r6",
-      "r7",
-      "fp",
-      "r8",
-      "r9",
-      "r10",
-      "r11",
-      "r12");
-}
-
-std::uint32_t to_absolute_address(void const* p_object)
-{
-  constexpr auto signed_bit_31 = hal::bit_mask::from<30>();
-  constexpr auto signed_bit_32 = hal::bit_mask::from<31>();
-  auto object_address = reinterpret_cast<std::int32_t>(p_object);
-  auto offset = *reinterpret_cast<std::uint32_t const*>(p_object);
-
-  // Sign extend the offset to 32-bits
-  if (hal::bit_extract<signed_bit_31>(offset)) {
-    hal::bit_modify(offset).set<signed_bit_32>();
-  } else {
-    hal::bit_modify(offset).clear<signed_bit_32>();
-  }
-
-  auto signed_offset = static_cast<std::int32_t>(offset);
-  std::int32_t final_address = object_address + signed_offset;
-  return static_cast<std::uint32_t>(final_address);
-}
-
-[[gnu::used]] inline std::uint32_t runtime_to_absolute_address(
-  void const* p_object)
-{
-  return to_absolute_address(p_object);
-}
-
-inline std::uint32_t* to_absolute_address_ptr(void const* p_object)
-{
-  return reinterpret_cast<std::uint32_t*>(to_absolute_address(p_object));
 }
 }  // namespace ke
 

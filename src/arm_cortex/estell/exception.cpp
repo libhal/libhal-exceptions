@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstdlib>
 #include <exception>
 #include <span>
 #include <typeinfo>
@@ -31,10 +32,23 @@
 
 namespace ke {
 
-using instructions_t = std::array<std::uint8_t, 7>;
+union instructions_t
+{
+  // Why the length of 8? ARM unwind instructions are capped at 7 bytes for all
+  // possible functions. The 8th instruction will always be the finish byte.
+  // This allows the unwinder to iterate through the whole list without needing
+  // to compare a length variable which would decrease performance.
+  std::array<std::uint8_t, 8> data{
+    arm_ehabi::finish, arm_ehabi::finish, arm_ehabi::finish, arm_ehabi::finish,
+    arm_ehabi::finish, arm_ehabi::finish, arm_ehabi::finish, arm_ehabi::finish,
+  };
+};
 
 namespace {
+// TODO(#19): Make this thread local and figure out how to support is using
+// emutls.
 exception_ptr active_exception = nullptr;
+// TODO(#42): Use the applications's polymorphic allocator, not our own space.
 std::array<std::uint8_t, 256> exception_buffer{};
 }  // namespace
 
@@ -52,78 +66,22 @@ exception_ptr current_exception() noexcept
   return active_exception;
 }
 
-void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
+inline void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
-  asm volatile("mrs r0, MSP\n"         // Move Main Stack Pointer to r0
-               "stmia %0, {r0-r12}\n"  // Store r0 to r12 into the array
-               "mov r0, SP\n"          // Move SP to r0
-               "str r0, [%0, #52]\n"   // Store SP at the appropriate index
-               "mov r0, LR\n"          // Move LR to r0
-               "str r0, [%0, #56]\n"   // Store LR at the appropriate index
-               "mov r0, PC\n"          // Move PC to r0
-               "str r0, [%0, #60]\n"   // Store PC at the appropriate index
+  register std::uint32_t* res asm("r3") = &p_cpu_core.r4.data;
+
+  // We only capture r4 to r12 because __cxa_throw & __cxa_rethrow should be
+  // normal functions. Meaning they will not utilize the `sp = r[nnnn]`
+  // instruction, meaning that the callee unpreserved registers can be left
+  // alone.
+  asm volatile("mov r0, pc\n"          // Move PC to r0 (Before pipeline)
+               "stmia r3, {r4-r12}\n"  // Store r4 to r12 into the array @ &r4
+               "str sp, [r3, #36]\n"   // Store SP @ 36
+               "str lr, [r3, #40]\n"   // Store LR @ 40
+               "str r0, [r3, #44]\n"   // Store PC @ 44
                :                       // no output
-               : "r"(&p_cpu_core)      // input is the address of the array
-               : "r0"                  // r0 is being modified
-  );
-}
-
-bool index_entry_t::has_inlined_personality() const
-{
-  // 31st bit is `1` when the personality/unwind information is inlined, other
-  // otherwise, personality_offset is an offset.
-  constexpr auto mask = hal::bit_mask::from<31>();
-  return hal::bit_extract<mask>(personality_offset);
-}
-
-bool index_entry_t::is_noexcept() const
-{
-  return personality_offset == 0x1;
-}
-
-std::uint32_t const* index_entry_t::personality() const
-{
-  return to_absolute_address_ptr(&personality_offset);
-}
-
-std::uint32_t const* index_entry_t::lsda_data() const
-{
-  constexpr auto personality_type = hal::bit_mask::from<24, 27>();
-  // +1 to skip the prel31 offset to the personality function
-  auto const* header = personality() + 1;
-  if (hal::bit_extract<personality_type>(*header) == 0x0) {
-    return header + 1;
-  }
-  if (hal::bit_extract<lu16_32::length>(*header) == 1) {
-    return header + 2;
-  }
-  if (hal::bit_extract<lu16_32::length>(*header) > 2) {
-    return header + 2;
-  }
-  return header + 3;
-}
-
-std::uint32_t const* index_entry_t::descriptor_start() const
-{
-  constexpr auto type_mask = hal::bit_mask{ .position = 24, .width = 8 };
-
-  auto* personality_address = personality();
-  auto type = hal::bit_extract<type_mask>(*personality_address);
-
-  // TODO(kammce): comment why each of these works!
-  if (type == 0x0) {
-    return personality_address + 1;
-  }
-
-  // The limit for ARM exceptions instructions is 7. LD optimizes the ARM
-  // exception spec by removing the "word length" specifier allowing the
-  // instructions to fit in 2 words.
-  return personality_address + 2;
-}
-
-function_t index_entry_t::function() const
-{
-  return function_t(to_absolute_address(&function_offset));
+               : "r"(res)              // input is the address of the array
+               : "memory", "r0");
 }
 
 struct index_less_than
@@ -168,7 +126,8 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
   return *(index - 1);
 }
 
-void pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
+[[gnu::always_inline]] inline void pop_registers(cortex_m_cpu& p_cpu,
+                                                 std::uint32_t mask)
 {
   // The mask may not demand that the stack pointer be popped, but the
   // stack pointer will still need to be popped anyway, so this check
@@ -189,39 +148,147 @@ void pop_registers(cortex_m_cpu& p_cpu, std::uint32_t mask)
   p_cpu.sp = stack_pointer;
 }
 
-std::uint32_t read_uleb128(std::uint8_t const volatile** p_ptr)
+[[gnu::always_inline]] inline constexpr std::uint32_t read_uleb128(
+  std::uint8_t const** p_ptr)
 {
   std::uint32_t result = 0;
   std::uint8_t shift_amount = 0;
 
   while (true) {
-    constexpr auto more_data = hal::bit_mask::from<7>();
-    constexpr auto data = hal::bit_mask::from<0, 6>();
     std::uint8_t const uleb128 = **p_ptr;
 
-    result |= hal::bit_extract<data>(uleb128) << shift_amount;
-    shift_amount += 7;
+    result |= (uleb128 & 0x7F) << shift_amount;
     (*p_ptr)++;
 
-    if (not hal::bit_extract<more_data>(uleb128)) {
+    if ((uleb128 == 0x80) == 0x00) {
       break;
     }
+
+    shift_amount += 7;
   }
 
   return result;
 }
 
-template<typename T>
-T const volatile* as(void const volatile* p_ptr)
+#if 0
+0100'0100
+<< 1 ----> 8 - (7*1)
+100'01000
+>> 1
+1100'0100
+#endif
+
+[[gnu::always_inline]] inline constexpr std::int32_t read_sleb128(
+  std::uint8_t const** p_ptr)
 {
-  return reinterpret_cast<T const volatile*>(p_ptr);
+  constexpr std::uint8_t leb128_bits = 7;
+  std::int32_t result = 0;
+  std::uint32_t shift_amount = 0;
+
+  // No number we deal with on the 32-bit system will or should exceed 31-bits
+  // of information
+  for (std::size_t i = 0; i < sizeof(std::int32_t); i++) {
+    std::uint8_t const sleb128 = **p_ptr;
+
+    result |= (sleb128 & 0x7F) << shift_amount;
+    (*p_ptr)++;
+
+    if ((sleb128 & 0x80) == 0x00) {
+      auto const bytes_consumed = i + 1;
+      auto const loaded_bits = bytes_consumed * leb128_bits;
+      auto const ext_shift_amount = (30 - loaded_bits);
+      // Shift to the left up to the signed MSB bit
+      result <<= ext_shift_amount;
+      // Arithmetic shift right to sign extend number
+      result >>= ext_shift_amount;
+      break;
+    }
+
+    shift_amount += 7;
+  }
+
+  return result;
+}
+
+template<size_t DecodedCount>
+struct decoded_uleb128_t
+{
+  std::array<std::uint32_t, DecodedCount> data{};
+  std::uint8_t const* last_read;
+};
+
+template<size_t N>
+inline constexpr decoded_uleb128_t<N> multi_read_uleb128(
+  std::uint8_t const* p_ptr)
+{
+  decoded_uleb128_t<N> result{};
+  auto iter = result.data.begin();
+  std::uint32_t shift_amount = 0;
+
+  // THIS IS WRONG! ULEB is LSB first then ends on MSB. This is big endian
+  while (iter != result.data.end()) {
+    std::uint8_t const uleb128 = *(p_ptr++);
+
+    *iter |= (uleb128 & 0x7F) << shift_amount;
+
+    if ((uleb128 & 0x80) == 0x00) {
+      iter++;
+      shift_amount = 0;
+      continue;
+    }
+
+    shift_amount += 7;
+  }
+
+  result.last_read = p_ptr;
+
+  return result;
+}
+
+#if 0
+template<size_t DecodedCount>
+[[gnu::always_inline]] inline constexpr decoded_uleb128_t<DecodedCount>
+fast_read_uleb128(std::uint8_t const* p_ptr)
+{
+  decoded_uleb128_t<DecodedCount> decoded{};
+
+  while (true) {
+    std::uint32_t storage = *p_ptr++ << 24;
+    storage |= *p_ptr++ << 16;
+    storage |= *p_ptr++ << 8;
+    storage |= *p_ptr++ << 0;
+
+    constexpr std::uint32_t uleb128_32_bit_mask = 0x80'80'80'80;
+    std::uint32_t bit_mask = storage & uleb128_32_bit_mask;
+    std::uint32_t result = ((bit_mask >> 24) & 0x01) << 3 |
+                           ((bit_mask >> 16) & 0x01) << 2 |
+                           ((bit_mask >> 8) & 0x01) << 1 | ((bit_mask) & 0x01);
+
+    static constexpr std::array<void*, 16> jump_table{};
+
+    while (true) {
+      auto* jump_location = jump_table[result];
+      goto* jump_location;
+    }
+  }
+
+  return decoded;
+}
+#endif
+
+template<typename T>
+T const* as(void const* p_ptr)
+{
+  return reinterpret_cast<T const*>(p_ptr);
 }
 
 /**
  * @brief Dwarf exception handling personality encodings
  *
+ * Spec:
+ * https://refspecs.linuxfoundation.org/LSB_1.3.0/gLSB/gLSB/ehframehdr.html
  */
-enum class personality_encoding : std::uint8_t
+enum class lsda_encoding : std::uint8_t
 {
   absptr = 0x00,
   uleb128 = 0x01,
@@ -243,98 +310,286 @@ enum class personality_encoding : std::uint8_t
   omit = 0xff,
 };
 
-personality_encoding operator&(personality_encoding const& p_encoding,
-                               std::uint8_t const& p_byte)
+constexpr lsda_encoding operator&(lsda_encoding const& p_encoding,
+                                  std::uint8_t const& p_byte)
 {
-  return static_cast<personality_encoding>(
-    static_cast<std::uint8_t>(p_encoding) & p_byte);
+  return static_cast<lsda_encoding>(static_cast<std::uint8_t>(p_encoding) &
+                                    p_byte);
 }
-personality_encoding operator&(personality_encoding const& p_encoding,
-                               personality_encoding const& p_byte)
+constexpr lsda_encoding operator&(lsda_encoding const& p_encoding,
+                                  lsda_encoding const& p_byte)
 {
-  return static_cast<personality_encoding>(
-    static_cast<std::uint8_t>(p_encoding) & static_cast<std::uint8_t>(p_byte));
+  return static_cast<lsda_encoding>(static_cast<std::uint8_t>(p_encoding) &
+                                    static_cast<std::uint8_t>(p_byte));
 }
 
-std::uintptr_t read_encoded_data(std::uint8_t const volatile** p_data,
-                                 personality_encoding p_encoding)
+template<lsda_encoding encoding>
+[[gnu::always_inline]] inline std::uintptr_t read_encoded_data(
+  std::uint8_t const** p_data)
 {
-  std::uint8_t const volatile* ptr = *p_data;
+  std::uint8_t const* ptr = *p_data;
   std::uintptr_t result = 0;
-  auto const encoding = static_cast<personality_encoding>(p_encoding);
 
-  if (encoding == personality_encoding::omit) {
+  if constexpr (encoding == lsda_encoding::omit) {
     return 0;
   }
 
-  // TODO: convert to hal::bit_extract w/ bit mask
+  static constexpr auto encoding_type = encoding & 0x0F;
+
+  if constexpr (encoding_type == lsda_encoding::absptr) {
+    result = *as<uintptr_t>(ptr);
+    ptr += sizeof(uintptr_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::uleb128) {
+    result = read_uleb128(&ptr);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata2) {
+    result = *as<uint16_t>(ptr);
+    ptr += sizeof(uint16_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata4) {
+    result = *as<uint32_t>(ptr);
+    ptr += sizeof(uint32_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata2) {
+    result = *as<int16_t>(ptr);
+    ptr += sizeof(int16_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata4) {
+    result = *as<int32_t>(ptr);
+    ptr += sizeof(int32_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sdata8) {
+    result = *as<int64_t>(ptr);
+    ptr += sizeof(int64_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::udata8) {
+    result = *as<uint64_t>(ptr);
+    ptr += sizeof(uint64_t);
+  }
+  if constexpr (encoding_type == lsda_encoding::sleb128) {
+    result = read_sleb128(&ptr);
+  }
+
+  // Handle indirection GCC extension
+  if constexpr (static_cast<bool>(encoding & 0x80)) {
+    result = *reinterpret_cast<std::uintptr_t const*>(result);
+  }
+
+  *p_data = ptr;
+
+  return result;
+}
+
+[[gnu::always_inline]] inline std::uintptr_t read_encoded_data(
+  std::uint8_t const** p_data,
+  lsda_encoding p_encoding)
+{
+  std::uintptr_t result = 0;
+
+  if (p_encoding == lsda_encoding::omit) {
+    return 0;
+  }
+
   auto const encoding_type = p_encoding & 0x0F;
 
   switch (encoding_type) {
-    case personality_encoding::absptr:
-      result = *as<uintptr_t>(ptr);
-      ptr += sizeof(uintptr_t);
+    case lsda_encoding::absptr:
+      result = read_encoded_data<lsda_encoding::absptr>(p_data);
       break;
-    case personality_encoding::uleb128:
-      result = read_uleb128(&ptr);
+    case lsda_encoding::uleb128:
+      result = read_encoded_data<lsda_encoding::uleb128>(p_data);
       break;
-    case personality_encoding::udata2:
-      result = *as<uint16_t>(ptr);
-      ptr += sizeof(uint16_t);
+    case lsda_encoding::udata2:
+      result = read_encoded_data<lsda_encoding::udata2>(p_data);
       break;
-    case personality_encoding::udata4:
-      result = *as<uint32_t>(ptr);
-      ptr += sizeof(uint32_t);
+    case lsda_encoding::udata4:
+      result = read_encoded_data<lsda_encoding::udata4>(p_data);
       break;
-    case personality_encoding::sdata2:
-      result = *as<int16_t>(ptr);
-      ptr += sizeof(int16_t);
+    case lsda_encoding::sdata2:
+      result = read_encoded_data<lsda_encoding::sdata2>(p_data);
       break;
-    case personality_encoding::sdata4:
-      result = *as<int32_t>(ptr);
-      ptr += sizeof(int32_t);
+    case lsda_encoding::sdata4:
+      result = read_encoded_data<lsda_encoding::sdata4>(p_data);
       break;
-    case personality_encoding::sleb128:
-    case personality_encoding::sdata8:
-    case personality_encoding::udata8:
+    case lsda_encoding::sdata8:
+      result = read_encoded_data<lsda_encoding::sdata8>(p_data);
+      break;
+    case lsda_encoding::udata8:
+      result = read_encoded_data<lsda_encoding::udata8>(p_data);
+      break;
+    case lsda_encoding::sleb128:
+      result = read_encoded_data<lsda_encoding::sleb128>(p_data);
+      break;
     default:
       std::terminate();
       break;
   }
 
-  // TODO: convert to hal::bit_extract w/ bit mask
-  auto const encoding_offset = p_encoding & 0x70;
-
-  switch (encoding_offset) {
-    case personality_encoding::pcrel:
-    case personality_encoding::absptr:
-    case personality_encoding::textrel:
-    case personality_encoding::datarel:
-    case personality_encoding::funcrel:
-    case personality_encoding::aligned:
-    default:
-      break;
-  }
-
   // Handle indirection GCC extension
-  // TODO: convert to hal::bit_extract w/ bit mask
   if (static_cast<bool>(p_encoding & 0x80)) {
     result = *reinterpret_cast<std::uintptr_t const*>(result);
   }
 
-  *p_data = ptr;
   return result;
+}
+
+inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
+{
+  // Skip R2 because it is not used in the exception unwinding
+  // Skip R3 because we are using it
+  asm volatile("ldmia.w	%[reg], {r0, r1}\n"  // R3 is incremented by 8
+               "add     %[reg], #16\n"       // Skip Past R2 + R3
+               "ldmia.w	%[reg], {r4, r5, r6, r7, r8, r9, r10, r11, r12}\n"
+               "ldr sp, [%[reg], #36]\n"  // Load SP
+               "ldr lr, [%[reg], #40]\n"  // Load LR
+               "ldr pc, [%[reg], #44]\n"  // Load PC
+               :
+               : [reg] "r"(&p_cpu_core)
+               : "memory",
+                 "r0",
+                 "r1",
+                 "r2",
+                 // skip r3 & use it as the offset register
+                 "r4",
+                 "r5",
+                 "r6",
+                 "r7",
+                 "fp",
+                 "r8",
+                 "r9",
+                 "r10",
+                 "r11",
+                 "r12",
+                 // sp skipped here as it is deprecated
+                 "lr",
+                 "pc");
+}
+
+inline void skip_dwarf_info(std::uint8_t const** p_lsda)
+{
+  auto const* lsda = *p_lsda;
+  auto const format = lsda_encoding{ *(lsda++) };
+  if (format != lsda_encoding::omit) {
+    // Ignore this because we don't need it for unwinding.
+    read_encoded_data(&lsda, format);
+  }
+  *p_lsda = lsda;
+}
+
+struct lsda_header_info
+{
+  std::uint8_t const* call_site_end = nullptr;
+  /// If this pointer is behind the call_site end, then there is no type table
+  /// available.
+  std::uint8_t const* type_table_end = nullptr;
+  lsda_encoding type_table_encoding;
+  lsda_encoding call_site_encoding;
+};
+
+inline lsda_header_info parse_header(std::uint8_t const** p_lsda)
+{
+  lsda_header_info info{};
+
+  skip_dwarf_info(p_lsda);
+
+  // Capture type table end. Will be before call_site_end if it did not exist
+  auto const* lsda = *p_lsda;
+  info.type_table_encoding = lsda_encoding{ *(lsda++) };
+  if (info.type_table_encoding != lsda_encoding::omit) {
+    auto const offset = read_uleb128(&lsda);
+    info.type_table_end = lsda + offset;
+  } else {
+    info.type_table_end = lsda;
+  }
+
+  info.call_site_encoding = lsda_encoding{ *(lsda++) };
+  auto const offset = read_uleb128(&lsda);
+  info.call_site_end = lsda + offset;
+
+  *p_lsda = lsda;
+
+  return info;
+}
+
+inline auto const* to_lsda(exception_object& p_exception_object)
+{
+  return reinterpret_cast<std::uint8_t const*>(
+    index_entry_t::lsda_data(p_exception_object.cache.personality));
+}
+
+inline auto calculate_relative_pc(exception_object& p_exception_object)
+{
+  return p_exception_object.cache.relative_address() & ~1;
+}
+
+struct call_site_info
+{
+  std::uint32_t landing_pad = 0;
+  std::uint32_t action = 0;
+  bool unwind = false;
+};
+
+template<lsda_encoding encoding>
+inline call_site_info parse_call_site(std::uint8_t const** p_lsda,
+                                      std::uint32_t p_rel_pc,
+                                      std::uint8_t const* p_call_site_end)
+{
+  call_site_info info;
+
+  do {
+    auto start = read_encoded_data<encoding>(p_lsda);
+    auto length = read_encoded_data<encoding>(p_lsda);
+    info.landing_pad = read_encoded_data<encoding>(p_lsda);
+    info.action = read_encoded_data<encoding>(p_lsda);
+
+    if (start <= p_rel_pc && p_rel_pc <= start + length) {
+      if (info.landing_pad == 0) {
+        info.unwind = true;
+      }
+      break;
+    }
+  } while (*p_lsda < p_call_site_end);
+
+  return info;
+}
+
+inline call_site_info parse_uleb128_call_site(
+  std::uint8_t const* p_lsda,
+  std::uint32_t p_rel_pc,
+  std::uint8_t const* p_call_site_end)
+{
+  call_site_info info;
+
+  do {
+    auto const values = multi_read_uleb128<4>(p_lsda);
+    auto const& start = values.data[0];
+    auto const& length = values.data[1];
+    auto const& landing_pad = values.data[2];
+    auto const& action = values.data[3];
+    if (start <= p_rel_pc && p_rel_pc <= start + length) {
+      if (landing_pad == 0) {
+        info.unwind = true;
+      } else {
+        info.landing_pad = landing_pad;
+        info.action = action;
+      }
+      break;
+    }
+    p_lsda = values.last_read;
+  } while (p_lsda < p_call_site_end);
+
+  return info;
 }
 
 class action_decoder
 {
 public:
-  action_decoder(std::uint8_t const volatile* p_type_table_end,
-                 std::uint8_t const volatile* p_action_table_start,
+  action_decoder(std::uint8_t const* p_type_table_end,
+                 std::uint8_t const* p_end_of_callsite,
                  std::uint32_t p_action)
-    : m_type_table_end(
-        reinterpret_cast<std::uint32_t const volatile*>(p_type_table_end))
-    , m_action(p_action_table_start + p_action)
+    : m_type_table_end(p_type_table_end)
+    , m_action_position(p_end_of_callsite + (p_action - 1))
   {
   }
 
@@ -349,29 +604,49 @@ public:
     return reinterpret_cast<std::type_info const*>(0xFFFF'FFFF);
   }
 
-  std::type_info const* get_next_catch_type()
+  std::type_info const* get_current_type_info_from_filter()
   {
-    if (m_action == nullptr) {
-      return nullptr;
-    }
+    auto const* type_table = as<std::uintptr_t const*>(m_type_table_end);
 
-    m_filter = m_action[-1];
-    auto const unsigned_offset = m_action[0] | 0x80;
-    auto const offset = static_cast<std::int8_t>(unsigned_offset);
+    // We assume prel here because all other options are deprecated
+    // TODO(#39): Consider using the type table encoding format for decoding
+    // the type table info rather than assuming that the values here are
+    // prel31_offsets
+    auto const* current_type = &type_table[-m_filter];
 
-    if (offset == 0) {
-      m_action = nullptr;
-    } else {
-      m_action += (offset + 1);
-    }
-
-    std::uint32_t const volatile* current_type = &m_type_table_end[-m_filter];
-
-    if (m_filter == 0 || *current_type == 0x0) {
+    if (*current_type == 0x0) {
       return install_context_type();
     }
 
-    return to_type_info(const_cast<std::uint32_t const*>(current_type));
+    auto const* test = to_absolute_address_ptr(current_type);
+    return reinterpret_cast<std::type_info const*>(test);
+  }
+
+  std::type_info const* get_next_catch_type()
+  {
+    if (m_action_position == nullptr) {
+      return nullptr;
+    }
+
+    do {
+      m_filter = read_sleb128(&m_action_position);
+      auto const next_action_offset = read_sleb128(&m_action_position);
+
+      if (next_action_offset == 0) {
+        m_action_position = nullptr;
+      } else {
+        m_action_position += next_action_offset;
+      }
+      // Negative numbers are for the deprecated `throws()` specifier that we do
+      // not support. We throw those away and continue looking through the
+      // action table.
+    } while (m_filter < 0);
+
+    if (m_filter == 0) {
+      return install_context_type();
+    }
+
+    return get_current_type_info_from_filter();
   }
 
   std::uint8_t filter()
@@ -380,251 +655,1100 @@ public:
   }
 
 private:
-  std::uint32_t const volatile* m_type_table_end = nullptr;
-  std::uint8_t const volatile* m_action = nullptr;
-  std::uint8_t m_filter = 0;
+  std::uint8_t const* m_type_table_end = nullptr;
+  std::uint8_t const* m_action_position = nullptr;
+  std::int32_t m_filter = 0;
 };
 
-int global_int = 0;
-
-void enter_function(exception_object& p_exception_object)
+inline void enter_function(exception_object& p_exception_object)
 {
-  std::uint8_t const volatile* lsda_data =
-    reinterpret_cast<std::uint8_t const*>(
-      p_exception_object.cache.entry_ptr->lsda_data());
+  auto const* lsda = to_lsda(p_exception_object);
+  auto info = parse_header(&lsda);
+  auto const rel_pc = calculate_relative_pc(p_exception_object);
 
-  auto const dwarf_offset_info_format = personality_encoding{ *(lsda_data++) };
-  if (dwarf_offset_info_format != personality_encoding::omit) {
-    // Ignore this because we don't need it for unwinding.
-    read_encoded_data(&lsda_data, dwarf_offset_info_format);
-  }
+  call_site_info site_info{};
 
-  [[maybe_unused]] auto const end_of_type_table_format =
-    personality_encoding{ *(lsda_data++) };
-  auto const offset_to_end_of_tt_table = read_uleb128(&lsda_data);
-  auto const* end_of_tt_table = lsda_data + offset_to_end_of_tt_table;
-  auto const call_site_format = personality_encoding{ *(lsda_data++) };
-  auto const call_site_length = read_uleb128(&lsda_data);
-  auto const* call_site_end = lsda_data + call_site_length;
-
-  auto const rel_pc = p_exception_object.cache.relative_address() & ~1;
-  std::uint32_t landing_pad = 0;
-  std::uint32_t action = 0;
-
-  do {
-    auto start = read_encoded_data(&lsda_data, call_site_format);
-    auto length = read_encoded_data(&lsda_data, call_site_format);
-    landing_pad = read_encoded_data(&lsda_data, call_site_format);
-    action = read_uleb128(&lsda_data);
-
-    if (start <= rel_pc && rel_pc <= start + length) {
-      if (landing_pad == 0) {
-        p_exception_object.cache.state(runtime_state::unwind_frame);
-        return;
-      }
+  switch (info.call_site_encoding) {
+    case lsda_encoding::uleb128: {
+      site_info = parse_uleb128_call_site(lsda, rel_pc, info.call_site_end);
       break;
     }
-  } while (lsda_data < call_site_end);
+    case lsda_encoding::udata2: {
+      site_info = parse_call_site<lsda_encoding::udata2>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::udata4: {
+      site_info = parse_call_site<lsda_encoding::udata4>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::udata8: {
+      site_info = parse_call_site<lsda_encoding::udata8>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::sdata2: {
+      site_info = parse_call_site<lsda_encoding::sdata2>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::sdata4: {
+      site_info = parse_call_site<lsda_encoding::sdata4>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::sdata8: {
+      site_info = parse_call_site<lsda_encoding::sdata8>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    case lsda_encoding::sleb128: {
+      site_info = parse_call_site<lsda_encoding::sleb128>(
+        &lsda, rel_pc, info.call_site_end);
+      break;
+    }
+    default: {
+      std::terminate();
+    }
+  }
 
-  action_decoder a_decoder(end_of_tt_table, call_site_end, action);
+  if (site_info.unwind) {
+    p_exception_object.cache.state(runtime_state::unwind_frame);
+    return;
+  }
 
   auto& cpu = p_exception_object.cpu;
   auto* entry_ptr = p_exception_object.cache.entry_ptr;
+
+  // This occurs when a frame has destructors that need cleaning up but no
+  // try/catch blocks resulting in there being no action table or type table. In
+  // such a case, then the scope found should be entered immediately!
+  if (info.type_table_end < info.call_site_end) {
+    // LSB must be set to 1 to jump to an address
+    auto const final_destination =
+      (entry_ptr->function() + site_info.landing_pad) | 0b1;
+
+    // Set PC to the cleanup destination
+    cpu.pc = final_destination;
+
+    // Install CPU state
+    restore_cpu_core(cpu);
+  }
+
+  action_decoder a_decoder(
+    info.type_table_end, info.call_site_end, site_info.action);
+
   for (auto const* type_info = a_decoder.get_next_catch_type();
        type_info != nullptr;
        type_info = a_decoder.get_next_catch_type()) {
-    if (type_info == p_exception_object.type_info ||
-        type_info == action_decoder::install_context_type()) {
-      cpu[0] = &p_exception_object;
-      cpu[1] = a_decoder.filter();
-      // Set the LSB to 1 for some reason. Cortex-mX is interesting
-      auto final_destination = (entry_ptr->function() + landing_pad) | 0b1;
-      cpu.pc = final_destination;
-      restore_cpu_core(cpu);
+
+    // TODO(#6): Replace with dynamic cast
+    if (type_info != p_exception_object.type_info &&
+        type_info != action_decoder::install_context_type()) {
+      continue;
     }
+
+    // ====== Prepare to Install context!! =====
+    cpu[0] = &p_exception_object;
+    cpu[1] = a_decoder.filter();
+
+    // LSB must be set to 1 to jump to an address
+    auto const final_destination =
+      (entry_ptr->function() + site_info.landing_pad) | 0b1;
+
+    // Set PC to the cleanup destination
+    cpu.pc = final_destination;
+
+    // Install CPU state
+    restore_cpu_core(cpu);
   }
 }
 
-void unwind_frame(instructions_t const& p_instructions,
-                  exception_object& p_exception_object)
+template<size_t Amount>
+constexpr std::uint32_t vsp_deallocate_amount()
 {
-  auto& virtual_cpu = p_exception_object.cpu;
-  bool set_pc = false;
+  return Amount + 1;
+}
 
-  for (auto instruction = p_instructions.begin();
-       instruction != p_instructions.end() && *instruction != arm_ehabi::finish;
-       instruction++) {
-    // Extract the first 4 bits
-    int main_bits = (*instruction & 0b11110000) >> 4;
+enum class pop_lr
+{
+  skip = 0,
+  do_it = 1,
+};
 
-    switch (main_bits) {
-      case 0b0000:
-      case 0b0001:
-      case 0b0010:
-      case 0b0011: {
-        // vsp = vsp + (xxxxxx << 2) + 4. Covers range 0x04-0x100 inclusive
-        int shift_amount = *instruction & 0b111111;
-        virtual_cpu.sp = virtual_cpu.sp + ((shift_amount << 2) + 4);
-        break;
-      }
-      case 0b0100:
-      case 0b0101:
-      case 0b0110:
-      case 0b0111: {
-        // vsp = vsp - (xxxxxx << 2) + 4. Covers range 0x04-0x100 inclusive
-        int shift_amount = *instruction & 0b111111;
-        virtual_cpu.sp = virtual_cpu.sp - ((shift_amount << 2) + 4);
-        break;
-      }
-      case 0b1001: {
-        // Handle "1001nnnn"
-        int nnnn = *instruction & 0xF;
-        if (nnnn != 13 && nnnn != 15) {
-          // Set vsp = r[nnnn]
-          virtual_cpu.sp = virtual_cpu[nnnn];
-        } else {
-          // Handle "10011101" or "10011111"
-          // Reserved as prefix for Arm register to register moves
-          // Reserved as prefix for Intel Wireless MMX register to register
-          // moves
-          std::terminate();
-        }
-        break;
-      }
-      case 0b1010: {
-        // Handle:
-        //
-        //     "10100nnn" (Pop r4-r[4+nnn]), and
-        //     "10101nnn" (Pop r4-r[4+nnn], r14)
-        //
-        std::uint32_t const* sp_ptr = *virtual_cpu.sp;
-        int nnn = *instruction & 0b111;  // Extract the last 3 bits
-        switch (nnn) {
-          case 7:
-            virtual_cpu[11] = sp_ptr[7];
-            [[fallthrough]];
-          case 6:
-            virtual_cpu[10] = sp_ptr[6];
-            [[fallthrough]];
-          case 5:
-            virtual_cpu[9] = sp_ptr[5];
-            [[fallthrough]];
-          case 4:
-            virtual_cpu[8] = sp_ptr[4];
-            [[fallthrough]];
-          case 3:
-            virtual_cpu[7] = sp_ptr[3];
-            [[fallthrough]];
-          case 2:
-            virtual_cpu[6] = sp_ptr[2];
-            [[fallthrough]];
-          case 1:
-            virtual_cpu[5] = sp_ptr[1];
-            [[fallthrough]];
-          case 0:
-            virtual_cpu[4] = sp_ptr[0];
-        }
+template<size_t PopCount, pop_lr PopLinkRegister = pop_lr::skip>
+[[nodiscard("You MUST set the unwind function's stack pointer to this "
+            "value after executing it!")]]
+inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
+                                               cortex_m_cpu& p_cpu)
+{
+  // We pull these pointers out in order to access them incrementally, which
+  // will give the hint to the compiler to convert them into a sequence of
+  // immediate load and stores.
+  auto* r4_pointer = &p_cpu.r4.data;
 
-        if (*instruction & 0b1000) {
-          virtual_cpu.lr = sp_ptr[nnn + 1];
-          // +1 because "nnn" starts at zero and we need to decrement something.
-          // The second +1 is for popping the LR register.
-          sp_ptr += (nnn + 2);
-        } else {
-          // See above comments.
-          sp_ptr += (nnn + 1);
-        }
+  static_assert(PopCount <= 7, "Pop Count cannot be above 7");
 
-        virtual_cpu.sp = sp_ptr;
-        break;
-      }
-      case 0b1011: {
-        // Handle "10110000", and "1011011n"
-        if (*instruction == arm_ehabi::finish) {
-          // "10110000"
-          // Finish (see remark c)
-          goto exit_loop;
-        } else if ((*instruction & 0b1100) == 0b1100) {
-          // "1011011n"
-          // Spare (was Pop FPA)
-          std::terminate();
-        } else if (*instruction == 0xB1) {
-          std::uint32_t mask = *(++instruction);
-          pop_registers(virtual_cpu, mask);
-        }
-        break;
-      }
-      case 0b1000: {
-        std::uint32_t mask = (*instruction & 0xF) << (8 + 4);
-        instruction++;
-        mask |= (*instruction << 4);
-        pop_registers(virtual_cpu, mask);
-        break;
-      }
-      // No additional groupings are left as all provided instructions are
-      // covered
-      default: {
-        // Handle unknown or undefined instruction
-        std::terminate();
-      }
+  // NOTE: A for loop has the same cycle count, and is more compact
+
+  if constexpr (PopCount == 0) {
+    *r4_pointer = *sp_ptr;
+  } else {
+    for (std::size_t i = 0; i < PopCount + 1; i++) {
+      r4_pointer[i] = sp_ptr[i];
     }
   }
 
-exit_loop:
-  if (!set_pc) {
-    virtual_cpu.pc = virtual_cpu.lr;
+  if constexpr (PopLinkRegister == pop_lr::do_it) {
+    p_cpu.lr = sp_ptr[PopCount + 1];
+  }
+
+  return sp_ptr + PopCount + 1 + unsigned{ PopLinkRegister == pop_lr::do_it };
+}
+
+void unwind_frame(instructions_t const& p_instructions, cortex_m_cpu& p_cpu)
+{
+  static constexpr std::array<void*, 256> jump_table{
+    &&vsp_add_0,   // [0]
+    &&vsp_add_1,   // [1]
+    &&vsp_add_2,   // [2]
+    &&vsp_add_3,   // [3]
+    &&vsp_add_4,   // [4]
+    &&vsp_add_5,   // [5]
+    &&vsp_add_6,   // [6]
+    &&vsp_add_7,   // [7]
+    &&vsp_add_8,   // [8]
+    &&vsp_add_9,   // [9]
+    &&vsp_add_10,  // [10]
+    &&vsp_add_11,  // [11]
+    &&vsp_add_12,  // [12]
+    &&vsp_add_13,  // [13]
+    &&vsp_add_14,  // [14]
+    &&vsp_add_15,  // [15]
+    &&vsp_add_16,  // [16]
+    &&vsp_add_17,  // [17]
+    &&vsp_add_18,  // [18]
+    &&vsp_add_19,  // [19]
+    &&vsp_add_20,  // [20]
+    &&vsp_add_21,  // [21]
+    &&vsp_add_22,  // [22]
+    &&vsp_add_23,  // [23]
+    &&vsp_add_24,  // [24]
+    &&vsp_add_25,  // [25]
+    &&vsp_add_26,  // [26]
+    &&vsp_add_27,  // [27]
+    &&vsp_add_28,  // [28]
+    &&vsp_add_29,  // [29]
+    &&vsp_add_30,  // [30]
+    &&vsp_add_31,  // [31]
+    &&vsp_add_32,  // [32]
+    &&vsp_add_33,  // [33]
+    &&vsp_add_34,  // [34]
+    &&vsp_add_35,  // [35]
+    &&vsp_add_36,  // [36]
+    &&vsp_add_37,  // [37]
+    &&vsp_add_38,  // [38]
+    &&vsp_add_39,  // [39]
+    &&vsp_add_40,  // [40]
+    &&vsp_add_41,  // [41]
+    &&vsp_add_42,  // [42]
+    &&vsp_add_43,  // [43]
+    &&vsp_add_44,  // [44]
+    &&vsp_add_45,  // [45]
+    &&vsp_add_46,  // [46]
+    &&vsp_add_47,  // [47]
+    &&vsp_add_48,  // [48]
+    &&vsp_add_49,  // [49]
+    &&vsp_add_50,  // [50]
+    &&vsp_add_51,  // [51]
+    &&vsp_add_52,  // [52]
+    &&vsp_add_53,  // [53]
+    &&vsp_add_54,  // [54]
+    &&vsp_add_55,  // [55]
+    &&vsp_add_56,  // [56]
+    &&vsp_add_57,  // [57]
+    &&vsp_add_58,  // [58]
+    &&vsp_add_59,  // [59]
+    &&vsp_add_60,  // [60]
+    &&vsp_add_61,  // [61]
+    &&vsp_add_62,  // [62]
+    &&vsp_add_63,  // [63]
+
+    &&vsp_sub_0,   // [64]
+    &&vsp_sub_1,   // [65]
+    &&vsp_sub_2,   // [66]
+    &&vsp_sub_3,   // [67]
+    &&vsp_sub_4,   // [68]
+    &&vsp_sub_5,   // [69]
+    &&vsp_sub_6,   // [70]
+    &&vsp_sub_7,   // [71]
+    &&vsp_sub_8,   // [72]
+    &&vsp_sub_9,   // [73]
+    &&vsp_sub_10,  // [74]
+    &&vsp_sub_11,  // [75]
+    &&vsp_sub_12,  // [76]
+    &&vsp_sub_13,  // [77]
+    &&vsp_sub_14,  // [78]
+    &&vsp_sub_15,  // [79]
+    &&vsp_sub_16,  // [80]
+    &&vsp_sub_17,  // [81]
+    &&vsp_sub_18,  // [82]
+    &&vsp_sub_19,  // [83]
+    &&vsp_sub_20,  // [84]
+    &&vsp_sub_21,  // [85]
+    &&vsp_sub_22,  // [86]
+    &&vsp_sub_23,  // [87]
+    &&vsp_sub_24,  // [88]
+    &&vsp_sub_25,  // [89]
+    &&vsp_sub_26,  // [90]
+    &&vsp_sub_27,  // [91]
+    &&vsp_sub_28,  // [92]
+    &&vsp_sub_29,  // [93]
+    &&vsp_sub_30,  // [94]
+    &&vsp_sub_31,  // [95]
+    &&vsp_sub_32,  // [96]
+    &&vsp_sub_33,  // [97]
+    &&vsp_sub_34,  // [98]
+    &&vsp_sub_35,  // [99]
+    &&vsp_sub_36,  // [100]
+    &&vsp_sub_37,  // [101]
+    &&vsp_sub_38,  // [102]
+    &&vsp_sub_39,  // [103]
+    &&vsp_sub_40,  // [104]
+    &&vsp_sub_41,  // [105]
+    &&vsp_sub_42,  // [106]
+    &&vsp_sub_43,  // [107]
+    &&vsp_sub_44,  // [108]
+    &&vsp_sub_45,  // [109]
+    &&vsp_sub_46,  // [110]
+    &&vsp_sub_47,  // [111]
+    &&vsp_sub_48,  // [112]
+    &&vsp_sub_49,  // [113]
+    &&vsp_sub_50,  // [114]
+    &&vsp_sub_51,  // [115]
+    &&vsp_sub_52,  // [116]
+    &&vsp_sub_53,  // [117]
+    &&vsp_sub_54,  // [118]
+    &&vsp_sub_55,  // [119]
+    &&vsp_sub_56,  // [120]
+    &&vsp_sub_57,  // [121]
+    &&vsp_sub_58,  // [122]
+    &&vsp_sub_59,  // [123]
+    &&vsp_sub_60,  // [124]
+    &&vsp_sub_61,  // [125]
+    &&vsp_sub_62,  // [126]
+    &&vsp_sub_63,  // [127]
+
+    // 10000000
+    &&refuse_unwind_or_pop,  // [0b1000'0000 = 128]
+
+    // 1000iiii ...
+    &&pop_under_mask,  // [0b1000'0001 = 129]
+    &&pop_under_mask,  // [0b1000'0010 = 130]
+    &&pop_under_mask,  // [0b1000'0011 = 131]
+    &&pop_under_mask,  // [0b1000'0100 = 132]
+    &&pop_under_mask,  // [0b1000'0101 = 133]
+    &&pop_under_mask,  // [0b1000'0110 = 134]
+    &&pop_under_mask,  // [0b1000'0111 = 135]
+    &&pop_under_mask,  // [0b1000'1000 = 136]
+    &&pop_under_mask,  // [0b1000'1001 = 137]
+    &&pop_under_mask,  // [0b1000'1010 = 138]
+    &&pop_under_mask,  // [0b1000'1011 = 139]
+    &&pop_under_mask,  // [0b1000'1100 = 140]
+    &&pop_under_mask,  // [0b1000'1101 = 141]
+    &&pop_under_mask,  // [0b1000'1110 = 142]
+    &&pop_under_mask,  // [0b1000'1111 = 143] (128 + 15)
+
+    // 1001nnnn
+    // NOTE: Consider split up assignments to make them faster. We can remove
+    // the need to actually compute the register and then assign it to vsp when
+    // the register number is encoded in the instruction. This would add more
+    // space cost though. It is an option. But this particular instruction
+    // should be very rare and typically never used in almost any code so making
+    // this faster is not a priority. Only do this if there is a client need for
+    // such a feature.
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0000 = 144]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0001 = 145]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0010 = 146]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0011 = 147]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0100 = 148]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0101 = 149]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0110 = 150]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'0111 = 151]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1000 = 152]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1001 = 153]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1010 = 154]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1011 = 155]
+    &&assign_to_vsp_to_reg_nnnn,  // [0b1001'1100 = 156]
+    // Reserved as prefix for Arm register to register moves
+    &&reserved_or_spare_thus_terminate,  // [0b1001'1101 = 157]
+    // Reserved as prefix for Intel Wireless MMX register to register moves
+    &&assign_to_vsp_to_reg_nnnn,         // [0b1001'1110 = 158]
+    &&reserved_or_spare_thus_terminate,  // [0b1001'1111 = 159 reg 15 reserved]
+
+    // 10100nnn
+    &&pop_off_stack_r4_to_r4,   // 0b10100'000 [160]
+    &&pop_off_stack_r4_to_r5,   // 0b10100'001 [161]
+    &&pop_off_stack_r4_to_r6,   // 0b10100'010 [162]
+    &&pop_off_stack_r4_to_r7,   // 0b10100'011 [163]
+    &&pop_off_stack_r4_to_r8,   // 0b10100'100 [164]
+    &&pop_off_stack_r4_to_r9,   // 0b10100'101 [165]
+    &&pop_off_stack_r4_to_r10,  // 0b10100'110 [166]
+    &&pop_off_stack_r4_to_r11,  // 0b10100'111 [167]
+
+    // 10101nnn
+    &&pop_off_stack_r4_to_r4_and_lr,   // 0b10101'000 [168]
+    &&pop_off_stack_r4_to_r5_and_lr,   // 0b10101'001 [169]
+    &&pop_off_stack_r4_to_r6_and_lr,   // 0b10101'010 [170]
+    &&pop_off_stack_r4_to_r7_and_lr,   // 0b10101'011 [171]
+    &&pop_off_stack_r4_to_r8_and_lr,   // 0b10101'100 [172]
+    &&pop_off_stack_r4_to_r9_and_lr,   // 0b10101'101 [173]
+    &&pop_off_stack_r4_to_r10_and_lr,  // 0b10101'110 [174]
+    &&pop_off_stack_r4_to_r11_and_lr,  // 0b10101'111 [175]
+
+    // Finish (0xB0)
+    &&finish_unwind,  // 10110000 [176]
+
+    // Spare (refuse unwind)
+    &&pop_integer_registers_under_mask_r3_r2_r1_r0,  // 10110001 [177]
+
+    // Subtract VSP using uleb128
+    &&subtract_vsp_using_uleb128,  // 10110010 [178]
+
+    // Pop VFP double-precision registers
+    // TODO(#27): Add support for this
+    &&reserved_or_spare_thus_terminate,  // 10110011 [179]
+
+    // Pop Return Address Authentication Code pseudo-register
+    // TODO(#28): Add support for this
+    &&reserved_or_spare_thus_terminate,  // 10110100 [180]
+
+    // Use current vsp as modifier in Return Address Authentication
+    // TODO(#29): Add support for this
+    &&reserved_or_spare_thus_terminate,  // 10110101 [181]
+
+    // Spare (was Pop FPA) 1011011n
+    &&reserved_or_spare_thus_terminate,  // 10110110 [182]
+    &&reserved_or_spare_thus_terminate,  // 10110111 [183]
+
+    // Pop VFP double-precision registers D[8]-D[8+nnn] saved 10111nnn
+    // TODO(#30): Add support for this
+    &&reserved_or_spare_thus_terminate,  // 10111'000 [184]
+    &&reserved_or_spare_thus_terminate,  // 10111'001 [185]
+    &&reserved_or_spare_thus_terminate,  // 10111'010 [186]
+    &&reserved_or_spare_thus_terminate,  // 10111'011 [187]
+    &&reserved_or_spare_thus_terminate,  // 10111'100 [188]
+    &&reserved_or_spare_thus_terminate,  // 10111'101 [189]
+    &&reserved_or_spare_thus_terminate,  // 10111'110 [190]
+    &&reserved_or_spare_thus_terminate,  // 10111'111 [191]
+
+    // Intel Wireless MMX pop wR[10]-wR[10+nnn] 11000nnn
+    // NOTE: We will probably never support these. No modern ARM device is still
+    // using the Intel MMX registers. We will only consider adding support for
+    // this if a user/client/developer specifically requests it and has a dire
+    // need for it.
+    &&reserved_or_spare_thus_terminate,  // 11000'000 [192]
+    &&reserved_or_spare_thus_terminate,  // 11000'001 [193]
+    &&reserved_or_spare_thus_terminate,  // 11000'010 [194]
+    &&reserved_or_spare_thus_terminate,  // 11000'011 [195]
+    &&reserved_or_spare_thus_terminate,  // 11000'100 [196]
+    &&reserved_or_spare_thus_terminate,  // 11000'101 [197]
+
+    // Intel Wireless MMX pop wR[ssss]-wR[ssss+cccc]
+    // See NOTE in above section...
+    &&reserved_or_spare_thus_terminate,  // 11000'110 [198]
+
+    // Spare (11000111)
+    &&reserved_or_spare_thus_terminate,  // 11000'111 [199]
+
+    // Pop VFP double precision registers D[ssss]-D[ssss+cccc] saved (as if) by
+    // VPUSH (11001000)
+    // TODO(#31): Add support for this
+    &&reserved_or_spare_thus_terminate,  // 11001000 [200]
+
+    // Pop VFP double precision registers D[ssss]-D[ssss+cccc] saved (as if) by
+    // VPUSH (11001001)
+    // TODO(#32): Add support for this
+    &&reserved_or_spare_thus_terminate,  // 11001001 [201]
+
+    // Spare (yyy != 000, 001) 11001yyy
+    &&reserved_or_spare_thus_terminate,  // 11001'010 [202]
+    &&reserved_or_spare_thus_terminate,  // 11001'011 [203]
+    &&reserved_or_spare_thus_terminate,  // 11001'100 [204]
+    &&reserved_or_spare_thus_terminate,  // 11001'101 [205]
+    &&reserved_or_spare_thus_terminate,  // 11001'110 [206]
+    &&reserved_or_spare_thus_terminate,  // 11001'111 [207]
+
+    // Pop VFP double-precision registers D[8]-D[8+nnn] saved by VPUSH 11010nnn
+    // TODO(#33): Add support for this
+    &&reserved_or_spare_thus_terminate,  // 11010'000 [208]
+    &&reserved_or_spare_thus_terminate,  // 11010'001 [209]
+    &&reserved_or_spare_thus_terminate,  // 11010'010 [210]
+    &&reserved_or_spare_thus_terminate,  // 11010'011 [211]
+    &&reserved_or_spare_thus_terminate,  // 11010'100 [212]
+    &&reserved_or_spare_thus_terminate,  // 11010'101 [213]
+    &&reserved_or_spare_thus_terminate,  // 11010'110 [214]
+    &&reserved_or_spare_thus_terminate,  // 11010'111 [215]
+
+    // Spare (xxx != 000, 001, 010) 11xxxyyy
+
+    &&reserved_or_spare_thus_terminate,  // 11011'000 [216]
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 []
+    &&reserved_or_spare_thus_terminate,  // 11011'000 []
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 [231]
+    &&reserved_or_spare_thus_terminate,  // 11011'000 []
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 []
+    &&reserved_or_spare_thus_terminate,  // 11011'000 []
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11011'111 [247]
+
+    &&reserved_or_spare_thus_terminate,  // 11011'000 [248]
+    &&reserved_or_spare_thus_terminate,  // 11011'001 []
+    &&reserved_or_spare_thus_terminate,  // 11011'010 []
+    &&reserved_or_spare_thus_terminate,  // 11011'011 []
+    &&reserved_or_spare_thus_terminate,  // 11011'100 []
+    &&reserved_or_spare_thus_terminate,  // 11011'101 []
+    &&reserved_or_spare_thus_terminate,  // 11011'110 []
+    &&reserved_or_spare_thus_terminate,  // 11111'111 [255]
+  };
+
+  bool move_lr_to_pc = true;
+  std::uint32_t u32_storage = 0;
+  auto const* instruction_ptr = p_instructions.data.data();
+  auto const* sp_ptr = *p_cpu.sp;
+
+  while (true) {
+    auto const* instruction_handler = jump_table[*instruction_ptr];
+    instruction_ptr++;
+    goto* instruction_handler;
+
+  // +=========================================================================+
+  // |                                 Finish!                                 |
+  // +=========================================================================+
+  finish_unwind:
+    p_cpu.sp = sp_ptr;
+    [[likely]] if (move_lr_to_pc) {
+      p_cpu.pc = p_cpu.lr;
+    }
+    break;
+
+  reserved_or_spare_thus_terminate:
+    std::terminate();
+    break;
+
+  subtract_vsp_using_uleb128:
+    static constexpr auto uleb128_offset = 0x204 / sizeof(std::uint32_t);
+    sp_ptr += read_uleb128(&instruction_ptr) + uleb128_offset;
+    continue;
+
+  pop_integer_registers_under_mask_r3_r2_r1_r0:
+    // If the next unwind instruction equals 0, or if the bits from 4 or 7
+    // contains any 1s, then its time to terminate
+    if (*instruction_ptr == 0b0000'0000 || (*instruction_ptr & 0xF0) != 0) {
+      goto reserved_or_spare_thus_terminate;
+    }
+
+    u32_storage = *instruction_ptr;
+
+    while (u32_storage) {
+      // The first bit corresponds to the R0
+      std::uint32_t lsb_bit_position = std::countr_zero(u32_storage);
+      // Copy value from the stack, increment stack pointer.
+      p_cpu[lsb_bit_position] = *(sp_ptr++);
+      // Clear the bit for the lsb_bit_position
+      u32_storage = u32_storage & ~(1 << lsb_bit_position);
+    }
+    instruction_ptr++;
+    continue;
+
+  refuse_unwind_or_pop:
+    // If the next unwind instruction equals 0, then its time to terminate
+    if (*instruction_ptr == 0b0000'0000) {
+      goto reserved_or_spare_thus_terminate;
+    }
+
+    // *************************************************************************
+    //                            !!!! WARNING !!!!
+    //
+    //     `refuse_unwind_or_pop` MUST BE directly above `pop_under_mask`
+    //
+    //      refuse_unwind_or_pop ---> [[fallthrough]] --> pop_under_mask
+    // *************************************************************************
+
+  pop_under_mask:
+    // Because this unwind instruction is meant to be rare, we will use a while
+    // loop here rather than unroll this loop. Unless there is some incentive to
+    // improve the performance for this instruction.
+
+    // Save the lower 4-bits of the previous instruction and the 8-bits of the
+    // current instruction and combine them.
+    u32_storage = *(instruction_ptr - 1) & 0xF;
+    u32_storage <<= 8;
+    u32_storage |= *(instruction_ptr);
+
+    if (u32_storage & (1 << 3)) {
+      move_lr_to_pc = false;
+    }
+
+    // TODO(#40): consider (remark b)
+    // ========================================================================
+    // > ‘Pop’ generally denotes removal from the stack commencing at current
+    // > vsp, with subsequent increment of vsp to beyond the removed quantities.
+    // > The sole exception to this rule is popping r13, when the writeback of
+    // > the loaded value to vsp is delayed until after the whole instruction
+    // > has completed. When multiple registers are popped by a single
+    // > instruction they are taken as lowest numbered register at lowest stack
+    // > address.
+    // =========================================================================
+
+    while (u32_storage) {
+      // Get the first 1's distance from the right. We add 12 because the
+      // mask's first bit represents r4 and increases from there. The first
+      // byte, the instruction byte, only contains the registers from 12
+      // to 15.
+      std::uint32_t lsb_bit_position = std::countr_zero(u32_storage);
+      // Clear the bit for the lsb_bit_position
+      u32_storage = u32_storage & ~(1 << lsb_bit_position);
+      // Copy value from the stack, increment stack pointer.
+      p_cpu[lsb_bit_position + 4U] = *(sp_ptr++);
+    }
+
+    instruction_ptr++;
+    continue;
+
+  // +=========================================================================+
+  // |                            VSP = R[nnnn]                                |
+  // +=========================================================================+
+  assign_to_vsp_to_reg_nnnn:
+    // Get the current instruction and get all lower 4-bits
+    u32_storage = *(instruction_ptr - 1U) & 0xF;
+    sp_ptr = *p_cpu[u32_storage];
+    continue;
+
+  // +=========================================================================+
+  // |                     Sequentially Pop Registers + LR                     |
+  // +=========================================================================+
+  pop_off_stack_r4_to_r11_and_lr:
+    sp_ptr = pop_register_range<7, pop_lr::do_it>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r10_and_lr:
+    sp_ptr = pop_register_range<6, pop_lr::do_it>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r9_and_lr:
+    sp_ptr = pop_register_range<5, pop_lr::do_it>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r8_and_lr:
+    sp_ptr = pop_register_range<4, pop_lr::do_it>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r7_and_lr:
+    sp_ptr = pop_register_range<3, pop_lr::do_it>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r6_and_lr:
+    sp_ptr = pop_register_range<2, pop_lr::do_it>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r5_and_lr:
+    sp_ptr = pop_register_range<1, pop_lr::do_it>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r4_and_lr:
+    sp_ptr = pop_register_range<0, pop_lr::do_it>(sp_ptr, p_cpu);
+    continue;
+
+  // +=========================================================================+
+  // |                      Sequentially Pop Registers                         |
+  // +=========================================================================+
+  pop_off_stack_r4_to_r11:
+    sp_ptr = pop_register_range<7>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r10:
+    sp_ptr = pop_register_range<6>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r9:
+    sp_ptr = pop_register_range<5>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r8:
+    sp_ptr = pop_register_range<4>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r7:
+    sp_ptr = pop_register_range<3>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r6:
+    sp_ptr = pop_register_range<2>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r5:
+    sp_ptr = pop_register_range<1>(sp_ptr, p_cpu);
+    continue;
+  pop_off_stack_r4_to_r4:
+    sp_ptr = pop_register_range<0>(sp_ptr, p_cpu);
+    continue;
+
+  // +=========================================================================+
+  // |                                Add VSP                                  |
+  // +=========================================================================+
+  vsp_add_0:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<0>();
+    continue;
+  vsp_add_1:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<1>();
+    continue;
+  vsp_add_2:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<2>();
+    continue;
+  vsp_add_3:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<3>();
+    continue;
+  vsp_add_4:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<4>();
+    continue;
+  vsp_add_5:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<5>();
+    continue;
+  vsp_add_6:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<6>();
+    continue;
+  vsp_add_7:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<7>();
+    continue;
+  vsp_add_8:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<8>();
+    continue;
+  vsp_add_9:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<9>();
+    continue;
+  vsp_add_10:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<10>();
+    continue;
+  vsp_add_11:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<11>();
+    continue;
+  vsp_add_12:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<12>();
+    continue;
+  vsp_add_13:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<13>();
+    continue;
+  vsp_add_14:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<14>();
+    continue;
+  vsp_add_15:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<15>();
+    continue;
+  vsp_add_16:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<16>();
+    continue;
+  vsp_add_17:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<17>();
+    continue;
+  vsp_add_18:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<18>();
+    continue;
+  vsp_add_19:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<19>();
+    continue;
+  vsp_add_20:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<20>();
+    continue;
+  vsp_add_21:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<21>();
+    continue;
+  vsp_add_22:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<22>();
+    continue;
+  vsp_add_23:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<23>();
+    continue;
+  vsp_add_24:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<24>();
+    continue;
+  vsp_add_25:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<25>();
+    continue;
+  vsp_add_26:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<26>();
+    continue;
+  vsp_add_27:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<27>();
+    continue;
+  vsp_add_28:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<28>();
+    continue;
+  vsp_add_29:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<29>();
+    continue;
+  vsp_add_30:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<30>();
+    continue;
+  vsp_add_31:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<31>();
+    continue;
+  vsp_add_32:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<32>();
+    continue;
+  vsp_add_33:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<33>();
+    continue;
+  vsp_add_34:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<34>();
+    continue;
+  vsp_add_35:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<35>();
+    continue;
+  vsp_add_36:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<36>();
+    continue;
+  vsp_add_37:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<37>();
+    continue;
+  vsp_add_38:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<38>();
+    continue;
+  vsp_add_39:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<39>();
+    continue;
+  vsp_add_40:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<40>();
+    continue;
+  vsp_add_41:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<41>();
+    continue;
+  vsp_add_42:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<42>();
+    continue;
+  vsp_add_43:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<43>();
+    continue;
+  vsp_add_44:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<44>();
+    continue;
+  vsp_add_45:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<45>();
+    continue;
+  vsp_add_46:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<46>();
+    continue;
+  vsp_add_47:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<47>();
+    continue;
+  vsp_add_48:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<48>();
+    continue;
+  vsp_add_49:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<49>();
+    continue;
+  vsp_add_50:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<50>();
+    continue;
+  vsp_add_51:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<51>();
+    continue;
+  vsp_add_52:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<52>();
+    continue;
+  vsp_add_53:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<53>();
+    continue;
+  vsp_add_54:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<54>();
+    continue;
+  vsp_add_55:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<55>();
+    continue;
+  vsp_add_56:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<56>();
+    continue;
+  vsp_add_57:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<57>();
+    continue;
+  vsp_add_58:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<58>();
+    continue;
+  vsp_add_59:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<59>();
+    continue;
+  vsp_add_60:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<60>();
+    continue;
+  vsp_add_61:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<61>();
+    continue;
+  vsp_add_62:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<62>();
+    continue;
+  vsp_add_63:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<63>();
+    continue;
+
+  // +=========================================================================+
+  // |                                Sub VSP                                  |
+  // +=========================================================================+
+  vsp_sub_0:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<0>();
+    continue;
+  vsp_sub_1:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<1>();
+    continue;
+  vsp_sub_2:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<2>();
+    continue;
+  vsp_sub_3:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<3>();
+    continue;
+  vsp_sub_4:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<4>();
+    continue;
+  vsp_sub_5:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<5>();
+    continue;
+  vsp_sub_6:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<6>();
+    continue;
+  vsp_sub_7:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<7>();
+    continue;
+  vsp_sub_8:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<8>();
+    continue;
+  vsp_sub_9:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<9>();
+    continue;
+  vsp_sub_10:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<10>();
+    continue;
+  vsp_sub_11:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<11>();
+    continue;
+  vsp_sub_12:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<12>();
+    continue;
+  vsp_sub_13:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<13>();
+    continue;
+  vsp_sub_14:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<14>();
+    continue;
+  vsp_sub_15:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<15>();
+    continue;
+  vsp_sub_16:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<16>();
+    continue;
+  vsp_sub_17:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<17>();
+    continue;
+  vsp_sub_18:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<18>();
+    continue;
+  vsp_sub_19:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<19>();
+    continue;
+  vsp_sub_20:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<20>();
+    continue;
+  vsp_sub_21:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<21>();
+    continue;
+  vsp_sub_22:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<22>();
+    continue;
+  vsp_sub_23:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<23>();
+    continue;
+  vsp_sub_24:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<24>();
+    continue;
+  vsp_sub_25:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<25>();
+    continue;
+  vsp_sub_26:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<26>();
+    continue;
+  vsp_sub_27:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<27>();
+    continue;
+  vsp_sub_28:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<28>();
+    continue;
+  vsp_sub_29:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<29>();
+    continue;
+  vsp_sub_30:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<30>();
+    continue;
+  vsp_sub_31:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<31>();
+    continue;
+  vsp_sub_32:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<32>();
+    continue;
+  vsp_sub_33:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<33>();
+    continue;
+  vsp_sub_34:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<34>();
+    continue;
+  vsp_sub_35:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<35>();
+    continue;
+  vsp_sub_36:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<36>();
+    continue;
+  vsp_sub_37:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<37>();
+    continue;
+  vsp_sub_38:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<38>();
+    continue;
+  vsp_sub_39:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<39>();
+    continue;
+  vsp_sub_40:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<40>();
+    continue;
+  vsp_sub_41:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<41>();
+    continue;
+  vsp_sub_42:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<42>();
+    continue;
+  vsp_sub_43:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<43>();
+    continue;
+  vsp_sub_44:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<44>();
+    continue;
+  vsp_sub_45:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<45>();
+    continue;
+  vsp_sub_46:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<46>();
+    continue;
+  vsp_sub_47:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<47>();
+    continue;
+  vsp_sub_48:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<48>();
+    continue;
+  vsp_sub_49:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<49>();
+    continue;
+  vsp_sub_50:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<50>();
+    continue;
+  vsp_sub_51:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<51>();
+    continue;
+  vsp_sub_52:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<52>();
+    continue;
+  vsp_sub_53:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<53>();
+    continue;
+  vsp_sub_54:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<54>();
+    continue;
+  vsp_sub_55:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<55>();
+    continue;
+  vsp_sub_56:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<56>();
+    continue;
+  vsp_sub_57:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<57>();
+    continue;
+  vsp_sub_58:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<58>();
+    continue;
+  vsp_sub_59:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<59>();
+    continue;
+  vsp_sub_60:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<60>();
+    continue;
+  vsp_sub_61:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<61>();
+    continue;
+  vsp_sub_62:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<62>();
+    continue;
+  vsp_sub_63:
+    sp_ptr = sp_ptr + vsp_deallocate_amount<63>();
+    continue;
   }
 }
 
-instructions_t create_instructions_from_entry(index_entry_t const& p_entry)
+[[gnu::always_inline]]
+inline instructions_t create_instructions_from_entry(
+  exception_object const& p_exception_object)
 {
   constexpr auto personality_type = hal::bit_mask::from<24, 27>();
   constexpr auto generic = hal::bit_mask::from<31>();
 
-  instructions_t instructions{};
-
-  // Fill the whole thing with finish flags such that the code below only
-  // needs to overwrite the values from the start.
-  instructions.fill(arm_ehabi::finish);
+  instructions_t unwind{};
 
   std::uint32_t const* handler_data = nullptr;
-
-  if (p_entry.has_inlined_personality()) {
-    handler_data = &p_entry.personality_offset;
-  } else if (hal::bit_extract<generic>(p_entry.personality()[0])) {
-    handler_data = &p_entry.personality()[0];
+  auto const& entry = *p_exception_object.cache.entry_ptr;
+  if (entry.has_inlined_personality()) {
+    handler_data = &entry.personality_offset;
   } else {
-    handler_data = &p_entry.personality()[1];
+    auto const* personality = p_exception_object.cache.personality;
+    if (hal::bit_extract<generic>(personality[0])) {
+      handler_data = &personality[0];
+    } else {
+      handler_data = &personality[1];
+    }
   }
 
   std::uint32_t header = handler_data[0];
 
   if (hal::bit_extract<personality_type>(header) == 0x0) {
-    instructions[0] = hal::bit_extract<su16::instruction0>(header);
-    instructions[1] = hal::bit_extract<su16::instruction1>(header);
-    instructions[2] = hal::bit_extract<su16::instruction2>(header);
+    unwind.data[0] = hal::bit_extract<su16::instruction0>(header);
+    unwind.data[1] = hal::bit_extract<su16::instruction1>(header);
+    unwind.data[2] = hal::bit_extract<su16::instruction2>(header);
   } else {
     std::uint32_t first_word = handler_data[1];
     std::uint32_t length = hal::bit_extract<lu16_32::length>(header);
     switch (length) {
       case 1: {
-        instructions[0] = hal::bit_extract<lu16_32::instruction0>(header);
-        instructions[1] = hal::bit_extract<lu16_32::instruction1>(header);
-        instructions[2] = hal::bit_extract<lu16_32::instruction2>(first_word);
-        instructions[3] = hal::bit_extract<lu16_32::instruction3>(first_word);
-        instructions[4] = hal::bit_extract<lu16_32::instruction4>(first_word);
-        instructions[5] = hal::bit_extract<lu16_32::instruction5>(first_word);
+        unwind.data[0] = hal::bit_extract<lu16_32::instruction0>(header);
+        unwind.data[1] = hal::bit_extract<lu16_32::instruction1>(header);
+        unwind.data[2] = hal::bit_extract<lu16_32::instruction2>(first_word);
+        unwind.data[3] = hal::bit_extract<lu16_32::instruction3>(first_word);
+        unwind.data[4] = hal::bit_extract<lu16_32::instruction4>(first_word);
+        unwind.data[5] = hal::bit_extract<lu16_32::instruction5>(first_word);
         break;
       }
       case 2: {
         uint32_t last_word = handler_data[2];
-        instructions[0] = hal::bit_extract<lu16_32::instruction0>(header);
-        instructions[1] = hal::bit_extract<lu16_32::instruction1>(header);
-        instructions[2] = hal::bit_extract<lu16_32::instruction2>(first_word);
-        instructions[3] = hal::bit_extract<lu16_32::instruction3>(first_word);
-        instructions[4] = hal::bit_extract<lu16_32::instruction4>(first_word);
-        instructions[5] = hal::bit_extract<lu16_32::instruction5>(first_word);
-        instructions[6] = hal::bit_extract<lu16_32::instruction6>(last_word);
+        unwind.data[0] = hal::bit_extract<lu16_32::instruction0>(header);
+        unwind.data[1] = hal::bit_extract<lu16_32::instruction1>(header);
+        unwind.data[2] = hal::bit_extract<lu16_32::instruction2>(first_word);
+        unwind.data[3] = hal::bit_extract<lu16_32::instruction3>(first_word);
+        unwind.data[4] = hal::bit_extract<lu16_32::instruction4>(first_word);
+        unwind.data[5] = hal::bit_extract<lu16_32::instruction5>(first_word);
+        unwind.data[6] = hal::bit_extract<lu16_32::instruction6>(last_word);
         break;
       }
       default: {
@@ -636,18 +1760,18 @@ instructions_t create_instructions_from_entry(index_entry_t const& p_entry)
         // assume that 0xB1 is the first instruction, then 0x08, then 0x84
         // 0x00. This works. So when we see this mix, we just collect
         // instructions in that order as if it were a 2-word PR0.
-        instructions[0] = hal::bit_extract<su16::instruction0>(header);
-        instructions[1] = hal::bit_extract<su16::instruction1>(header);
-        instructions[2] = hal::bit_extract<su16::instruction2>(header);
-        instructions[3] = hal::bit_extract<lu16_32::instruction2>(first_word);
-        instructions[4] = hal::bit_extract<lu16_32::instruction3>(first_word);
-        instructions[5] = hal::bit_extract<lu16_32::instruction4>(first_word);
-        instructions[6] = hal::bit_extract<lu16_32::instruction5>(first_word);
+        unwind.data[0] = hal::bit_extract<su16::instruction0>(header);
+        unwind.data[1] = hal::bit_extract<su16::instruction1>(header);
+        unwind.data[2] = hal::bit_extract<su16::instruction2>(header);
+        unwind.data[3] = hal::bit_extract<lu16_32::instruction2>(first_word);
+        unwind.data[4] = hal::bit_extract<lu16_32::instruction3>(first_word);
+        unwind.data[5] = hal::bit_extract<lu16_32::instruction4>(first_word);
+        unwind.data[6] = hal::bit_extract<lu16_32::instruction5>(first_word);
       }
     }
   }
 
-  return instructions;
+  return unwind;
 }
 
 void raise_exception(exception_object& p_exception_object)
@@ -657,17 +1781,23 @@ void raise_exception(exception_object& p_exception_object)
       case runtime_state::get_next_frame: {
         auto const& index_entry = get_index_entry(p_exception_object.cpu.pc);
         p_exception_object.cache.entry_ptr = &index_entry;
+        // SU16 data
         if (index_entry.has_inlined_personality()) {
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
-        auto const* descriptor_start = index_entry.descriptor_start();
+        p_exception_object.cache.personality = index_entry.personality();
+        auto const* descriptor_start =
+          index_entry_t::descriptor_start(p_exception_object.cache.personality);
+        // The descriptor start value can only be 0x0 if there is LU16 data and
+        // no LSDA. In such cases, simply unwind the frame.
         if (*descriptor_start == 0x0000'0000) {
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
-        p_exception_object.cache.relative_address(p_exception_object.cpu.pc -
-                                                  index_entry.function());
+        // LSDA is present!
+        p_exception_object.cache.relative_address(
+          (p_exception_object.cpu.pc - index_entry.function()));
         p_exception_object.cache.state(runtime_state::enter_function);
         [[fallthrough]];
       }
@@ -678,9 +1808,9 @@ void raise_exception(exception_object& p_exception_object)
         [[fallthrough]];
       }
       case runtime_state::unwind_frame: {
-        auto const& entry = *p_exception_object.cache.entry_ptr;
-        auto const instructions = create_instructions_from_entry(entry);
-        unwind_frame(instructions, p_exception_object);
+        auto const instructions =
+          create_instructions_from_entry(p_exception_object);
+        unwind_frame(instructions, p_exception_object.cpu);
         p_exception_object.cache.state(runtime_state::get_next_frame);
       }
     }
@@ -690,12 +1820,11 @@ void raise_exception(exception_object& p_exception_object)
 
 extern "C"
 {
-
   void _exit([[maybe_unused]] int rc)  // NOLINT
   {
     std::terminate();
   }
-
+  // TODO(#42): Use the applications's polymorphic allocator, not our own space.
   void* __wrap___cxa_allocate_exception(size_t p_thrown_size)
   {
     if (p_thrown_size >
@@ -749,24 +1878,34 @@ extern "C"
     exception_object.cache.state(ke::runtime_state::get_next_frame);
     exception_object.cache.rethrown(true);
 
+    // TODO(35): Replace this with an immediate call to unwind_frame(). What we
+    // have below is fragile and can break very easily.
+#if defined(OPTIMIZATION_LEVEL)
     // Perform an inline trivial unwind __cxa_throw:
-#if defined(OPTIMIZATION_LEVEL) || 1
-#if OPTIMIZATION_LEVEL == Debug || 0
+#if OPTIMIZATION_LEVEL == Debug
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    stack_pointer += 5;
-    exception_object.cpu.pc = stack_pointer[0];
-    exception_object.cpu.sp = stack_pointer + 1;
-#elif OPTIMIZATION_LEVEL == MinSizeRel || 1
+    exception_object.cpu.r3 = stack_pointer[0];
+    exception_object.cpu.pc = stack_pointer[1];
+    exception_object.cpu.sp = stack_pointer + 2;
+#elif OPTIMIZATION_LEVEL == MinSizeRel
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r4 = stack_pointer[0];
     exception_object.cpu.pc = stack_pointer[1];
     exception_object.cpu.sp = stack_pointer + 2;
-#elif OPTIMIZATION_LEVEL == Release || 0
+#elif OPTIMIZATION_LEVEL == Release
+    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
+    exception_object.cpu.r3 = stack_pointer[0];
+    exception_object.cpu.pc = stack_pointer[1];
+    exception_object.cpu.sp = stack_pointer + 2;
+#elif OPTIMIZATION_LEVEL == RelWithDebInfo
+#error "Sorry Release mode unwinding is not supported yet.";
 #endif
 #endif
 
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(exception_object);
+    // TODO(#38): this area is considered a catch block, meaning that the
+    // exception is handled at this point. We should mark it as such.
     std::terminate();
   }
 
@@ -780,21 +1919,28 @@ extern "C"
     exception_object.destructor = p_destructor;
     ke::capture_cpu_core(exception_object.cpu);
 
-    // Perform an inline trivial unwind __cxa_throw:
+    // TODO(35): Replace this with an immediate call to unwind_frame(). What we
+    // have below is fragile and can break very easily.
 #if defined(OPTIMIZATION_LEVEL)
+    // Perform an inline trivial unwind __cxa_throw:
 #if OPTIMIZATION_LEVEL == Debug
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.r4 = stack_pointer[1];
-    exception_object.cpu.r5 = stack_pointer[2];
-    exception_object.cpu.pc = stack_pointer[3];
-    exception_object.cpu.sp = stack_pointer + 5;
+    exception_object.cpu.pc = stack_pointer[1];
+    exception_object.cpu.sp = stack_pointer + 2;
+#elif OPTIMIZATION_LEVEL == MinSizeRel
 #elif OPTIMIZATION_LEVEL == MinSizeRel
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r4 = stack_pointer[0];
     exception_object.cpu.pc = stack_pointer[1];
     exception_object.cpu.sp = stack_pointer + 2;
 #elif OPTIMIZATION_LEVEL == Release
+    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
+    exception_object.cpu.r3 = stack_pointer[0];
+    exception_object.cpu.pc = stack_pointer[1];
+    exception_object.cpu.sp = stack_pointer + 2;
+#elif OPTIMIZATION_LEVEL == RelWithDebInfo
+#error "Sorry Release mode unwinding is not supported yet.";
 #endif
 #endif
 
