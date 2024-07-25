@@ -25,8 +25,8 @@ int funct_group3_0();
 int funct_group4_0();
 int funct_group5_0();
 int funct_group6_0();
-int funct_group7_0();
-int funct_group8_0();
+// int funct_group7_0();
+// int funct_group8_0();
 // int funct_group9_0();
 // int funct_group10_0();
 // int funct_group11_0();
@@ -47,10 +47,10 @@ int funct_group8_0();
 using signature = int(void);
 
 std::array<signature*, 9> functions = {
-  &funct_group0_0, &funct_group1_0, &funct_group2_0,
-  &funct_group3_0, &funct_group4_0, &funct_group5_0,
-  &funct_group6_0, &funct_group7_0, &funct_group8_0,
+  &funct_group0_0, &funct_group1_0, &funct_group2_0, &funct_group3_0,
+  &funct_group4_0, &funct_group5_0, &funct_group6_0,
 #if 0
+   &funct_group7_0, &funct_group8_0,
   &funct_group9_0,
   &funct_group10_0, &funct_group11_0, &funct_group12_0, &funct_group13_0,
   &funct_group14_0, &funct_group15_0, &funct_group16_0, &funct_group17_0,
@@ -2631,6 +2631,8 @@ int funct_group6_11()
   return side_effect;
 }
 
+#if 0
+
 int funct_group7_1();
 
 int funct_group7_0()
@@ -3500,8 +3502,6 @@ int funct_group8_47()
 
   return side_effect;
 }
-
-#if 0
 
 int funct_group9_1();
 

@@ -37,3 +37,30 @@ jobs:
       compiler_version: 12.3
       compiler_package: arm-gnu-toolchain
     secrets: inherit
+
+  demo_check_lpc4078:
+    uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
+    with:
+      compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
+      compiler_profile: v1/arm-gcc-12.3
+      platform_profile_url: https://github.com/libhal/libhal-lpc40.git
+      platform_profile: v2/lpc4078
+    secrets: inherit
+
+  demo_check_stm32f103c8:
+    uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
+    with:
+      compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
+      compiler_profile: v1/arm-gcc-12.3
+      platform_profile_url: https://github.com/libhal/libhal-stm32f1.git
+      platform_profile: v2/stm32f103c8
+    secrets: inherit
+
+  demo_check_stm32f103r6:
+    uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
+    with:
+      compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
+      compiler_profile: v1/arm-gcc-12.3
+      platform_profile_url: https://github.com/libhal/libhal-stm32f1.git
+      platform_profile: v2/stm32f103r6
+    secrets: inherit
