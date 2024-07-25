@@ -56,7 +56,9 @@ class single_exception_allocator : public std::pmr::memory_resource
 {
 public:
   single_exception_allocator() = default;
-  ~single_exception_allocator() = default;
+  virtual ~single_exception_allocator() override
+  {
+  }
 
 private:
   void* do_allocate(std::size_t p_size,

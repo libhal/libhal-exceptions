@@ -46,7 +46,7 @@ int funct_group6_0();
 
 using signature = int(void);
 
-std::array<signature*, 9> functions = {
+std::array functions{
   &funct_group0_0, &funct_group1_0, &funct_group2_0, &funct_group3_0,
   &funct_group4_0, &funct_group5_0, &funct_group6_0,
 #if 0
