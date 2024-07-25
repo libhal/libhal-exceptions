@@ -1,0 +1,12 @@
+name: 🚀 Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: libhal/ci/.github/workflows/deploy_all.yml@5.x.y
+    with:
+      version: ${{ github.ref_name }}
+    secrets: inherit
