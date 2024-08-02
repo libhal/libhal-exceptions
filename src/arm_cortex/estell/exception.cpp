@@ -14,6 +14,9 @@
 
 #include <algorithm>
 #include <bit>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <span>
@@ -183,7 +186,7 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
     if ((sleb128 & 0x80) == 0x00) {
       auto const bytes_consumed = i + 1;
       auto const loaded_bits = bytes_consumed * leb128_bits;
-      auto const ext_shift_amount = (30 - loaded_bits);
+      auto const ext_shift_amount = (32 - loaded_bits);
       // Shift to the left up to the signed MSB bit
       result <<= ext_shift_amount;
       // Arithmetic shift right to sign extend number
@@ -586,12 +589,13 @@ public:
 
     do {
       m_filter = read_sleb128(&m_action_position);
+      auto const previous_next_offset_position = m_action_position;
       auto const next_action_offset = read_sleb128(&m_action_position);
 
       if (next_action_offset == 0) {
         m_action_position = nullptr;
       } else {
-        m_action_position += next_action_offset;
+        m_action_position = previous_next_offset_position + next_action_offset;
       }
       // Negative numbers are for the deprecated `throws()` specifier that we do
       // not support. We throw those away and continue looking through the
@@ -699,12 +703,19 @@ inline void enter_function(exception_object& p_exception_object)
        type_info != nullptr;
        type_info = a_decoder.get_next_catch_type()) {
 
-    // TODO(#6): Replace with dynamic cast
-    if (type_info != p_exception_object.type_info &&
+    // This is our dynamic cast :P
+    auto position = std::find_if(p_exception_object.type_info.begin(),
+                                 p_exception_object.type_info.end(),
+                                 [&type_info](auto const& element) -> bool {
+                                   return element.type_info == type_info;
+                                 });
+
+    if (position == p_exception_object.type_info.end() &&
         type_info != action_decoder::install_context_type()) {
       continue;
     }
 
+    p_exception_object.choosen_type_offset = position->offset;
     // ====== Prepare to Install context!! =====
     cpu[0] = &p_exception_object;
     cpu[1] = a_decoder.filter();
@@ -1776,6 +1787,151 @@ void raise_exception(exception_object& p_exception_object)
 
 extern "C"
 {
+  // mangled name for vtable for __cxxabi::__class_type_info
+  extern void* _ZTVN10__cxxabiv117__class_type_infoE[];
+  // mangled name for vtable for __cxxabi::__si_class_type_info
+  extern void* _ZTVN10__cxxabiv120__si_class_type_infoE[];
+  // mangled name for vtable for __cxxabi::__vmi_class_type_info
+  extern void* _ZTVN10__cxxabiv121__vmi_class_type_infoE[];
+}
+
+namespace ke {
+enum class rtti_type
+{
+  class_type,
+  single_inheritance,
+  virtual_or_multi_inheritance,
+  anything_else,
+};
+
+rtti_type get_rtti_type(void const* p_type_info)
+{
+  auto const* word_pointer =
+    reinterpret_cast<std::uint32_t const*>(p_type_info);
+  auto const vtable_method_location = word_pointer[0];
+  auto const vtable_start = vtable_method_location - 8;
+  auto const* vtable_address = reinterpret_cast<void const*>(vtable_start);
+
+  if (vtable_address == &_ZTVN10__cxxabiv117__class_type_infoE) {
+    return rtti_type::class_type;
+  } else if (vtable_address == &_ZTVN10__cxxabiv120__si_class_type_infoE) {
+    return rtti_type::single_inheritance;
+  } else if (vtable_address == &_ZTVN10__cxxabiv121__vmi_class_type_infoE) {
+    return rtti_type::virtual_or_multi_inheritance;
+  } else {
+    return rtti_type::anything_else;
+  }
+}
+
+std::type_info const* extract_si_parent_info(void const* p_info)
+{
+  [[maybe_unused]] constexpr std::size_t vtable_entry = 0;
+  [[maybe_unused]] constexpr std::size_t name = 1;
+  [[maybe_unused]] constexpr std::size_t parent_info_address = 2;
+
+  auto const* word_pointer = reinterpret_cast<std::uint32_t const*>(p_info);
+  auto const address = word_pointer[parent_info_address];
+
+  return reinterpret_cast<std::type_info const*>(address);
+}
+
+template<std::size_t map_length>
+void push_vmi_info(ke::exception_ptr p_thrown_exception,
+                   base_class_type_info& p_info,
+                   flattened_hierarchy<map_length>& p_map)
+{
+  [[maybe_unused]] constexpr std::size_t vtable_entry = 0;
+  [[maybe_unused]] constexpr std::size_t name = 1;
+  [[maybe_unused]] constexpr std::size_t flags = 2;
+  [[maybe_unused]] constexpr std::size_t vla_length = 3;
+  [[maybe_unused]] constexpr std::size_t vla_start = 4;
+
+  auto const* word_pointer =
+    reinterpret_cast<std::uint32_t const*>(p_info.type_info);
+  auto const length = word_pointer[vla_length];
+  for (std::size_t i = vla_start; i < vla_start + (length * 2); i += 2) {
+    base_class_type_info parent_info{};
+    auto const parent_address = word_pointer[i];
+    // Shift by 8 to remove the first byte which is just flags
+    auto const offset_flags = static_cast<std::int32_t>(word_pointer[i + 1]);
+
+    constexpr auto public_mask = 0x2;
+    bool const public_parent = offset_flags & public_mask;
+
+    if (not public_parent) {
+      continue;
+    }
+
+    auto const offset = offset_flags >> 8;
+    parent_info.type_info = reinterpret_cast<void*>(parent_address);
+    if (offset >= 0) {
+      // Shift the lower 8-bits of flag information
+      parent_info.offset = p_info.offset + offset;
+    } else {
+      // Use a byte array to allow pointer arithmetic
+      constexpr std::ptrdiff_t ptr_diff_size = sizeof(std::ptrdiff_t);
+      auto const* byte_accessor = as<uint8_t const>(p_thrown_exception);
+      // Get the address of the child object with this virtual parent
+      auto const* child_object = byte_accessor + p_info.offset;
+      // The first word is a pointer to the child object's vtable, so lets
+      // access it.
+      auto const* vtable = *as<std::intptr_t const*>(child_object);
+      // The location of the virtual parent relative to this object is found
+      // behind the vtable, which is why the offset is negative. Because we are
+      // indexing by word (pointer) lengths, we need to divide the offset by the
+      // size of a intptr_t. ARM objects are word aligned so this works safely.
+      auto const index_of_parent_offset_in_vtable = offset / ptr_diff_size;
+      // Because the offset is negative, look behind the object's vtable to find
+      // the offset to the start of the virtual class.
+      auto const offset_to_virtual = vtable[index_of_parent_offset_in_vtable];
+      // The virtual base of the child does not include the full offset from the
+      // start of the thrown object. We need to add the offset from the
+      // sub-object to get the correct location.
+      parent_info.offset = offset_to_virtual + p_info.offset;
+    }
+    p_map.push_back(parent_info);
+  }
+}
+
+template<std::size_t length>
+void flatten_rtti(ke::exception_ptr p_thrown_exception,
+                  flattened_hierarchy<length>& p_map,
+                  std::type_info const* p_type_info)
+{
+  // Add first element to the list
+  p_map.push_back({ .type_info = p_type_info, .offset = 0 });
+  auto iter = p_map.begin();
+  auto info = get_rtti_type(p_type_info);
+
+  // If this is a non-class type, then there is in hierarchy and this first
+  // element we pushed is the only one.
+  if (info == rtti_type::anything_else) {
+    return;
+  }
+
+  for (; iter != p_map.begin() + p_map.size; iter++) {
+    info = get_rtti_type(iter->type_info);
+
+    if (info == rtti_type::class_type) {
+      // There is nothing to do in this case. This entry is are already in the
+      // list from being something else's parent either via VMI or SI.
+      continue;
+    } else if (info == rtti_type::single_inheritance) {
+      base_class_type_info parent_info{};
+      parent_info.type_info = extract_si_parent_info(iter->type_info);
+      // Assign your offset to your direct parent because their memory is within
+      // you.
+      parent_info.offset += iter->offset;
+      p_map.push_back(parent_info);
+    } else if (info == rtti_type::virtual_or_multi_inheritance) {
+      push_vmi_info(p_thrown_exception, *iter, p_map);
+    }
+  }
+}
+}  // namespace ke
+
+extern "C"
+{
   void _exit([[maybe_unused]] int rc)  // NOLINT
   {
     std::terminate();
@@ -1813,7 +1969,9 @@ extern "C"
 
   void* __wrap___cxa_begin_catch(void* p_exception_object)
   {
-    return ke::extract_thrown_object(p_exception_object);
+    auto* eo = reinterpret_cast<ke::exception_object*>(p_exception_object);
+    auto* thrown_object = ke::extract_thrown_object(eo);
+    return thrown_object;
   }
 
   void __wrap___cxa_end_cleanup()
@@ -1871,9 +2029,10 @@ extern "C"
   {
     ke::active_exception = p_thrown_exception;
     auto& exception_object = ke::extract_exception_object(p_thrown_exception);
-    exception_object.type_info = p_type_info;
     exception_object.destructor = p_destructor;
     ke::capture_cpu_core(exception_object.cpu);
+    ke::flatten_rtti<12>(
+      p_thrown_exception, exception_object.type_info, p_type_info);
 
     // TODO(35): Replace this with an immediate call to unwind_frame(). What we
     // have below is fragile and can break very easily.
@@ -1882,8 +2041,10 @@ extern "C"
 #if OPTIMIZATION_LEVEL == Debug
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.pc = stack_pointer[1];
-    exception_object.cpu.sp = stack_pointer + 2;
+    exception_object.cpu.r4 = stack_pointer[1];
+    exception_object.cpu.r5 = stack_pointer[2];
+    exception_object.cpu.pc = stack_pointer[3];
+    exception_object.cpu.sp = stack_pointer + 4;
 #elif OPTIMIZATION_LEVEL == MinSizeRel
 #elif OPTIMIZATION_LEVEL == MinSizeRel
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;

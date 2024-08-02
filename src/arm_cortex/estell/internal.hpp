@@ -18,6 +18,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <typeinfo>
 
 #include <libhal-util/bit.hpp>
@@ -313,10 +314,66 @@ struct cache_t
   }
 };
 
+struct base_class_type_info
+{
+  void const* type_info = nullptr;
+  std::int32_t offset = 0;
+};
+
+template<std::size_t max_count>
+struct flattened_hierarchy
+{
+  static_assert(max_count > 0);
+  static constexpr auto capacity = max_count;
+
+  std::array<base_class_type_info, max_count> bases{};
+  std::uint32_t size = 0;
+
+  explicit flattened_hierarchy(std::type_info const* p_info)
+  {
+    bases[0].type_info = p_info;
+    bases[0].offset = 0;
+    size++;
+  }
+
+  flattened_hierarchy()
+  {
+  }
+
+  auto begin()
+  {
+    return bases.begin();
+  }
+
+  auto end()
+  {
+    return bases.begin() + size;
+  }
+
+  auto cbegin() const
+  {
+    return bases.cbegin();
+  }
+
+  auto cend() const
+  {
+    return bases.cbegin() + size;
+  }
+
+  void push_back(base_class_type_info const& p_info)
+  {
+    if (size > max_count) {
+      std::terminate();
+    }
+    bases[size++] = p_info;
+  }
+};
+
 struct exception_object
 {
   cortex_m_cpu cpu{};
-  std::type_info* type_info = nullptr;
+  flattened_hierarchy<12> type_info{};
+  std::size_t choosen_type_offset = 0;
   destructor_t* destructor = nullptr;
   cache_t cache{};
 };
@@ -332,12 +389,15 @@ inline exception_object& extract_exception_object(void* p_thrown_exception)
   return *reinterpret_cast<exception_object*>(start_of_exception_object);
 }
 
-inline void* extract_thrown_object(void* p_exception_object)
+inline void* extract_thrown_object(exception_object* p_exception_object)
 {
   auto object_address = reinterpret_cast<std::intptr_t>(p_exception_object);
-  auto start_of_thrown = object_address + sizeof(exception_object);
-  return reinterpret_cast<exception_object*>(start_of_thrown);
+  auto start_of_thrown = object_address + sizeof(exception_object) +
+                         p_exception_object->choosen_type_offset;
+  return reinterpret_cast<void*>(start_of_thrown);
 }
+
+inline constexpr auto eo_size = sizeof(exception_object);
 }  // namespace ke
 
 struct [[gnu::packed]] su16_t
