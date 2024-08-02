@@ -22,6 +22,10 @@ libhal_build_demos(
   DEMOS
   single_level
   multi_levels
+  multiple_virtual_inheritance
+
+  INCLUDES
+  .
 
   PACKAGES
   libhal-exceptions

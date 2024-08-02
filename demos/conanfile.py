@@ -16,10 +16,10 @@ from conan import ConanFile
 
 
 class demos(ConanFile):
-    python_requires = "libhal-bootstrap/[^2.0.0]"
+    python_requires = "libhal-bootstrap/[^4.0.0]"
     python_requires_extend = "libhal-bootstrap.demo"
 
     def requirements(self):
         bootstrap = self.python_requires["libhal-bootstrap"]
         bootstrap.module.add_demo_requirements(self)
-        self.requires("libhal-exceptions/[latest || ^1.0.0]")
+        self.requires("libhal-exceptions/[^1.0.0 || latest]")
