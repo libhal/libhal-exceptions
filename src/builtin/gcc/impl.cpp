@@ -31,31 +31,29 @@ extern "C"
   // this if the size of the EO increases. 😅
   // Might need to add some GCC macro flags here to keep track of all of the
   // EO sizes over the versions.
-  constexpr size_t header_size = 128;
+  constexpr size_t gcc_header_size = 128;
+  constexpr auto header_size = sizeof(std::size_t) + gcc_header_size;
 
   void* __wrap___cxa_allocate_exception(unsigned int p_size) noexcept  // NOLINT
   {
-    auto* exception_memory = hal::get_exception_allocator().allocate(
-      sizeof(std::size_t) + header_size + p_size);
+    auto const total_allocation = header_size + p_size;
+    auto* exception_memory = reinterpret_cast<std::uint8_t*>(
+      hal::get_exception_allocator().allocate(total_allocation));
 
     if (exception_memory == nullptr) {
       std::terminate();
     }
 
-    auto* exception_size = reinterpret_cast<std::size_t*>(exception_memory);
-    *exception_size = header_size + p_size;
-
     // Required for GCC's impl to work correctly as it assumes that all bytes
-    // default to 0. The Estell impl will utilize the same technique.
-    std::fill_n(exception_size + 1,
-                (sizeof(std::size_t) + header_size + p_size) /
-                  sizeof(std::size_t),
-                0U);
+    // default to 0.
+    std::fill_n(exception_memory, total_allocation, 0U);
+
+    // Set the first std::size_t bytes to the header size for deallocation
+    reinterpret_cast<std::size_t*>(exception_memory)[0] = total_allocation;
 
     // Return the pointer to the memory after the header, which is the start of
     // the thrown object's allocated memory.
-    return reinterpret_cast<std::uint8_t*>(exception_memory) +
-           header_size / sizeof(decltype(exception_size));
+    return exception_memory + header_size;
   }
 
   void __wrap___cxa_call_unexpected(void*)  // NOLINT
