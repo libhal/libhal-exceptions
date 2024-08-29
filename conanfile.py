@@ -85,19 +85,7 @@ class libhal_exceptions_conan(ConanFile):
 
     def build(self):
         cmake = CMake(self)
-        optimization_level = {
-            'Debug': 1,
-            'MinSizeRel': 2,
-            'RelWithDebInfo': 3,
-            'Release': 4
-        }
-
         configure_variables = {"RUNTIME": self._runtime_select}
-        build_type = self.settings.build_type
-        if str(build_type) in optimization_level:
-            configure_variables["OPTIMIZATION_LEVEL"] = optimization_level[str(
-                build_type)]
-
         cmake.configure(variables=configure_variables)
         cmake.build()
 
@@ -126,6 +114,7 @@ class libhal_exceptions_conan(ConanFile):
 
         if self.options.runtime == "estell":
             self.cpp_info.exelinkflags.extend([
+                "-fexceptions",
                 "-Wl,--wrap=__cxa_throw",
                 "-Wl,--wrap=__cxa_rethrow",
                 "-Wl,--wrap=__cxa_end_catch",
