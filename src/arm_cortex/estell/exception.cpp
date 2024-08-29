@@ -14,7 +14,6 @@
 
 #include <algorithm>
 #include <bit>
-#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -2054,8 +2053,10 @@ extern "C"
 #elif OPTIMIZATION_LEVEL == Release
     std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
     exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.pc = stack_pointer[1];
-    exception_object.cpu.sp = stack_pointer + 2;
+    exception_object.cpu.r4 = stack_pointer[1];
+    exception_object.cpu.r5 = stack_pointer[2];
+    exception_object.cpu.pc = stack_pointer[3];
+    exception_object.cpu.sp = stack_pointer + 4;
 #elif OPTIMIZATION_LEVEL == RelWithDebInfo
 #error "Sorry Release mode unwinding is not supported yet.";
 #endif
