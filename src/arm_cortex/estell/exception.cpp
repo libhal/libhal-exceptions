@@ -23,15 +23,6 @@
 
 #include "internal.hpp"
 
-#define Debug 1
-#define MinSizeRel 2
-#define RelWithDebInfo 3
-#define Release 4
-
-#if !defined(OPTIMIZATION_LEVEL)
-#error "OPTIMIZATION LEVEL MUST BE DEFINED!"
-#endif
-
 namespace ke {
 
 union instructions_t
@@ -1752,6 +1743,9 @@ void raise_exception(exception_object& p_exception_object)
           p_exception_object.cache.state(runtime_state::unwind_frame);
           break;
         }
+        if (index_entry.personality_offset == 0x1) {
+          return;
+        }
         p_exception_object.cache.personality = index_entry.personality();
         auto const* descriptor_start =
           index_entry_t::descriptor_start(p_exception_object.cache.personality);
@@ -1929,6 +1923,10 @@ void flatten_rtti(ke::exception_ptr p_thrown_exception,
 }
 }  // namespace ke
 
+namespace {
+bool const volatile libhal_convince_compiler_to_emit_metadata = false;
+}
+
 extern "C"
 {
   void _exit([[maybe_unused]] int rc)  // NOLINT
@@ -1982,7 +1980,7 @@ extern "C"
     std::terminate();
   }
 
-  void __wrap___cxa_rethrow()
+  void __wrap___cxa_rethrow() noexcept(false)
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
 
@@ -1991,30 +1989,16 @@ extern "C"
     exception_object.cache.state(ke::runtime_state::get_next_frame);
     exception_object.cache.rethrown(true);
 
-    // TODO(35): Replace this with an immediate call to unwind_frame(). What we
-    // have below is fragile and can break very easily.
-#if defined(OPTIMIZATION_LEVEL)
-    // Perform an inline trivial unwind __cxa_throw:
-#if OPTIMIZATION_LEVEL == Debug
-    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.pc = stack_pointer[1];
-    exception_object.cpu.sp = stack_pointer + 2;
-#elif OPTIMIZATION_LEVEL == MinSizeRel
-    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    exception_object.cpu.r4 = stack_pointer[0];
-    exception_object.cpu.pc = stack_pointer[1];
-    exception_object.cpu.sp = stack_pointer + 2;
-#elif OPTIMIZATION_LEVEL == Release
-    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.pc = stack_pointer[1];
-    exception_object.cpu.sp = stack_pointer + 2;
-#elif OPTIMIZATION_LEVEL == RelWithDebInfo
-#error "Sorry Release mode unwinding is not supported yet.";
-#endif
-#endif
-
+    // This must ALWAYS evaluate to false. But since the variable is volatile,
+    // the compiler will not optimize it away and thus, __wrap___cxa_throw will
+    // require unwind information. This prevents the compiler from optimizing
+    // the data away.
+    if (libhal_convince_compiler_to_emit_metadata) {
+      throw std::bad_alloc();  // What is thrown is not important, just that we
+                               // throw something and since bad_alloc is a MUST
+                               // have in the C++ throw RTTI list, might as well
+                               // reuse it here.
+    }
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(exception_object);
     // TODO(#38): this area is considered a catch block, meaning that the
@@ -2033,37 +2017,20 @@ extern "C"
     ke::flatten_rtti<12>(
       p_thrown_exception, exception_object.type_info, p_type_info);
 
-    // TODO(35): Replace this with an immediate call to unwind_frame(). What we
-    // have below is fragile and can break very easily.
-#if defined(OPTIMIZATION_LEVEL)
-    // Perform an inline trivial unwind __cxa_throw:
-#if OPTIMIZATION_LEVEL == Debug
-    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.r4 = stack_pointer[1];
-    exception_object.cpu.r5 = stack_pointer[2];
-    exception_object.cpu.pc = stack_pointer[3];
-    exception_object.cpu.sp = stack_pointer + 4;
-#elif OPTIMIZATION_LEVEL == MinSizeRel
-#elif OPTIMIZATION_LEVEL == MinSizeRel
-    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    exception_object.cpu.r4 = stack_pointer[0];
-    exception_object.cpu.pc = stack_pointer[1];
-    exception_object.cpu.sp = stack_pointer + 2;
-#elif OPTIMIZATION_LEVEL == Release
-    std::uint32_t const* stack_pointer = *exception_object.cpu.sp;
-    exception_object.cpu.r3 = stack_pointer[0];
-    exception_object.cpu.r4 = stack_pointer[1];
-    exception_object.cpu.r5 = stack_pointer[2];
-    exception_object.cpu.pc = stack_pointer[3];
-    exception_object.cpu.sp = stack_pointer + 4;
-#elif OPTIMIZATION_LEVEL == RelWithDebInfo
-#error "Sorry Release mode unwinding is not supported yet.";
-#endif
-#endif
-
+    // This must ALWAYS evaluate to false. But since the variable is volatile,
+    // the compiler will not optimize it away and thus, __wrap___cxa_throw will
+    // require unwind information. This prevents the compiler from optimizing
+    // the data away.
+    if (libhal_convince_compiler_to_emit_metadata) {
+      throw std::bad_alloc();  // What is thrown is not important, just that we
+                               // throw something and since bad_alloc is a MUST
+                               // have in the C++ throw RTTI list, might as well
+                               // reuse it here.
+    }
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(exception_object);
+    // TODO(#38): this area is considered a catch block, meaning that the
+    // exception is handled at this point. We should mark it as such.
     std::terminate();
   }
 }  // extern "C"
