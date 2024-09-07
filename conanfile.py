@@ -67,6 +67,8 @@ class libhal_exceptions_conan(ConanFile):
             return "ARM_CORTEX_GCC"
         elif self._is_arm_cortex and self.options.runtime == "estell":
             return "ARM_CORTEX_ESTELL"
+        else:
+            return "ARM_CORTEX_GCC"
 
     def validate(self):
         if self.settings.get_safe("compiler.cppstd"):
