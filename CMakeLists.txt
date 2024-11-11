@@ -16,7 +16,6 @@ cmake_minimum_required(VERSION 3.15)
 
 project(libhal-exceptions LANGUAGES CXX)
 
-
 if("${RUNTIME}" STREQUAL "ARM_CORTEX_GCC")
 set(SOURCE_LIST src/builtin/gcc/impl.cpp)
 elseif("${RUNTIME}" STREQUAL "ARM_CORTEX_ESTELL")

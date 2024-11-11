@@ -121,29 +121,62 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 
 std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
 {
-  //
-  auto x = p_program_counter;
-  return 11.1 + -0.0226 * x + (8.43E-06 * (x * x)) + (-1.21E-09 * (x * x * x)) +
-         (8.39E-14 * (x * x * x * x)) + (-2.68E-18 * (x * x * x * x * x)) +
-         (3.2E-23 * (x * x * x * x * x * x));
+#if 0
+  // -31.7 + 6.8E-03x + -2.04E-07x^2 + 1.46E-11x^3
+  auto x = static_cast<float>(p_program_counter - 0x0800'0000);
+  auto result = -31.7f;
+  result += 6.8E-03f * x;
+  result += (-2.04E-07f * x) * x;
+  result += ((1.46E-11f * x) * x) * x;
+#elif 0
+  // -30.4 + 0.0386x + -9.32E-06x^2 + 8.7E-10x^3 + -3.25E-14x^4 + 4.32E-19x^5
+  auto x = static_cast<float>(p_program_counter - 0x0800'0000);
+  auto result = -30.4f;
+  result += 0.0386f * x;
+  result += (-9.32E-06f * x) * x;
+  result += ((8.7E-10f * x) * x) * x;
+  result += (((-3.25E-14f * x) * x) * x) * x;
+  result += ((((4.32E-19f * x) * x) * x) * x) * x;
+#else
+  // -25 + 0.0365x + -9.92E-06x^2 + 1.05E-09x^3 + -4.41E-14x^4 + 6.53E-19x^5
+  // LPC4078 near point
+  auto x = static_cast<float>(p_program_counter);
+  auto result = -25.0f;
+  result += 0.0365f * x;
+  result += (-9.92E-06f * x) * x;
+  result += ((1.05E-09f * x) * x) * x;
+  result += (((-4.41E-14f * x) * x) * x) * x;
+  result += ((((6.53E-19f * x) * x) * x) * x) * x;
+#endif
+  return static_cast<std::uint32_t>(result);
 }
 
 index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
 {
-  // Equation:
   auto const index_table = get_arm_exception_index();
-  auto const guess = near_point_guess_index(p_program_counter);
-  auto& left = index_table[guess];
-  // if (guess index_table[guess].)
-  auto const& index = std::upper_bound(index_table.begin(),
-                                       index_table.end(),
-                                       p_program_counter,
-                                       index_less_than{});
+  auto const initial_guess = near_point_guess_index(p_program_counter);
+  auto left = index_table[initial_guess].function();
+  auto const go_left = p_program_counter < left;
 
-  if (index == index_table.begin()) {
-    return *index;
+  if (go_left) {
+    for (int iter = initial_guess; iter > 0; iter--) {
+      left = index_table[iter].function();
+      auto right = index_table[iter + 1].function();
+      if (left <= p_program_counter && p_program_counter < right) {
+        return index_table[iter];
+      }
+    }
+  } else {
+    for (int iter = initial_guess; iter > 0; iter++) {
+      left = index_table[iter].function();
+      auto right = index_table[iter + 1].function();
+      if (left <= p_program_counter && p_program_counter < right) {
+        return index_table[iter];
+      }
+    }
   }
-  return *(index - 1);
+
+  return *index_table.begin();
 }
 
 [[gnu::always_inline]] inline void pop_registers(cortex_m_cpu& p_cpu,
