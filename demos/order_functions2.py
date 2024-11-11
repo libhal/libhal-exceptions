@@ -2,6 +2,7 @@
 import subprocess
 import re
 import argparse
+import csv
 from typing import NamedTuple, List
 
 
@@ -9,29 +10,31 @@ class Function(NamedTuple):
     name: str
     size: int
     addr: int
+    index: int  # Added index field
 
 
 def get_sorted_functions(binary_path: str) -> List[Function]:
     """Get size-sorted functions using nm."""
     try:
-        # Use nm with size sort and demangle options
-        cmd = ['nm', '--size-sort', '--print-size', '--radix=d', binary_path]
+        # Removed --demangle to keep mangled names
+        cmd = ['nm', '--size-sort', '--print-size', binary_path]
         nm_output = subprocess.check_output(
             cmd, universal_newlines=True, stderr=subprocess.PIPE)
 
         functions = []
-        for line in nm_output.splitlines():
+        for idx, line in enumerate(nm_output.splitlines()):
             # Look for text section symbols (t or T)
             if ' t ' in line or ' T ' in line:
                 parts = line.strip().split()
                 if len(parts) >= 4:  # addr size type name
                     addr = int(parts[0], 16)
-                    size = int(parts[1], 10)  # Size in decimal
+                    size = int(parts[1], 16)  # Size in decimal
                     name = parts[3]
-                    functions.append(Function(name, size, addr))
+                    functions.append(Function(name, size, addr, idx))
 
-        # Sort by size in descending order
-        return sorted(functions, key=lambda x: x.size, reverse=True)
+        # Sort by size in descending order and reassign indices
+        sorted_funcs = sorted(functions, key=lambda x: x.size, reverse=True)
+        return [Function(f.name, f.size, f.addr, i) for i, f in enumerate(sorted_funcs)]
 
     except subprocess.CalledProcessError as e:
         print(f"Error running nm: {e}")
@@ -60,6 +63,15 @@ def generate_linker_section(functions: List[Function]) -> str:
     return "\n".join(script)
 
 
+def write_csv(functions: List[Function], filepath: str):
+    """Write function information to CSV file."""
+    with open(filepath, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Index Entry', 'Function Name', 'Address'])
+        for func in functions:
+            writer.writerow([func.index, func.name, hex(func.addr)])
+
+
 def format_size(size: int) -> str:
     """Format size in bytes to human-readable format."""
     if size < 1024:
@@ -72,10 +84,11 @@ def format_size(size: int) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Generate size-sorted linker script section from ELF file'
+        description='Generate size-sorted linker script section and CSV from ELF file'
     )
     parser.add_argument('binary', help='Path to the ELF binary')
     parser.add_argument('-o', '--output', help='Output linker script file')
+    parser.add_argument('-c', '--csv', help='Output CSV file')
     parser.add_argument('--summary', action='store_true',
                         help='Show size summary of functions')
     args = parser.parse_args()
@@ -90,7 +103,7 @@ def main():
     # Generate linker script
     linker_script = generate_linker_section(functions)
 
-    # Output handling
+    # Output handling for linker script
     if args.output:
         with open(args.output, 'w') as f:
             f.write(linker_script)
@@ -101,16 +114,22 @@ def main():
         print(linker_script)
         print("=" * 80)
 
+    # Output CSV if requested
+    if args.csv:
+        write_csv(functions, args.csv)
+        print(f"CSV file written to: {args.csv}")
+
     # Print summary if requested
     if args.summary:
         total_size = sum(f.size for f in functions)
         print("\nFunction Size Summary:")
         print("-" * 80)
-        print(f"{'Size':>10} {'Address':>12} {'Function Name':<50}")
+        print(f"{'Index':>5} {'Size':>10} {'Address':>12} {'Function Name':<50}")
         print("-" * 80)
 
         for func in functions:
-            print(f"{format_size(func.size)} {func.addr:>#12x} {func.name:<50}")
+            print(
+                f"{func.index:>5} {format_size(func.size)} {func.addr:>#12x} {func.name:<50}")
 
         print("-" * 80)
         print(f"Total Functions: {len(functions)}")

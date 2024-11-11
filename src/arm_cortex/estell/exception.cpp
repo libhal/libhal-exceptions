@@ -119,6 +119,33 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
   return *(index - 1);
 }
 
+std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
+{
+  //
+  auto x = p_program_counter;
+  return 11.1 + -0.0226 * x + (8.43E-06 * (x * x)) + (-1.21E-09 * (x * x * x)) +
+         (8.39E-14 * (x * x * x * x)) + (-2.68E-18 * (x * x * x * x * x)) +
+         (3.2E-23 * (x * x * x * x * x * x));
+}
+
+index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
+{
+  // Equation:
+  auto const index_table = get_arm_exception_index();
+  auto const guess = near_point_guess_index(p_program_counter);
+  auto& left = index_table[guess];
+  // if (guess index_table[guess].)
+  auto const& index = std::upper_bound(index_table.begin(),
+                                       index_table.end(),
+                                       p_program_counter,
+                                       index_less_than{});
+
+  if (index == index_table.begin()) {
+    return *index;
+  }
+  return *(index - 1);
+}
+
 [[gnu::always_inline]] inline void pop_registers(cortex_m_cpu& p_cpu,
                                                  std::uint32_t mask)
 {
