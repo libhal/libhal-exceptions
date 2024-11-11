@@ -34,5 +34,5 @@ libhal_build_demos(
   libhal::exceptions
 
   LINK_FLAGS
-  -T${CMAKE_SOURCE_DIR}/sorted_list.ld
+  -T${CMAKE_SOURCE_DIR}/linker.ld
 )
