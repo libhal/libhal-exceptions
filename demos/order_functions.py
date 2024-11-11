@@ -1,84 +1,122 @@
+#!/usr/bin/env python3
 import subprocess
 import re
-from collections import OrderedDict
+import argparse
+from typing import NamedTuple, List
 
 
-def get_functions(elf_file):
-    # Run objdump to get symbol table
-    cmd = ['arm-none-eabi-objdump', '-t', elf_file]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-
-    # Parse the output to get function symbols
-    functions = OrderedDict()
-    for line in result.stdout.split('\n'):
-        if ' F .text' in line:
-            parts = line.split()
-            address = int(parts[0], 16)
-            name = parts[-1]
-            functions[address] = {'name': name, 'size': 0}
-
-    return functions
+class Function(NamedTuple):
+    name: str
+    size: int
+    addr: int
 
 
-def get_text_section_end(elf_file):
-    # Run objdump to get section headers
-    cmd = ['arm-none-eabi-objdump', '-h', elf_file]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+def get_sorted_functions(binary_path: str) -> List[Function]:
+    """Get size-sorted functions using nm."""
+    try:
+        # Use nm with size sort and demangle options
+        cmd = ['nm', '--size-sort', '--demangle',
+               '--print-size', '--radix=d', binary_path]
+        nm_output = subprocess.check_output(
+            cmd, universal_newlines=True, stderr=subprocess.PIPE)
 
-    # Find the .text section
-    for line in result.stdout.split('\n'):
-        if '.text' in line:
-            parts = line.split()
-            size = int(parts[2], 16)
-            vma = int(parts[3], 16)
-            return vma + size
+        functions = []
+        for line in nm_output.splitlines():
+            # Look for text section symbols (t or T)
+            if ' t ' in line or ' T ' in line:
+                parts = line.strip().split()
+                if len(parts) >= 4:  # addr size type name
+                    addr = int(parts[0], 16)
+                    size = int(parts[1], 10)  # Size in decimal
+                    name = parts[3]
+                    functions.append(Function(name, size, addr))
 
-    raise ValueError(".text section not found")
+        # Sort by size in descending order
+        return sorted(functions, key=lambda x: x.size, reverse=True)
 
-
-def calculate_function_sizes(functions, text_end):
-    sorted_addresses = sorted(functions.keys())
-    for i, addr in enumerate(sorted_addresses):
-        if i < len(sorted_addresses) - 1:
-            next_addr = sorted_addresses[i + 1]
-            functions[addr]['size'] = next_addr - addr
-        else:
-            functions[addr]['size'] = text_end - addr
-
-
-def generate_linker_script(functions, output_file):
-    with open(output_file, 'w') as f:
-        f.write("SECTIONS\n{\n  .text :\n  {\n")
-        for addr, func in functions.items():
-            f.write(f"    {func['name']} = .;\n")
-        f.write("  } > FLASH\n\n")
-        f.write("  /* Other sections... */\n")
-        f.write("}\n")
+    except subprocess.CalledProcessError as e:
+        print(f"Error running nm: {e}")
+        print(f"stderr: {e.stderr}")
+        return []
 
 
-def main(elf_file, output_file):
-    functions = get_functions(elf_file)
-    text_end = get_text_section_end(elf_file)
-    calculate_function_sizes(functions, text_end)
+def generate_linker_section(functions: List[Function]) -> str:
+    """Generate linker script section with sorted functions."""
+    script = []
+    script.append("SECTIONS")
+    script.append("{")
+    script.append("  .text :")
+    script.append("  {")
 
-    # Sort functions by address
-    sorted_functions = OrderedDict(sorted(functions.items()))
+    # Add functions in size order
+    for func in functions:
+        script.append(f"    KEEP(*(.text.{func.name}))")
 
-    # Print function information
-    print("Function Name\tAddress\t\tSize")
-    print("-" * 40)
-    for addr, func in sorted_functions.items():
-        print(f"{func['name']}\t0x{addr:08x}\t{func['size']}")
+    # Add any remaining text sections
+    script.append("    *(.text*)")
+    script.append("    *(.rodata*)")
+    script.append("  } > FLASH")
+    script.append("}")
+
+    return "\n".join(script)
+
+
+def format_size(size: int) -> str:
+    """Format size in bytes to human-readable format."""
+    if size < 1024:
+        return f"{size:>8} B"
+    elif size < 1024 * 1024:
+        return f"{size/1024:>7.1f} KB"
+    else:
+        return f"{size/1024/1024:>7.1f} MB"
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Generate size-sorted linker script section from ELF file'
+    )
+    parser.add_argument('binary', help='Path to the ELF binary')
+    parser.add_argument('-o', '--output', help='Output linker script file')
+    parser.add_argument('--summary', action='store_true',
+                        help='Show size summary of functions')
+    args = parser.parse_args()
+
+    # Get sorted functions
+    functions = get_sorted_functions(args.binary)
+
+    if not functions:
+        print("No functions found in binary")
+        return
 
     # Generate linker script
-    generate_linker_script(sorted_functions, output_file)
-    print(f"\nLinker script generated: {output_file}")
+    linker_script = generate_linker_section(functions)
+
+    # Output handling
+    if args.output:
+        with open(args.output, 'w') as f:
+            f.write(linker_script)
+        print(f"Linker script written to: {args.output}")
+    else:
+        print("\nLinker Script Section:")
+        print("=" * 80)
+        print(linker_script)
+        print("=" * 80)
+
+    # Print summary if requested
+    if args.summary:
+        total_size = sum(f.size for f in functions)
+        print("\nFunction Size Summary:")
+        print("-" * 80)
+        print(f"{'Size':>10} {'Address':>12} {'Function Name':<50}")
+        print("-" * 80)
+
+        for func in functions:
+            print(f"{format_size(func.size)} {func.addr:>#12x} {func.name:<50}")
+
+        print("-" * 80)
+        print(f"Total Functions: {len(functions)}")
+        print(f"Total Size: {format_size(total_size)}")
 
 
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 3:
-        print("Usage: python script.py <elf_file> <output_linker_script>")
-        sys.exit(1)
-
-    main(sys.argv[1], sys.argv[2])
+if __name__ == '__main__':
+    main()

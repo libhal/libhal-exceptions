@@ -32,4 +32,7 @@ libhal_build_demos(
 
   LINK_LIBRARIES
   libhal::exceptions
+
+  LINK_FLAGS
+  -T${CMAKE_SOURCE_DIR}/sorted_list.ld
 )
