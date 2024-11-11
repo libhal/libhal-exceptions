@@ -42,8 +42,7 @@ libhal_make_library(
   libhal::util
 )
 
-target_compile_definitions(libhal-exceptions PRIVATE
-  OPTIMIZATION_LEVEL=${OPTIMIZATION_LEVEL})
+target_compile_options(libhal-exceptions PRIVATE -save-temps=obj)
 
 if(NOT ${CMAKE_CROSSCOMPILING})
 libhal_unit_test(
