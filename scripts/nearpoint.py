@@ -25,8 +25,10 @@ def break_into_blocks(exception_index: list, block_power: int = 8):
 
     BLOCK_SIZE = (1 << block_power) - 1
     LAST_FUNCTION = exception_index[-1]
+    FIRST_FUNCTION = exception_index[0]
+    PROGRAM_LENGTH = LAST_FUNCTION - FIRST_FUNCTION
     # + 1 to account for the tail end of the index
-    NUMBER_OF_BLOCKS = (LAST_FUNCTION >> block_power) + 1
+    NUMBER_OF_BLOCKS = (PROGRAM_LENGTH >> block_power) + 1
 
     block_list = [Block(0, 0)] * NUMBER_OF_BLOCKS
     logging.info(f"len(block_list) = {len(block_list)}")
@@ -36,8 +38,8 @@ def break_into_blocks(exception_index: list, block_power: int = 8):
 
     # Lookup Table Region
     while index < len(exception_index) - 1:
-        addr1 = exception_index[index]
-        addr2 = exception_index[index + 1]
+        addr1 = exception_index[index] - FIRST_FUNCTION
+        addr2 = exception_index[index + 1] - FIRST_FUNCTION
         function_size = addr2 - addr1
 
         if function_size < BLOCK_SIZE:
@@ -57,10 +59,11 @@ def break_into_blocks(exception_index: list, block_power: int = 8):
     block_start_index = index
     while index < len(exception_index) - 1:
         index += 1
-        BLOCK_START_ADDRESS = exception_index[block_start_index]
+        BLOCK_START_ADDRESS = exception_index[block_start_index] - \
+            FIRST_FUNCTION
         BLOCK_NUMBER_START = (BLOCK_START_ADDRESS >> block_power)
 
-        BLOCK_END_ADDRESS = exception_index[index]
+        BLOCK_END_ADDRESS = exception_index[index] - FIRST_FUNCTION
         BLOCK_NUMBER_END = (BLOCK_END_ADDRESS >> block_power)
 
         BLOCK_INDEX_DELTA = (BLOCK_NUMBER_END - BLOCK_NUMBER_START)
@@ -97,7 +100,6 @@ def convert_blocks_to_linear_equations(blocks: list,
     for iter, block in enumerate(blocks):
         start = block.start
         end = block.end
-        # logging.debug(f"[{start}, {end}]")
 
         if start == end:
             equations[iter] = Equation(start, 0)
@@ -108,7 +110,6 @@ def convert_blocks_to_linear_equations(blocks: list,
         # Perform linear fit
         X = index_slice.reshape(-1, 1)
         y = [*range(start, end + 1, 1)]
-        # logging.debug(f"=> {y}")
 
         model = LinearRegression()
         model.fit(X, y)
@@ -154,13 +155,16 @@ def predict_location(address: int, equations: list, block_power: int = 8):
 
 def function_entry_matches_address(address: int, exception_index: list,
                                    index: int):
-    left_index = index
-    right_index = min(index + 1, len(exception_index) - 1)
-    return (exception_index[left_index] <= address and
-            address < exception_index[right_index])
+    return (exception_index[index] <= address and
+            address < exception_index[index + 1])
 
 
 def prediction_error(address: int, exception_index: list, index: int):
+
+    if not (0 <= index and index <= len(exception_index)):
+        logging.error("Index out of bounds! CLAMPING!!")
+        index = min(index, len(exception_index) - 1)
+
     if function_entry_matches_address(address, exception_index, index):
         return 0
 
@@ -180,17 +184,32 @@ def clamp(n, smallest, largest):
     return max(smallest, min(n, largest))
 
 
-def print_error_csv(entries: list, equations: list) -> int:
+def write_error_csv(filename: str,
+                    entries: list,
+                    equations: list,
+                    block_power: int,
+                    starting_entry: int = 0,
+                    address_offset: int = 0) -> int:
     over_cache_miss_count = 0
-    print(f"actual_entry_number,address,error")
-    for actual_entry_number, address in enumerate(entries):
-        estimated_entry_number = predict_location(
-            address=address, equations=equations, block_power=BLOCK_POWER)
-        error = estimated_entry_number - actual_entry_number
-        if abs(error) > 4:
-            over_cache_miss_count += 1
-            print(f"{actual_entry_number},{address},{ error }")
-    return over_cache_miss_count
+    small_block_start = 0
+
+    with open(filename, "w") as f:
+        f.write(f"actual_entry_number,address,error\n")
+        for actual_entry_number, address in enumerate(entries):
+            NEW_ADDRESS = address - address_offset
+            estimated_entry_number = predict_location(
+                address=NEW_ADDRESS,
+                equations=equations,
+                block_power=block_power)
+            error = estimated_entry_number - actual_entry_number
+            if abs(error) > 8:
+                over_cache_miss_count += 1
+                f.write(f"{actual_entry_number},{address},{error}\n")
+                if small_block_start == 0:
+                    small_block_start = actual_entry_number
+                    logging.info(f"small_block_start = {small_block_start}")
+
+    return over_cache_miss_count, small_block_start
 
 
 def prompt_user_for_guess(entries: list,
@@ -217,6 +236,75 @@ def prompt_user_for_guess(entries: list,
             break
 
 
+class NearPointTable:
+    def __init__(self):
+        pass
+
+
+def make_smaller_block_table(small_block_start: int,
+                             entries: list,
+                             block_power: int):
+    SMALL_ENTRY_TRANSITION = entries[small_block_start]
+    SMALL_ENTRIES_SLICE = entries[small_block_start:]
+    SMALLER_BLOCK_POWER = block_power - 3
+    pprint.pprint(SMALL_ENTRIES_SLICE)
+
+    blocks = break_into_blocks(
+        exception_index=SMALL_ENTRIES_SLICE,
+        block_power=SMALLER_BLOCK_POWER)
+
+    equations = convert_blocks_to_linear_equations(
+        blocks=blocks,
+        exception_index=SMALL_ENTRIES_SLICE,
+        block_power=SMALLER_BLOCK_POWER)
+
+    return (blocks, equations, SMALL_ENTRY_TRANSITION, SMALLER_BLOCK_POWER)
+
+
+def prompt_user_for_guess_with_small(small_tuple,
+                                     small_block_start: int,
+                                     entries: list,
+                                     equations: list,
+                                     block_power: int) -> int:
+    guess_count = 0
+    (_, small_equations, SMALL_ENTRY_TRANSITION,
+        SMALLER_BLOCK_POWER) = small_tuple
+    while True:
+        try:
+            logging.info(f"guess #{guess_count}")
+            guess_count += 1
+            address = int(input("Provide a memory address: "))
+
+            if address > SMALL_ENTRY_TRANSITION:
+                logging.warning("Using small table")
+                NEW_ADDRESS = address - SMALL_ENTRY_TRANSITION
+                logging.info(f"new address = {NEW_ADDRESS}")
+                guess_location = predict_location(
+                    address=NEW_ADDRESS,
+                    equations=small_equations,
+                    block_power=SMALLER_BLOCK_POWER)
+                guess_location += small_block_start
+                logging.info(f"guess_location = {guess_location}")
+                # We use the normal entries and address for prediction error
+                error = prediction_error(address=address,
+                                         exception_index=entries,
+                                         index=guess_location)
+            else:
+                guess_location = predict_location(address=address,
+                                                  equations=equations,
+                                                  block_power=block_power)
+                guess_location = clamp(guess_location, 0, len(entries) - 1)
+                error = prediction_error(address=address,
+                                         exception_index=entries,
+                                         index=guess_location)
+            logging.info(f"ERROR = { error }")
+            if abs(error) > 8:
+                logging.warning(
+                    "Error distance is greater than a single cache line")
+        except ValueError:  # break if the input is not an integer
+            break
+
+
 if __name__ == "__main__":
     csv_file = 'firefox.csv'
     data = pd.read_csv(csv_file)
@@ -231,85 +319,37 @@ if __name__ == "__main__":
     logging.debug(f"len(equations) = {len(equations)}")
     logging.debug(f"len(entries) = {len(entries)}")
 
-    if False:
-        over_cache_miss_count = print_error_csv(entries=entries,
-                                                equations=equations)
+    if True:
+        over_cache_miss_count, small_block_start = write_error_csv(
+            filename=f"{csv_file}.error.csv",
+            entries=entries,
+            equations=equations,
+            block_power=BLOCK_POWER)
         logging.info(f"over_cache_miss_count={over_cache_miss_count}")
     if False:
         prompt_user_for_guess(entries=entries,
                               equations=equations,
                               block_power=BLOCK_POWER)
+    if True:
+        small_tuple = make_smaller_block_table(
+            small_block_start=small_block_start,
+            entries=entries,
+            block_power=BLOCK_POWER)
 
-    exit(0)
-
-    print("========================================================")
-    over_cache_miss_count = 0
-    for actual_entry_number, address in enumerate(entries):
-        estimated_entry_number = predict_location(
-            address=address, equations=equations, block_power=BLOCK_POWER)
-        error = estimated_entry_number - actual_entry_number
-        logging.info(f"[{actual_entry_number},{address}]: error = { error }")
-        if abs(error) > 6:
-            over_cache_miss_count += 1
-    logging.info(f"over_cache_miss_count = {over_cache_miss_count}")
-
-    print("--------------")
-    SMALL_ENTRIES_SLICE = entries[-over_cache_miss_count:]
-    SMALLER_BLOCK_POWER = BLOCK_POWER - 2
-    small_blocks = break_into_blocks(
-        exception_index=SMALL_ENTRIES_SLICE,
-        block_power=SMALLER_BLOCK_POWER)
-    logging.info(pprint.pformat(small_blocks))
-    print("--------------")
-    small_equations = convert_blocks_to_linear_equations(
-        blocks=small_blocks,
-        exception_index=SMALL_ENTRIES_SLICE,
-        block_power=SMALLER_BLOCK_POWER)
-    logging.debug(pprint.pformat(small_equations))
-
-    SMALL_ENTRY_TRANSITION = entries[-over_cache_miss_count]
-
-    print("+++++++++++++++++++++++")
-
-    for actual_entry_number, address in enumerate(SMALL_ENTRIES_SLICE):
-        NEW_ADDRESS = address - SMALL_ENTRY_TRANSITION
-        estimated_entry_number = predict_location(
-            address=NEW_ADDRESS,
+    if True:
+        (_, small_equations, SMALL_ENTRY_TRANSITION,
+         SMALLER_BLOCK_POWER) = small_tuple
+        write_error_csv(
+            filename=f"{csv_file}.error_small.csv",
+            entries=entries[small_block_start:],
             equations=small_equations,
-            block_power=SMALLER_BLOCK_POWER)
-        error = estimated_entry_number - actual_entry_number
-        logging.info(
-            f"SMALL:[{actual_entry_number},{address}]: error = { error }")
-
-    print("========================================================")
-    total_blocks_needed = len(blocks) + len(small_blocks)
-    logging.info(f"total_blocks_needed = {total_blocks_needed}")
-
-    for i in range(10):
-        logging.info(f"guess #{i}")
-        address = int(input("Provide a memory address: "))
-        if address >= SMALL_ENTRY_TRANSITION:
-            NEW_ADDRESS = address - SMALL_ENTRY_TRANSITION
-            logging.info(
-                f"Block power {SMALLER_BLOCK_POWER} region used! "
-                f"Shifted Address {NEW_ADDRESS}")
-            guess_location = predict_location(
-                address=NEW_ADDRESS,
-                equations=small_equations,
-                block_power=SMALLER_BLOCK_POWER)
-            guess_location += len(entries) - over_cache_miss_count
-            # We use the normal entries and address for prediction error
-            error = prediction_error(address=address,
-                                     exception_index=entries,
-                                     index=guess_location)
-        else:
-            logging.info(f"Block power {BLOCK_POWER} region used!")
-            guess_location = predict_location(
-                address=address, equations=equations, block_power=BLOCK_POWER)
-            error = prediction_error(address=address,
-                                     exception_index=entries,
-                                     index=guess_location)
-        logging.info(f"ERROR = { error }")
-        if abs(error) > 8:
-            logging.warning(
-                "Error distance is greater than a single cache line")
+            block_power=SMALLER_BLOCK_POWER,
+            starting_entry=small_block_start,
+            address_offset=SMALL_ENTRY_TRANSITION,
+        )
+    if True:
+        prompt_user_for_guess_with_small(small_tuple=small_tuple,
+                                         small_block_start=small_block_start,
+                                         entries=entries,
+                                         equations=equations,
+                                         block_power=BLOCK_POWER)
