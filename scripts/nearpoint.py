@@ -143,7 +143,7 @@ def predict_location(address: int, equations: list, block_power: int = 8):
     if AVERAGE_FUNCTION_SIZE == 0:
         return START
 
-    GUESS_OFFSET = round(INTER_BLOCK_LOCATION / AVERAGE_FUNCTION_SIZE)
+    GUESS_OFFSET = math.ceil(INTER_BLOCK_LOCATION / AVERAGE_FUNCTION_SIZE)
 
     LOCATION = START + GUESS_OFFSET
     logging.debug(f"> AVERAGE_FUNCTION_SIZE = {AVERAGE_FUNCTION_SIZE}")
@@ -155,13 +155,15 @@ def predict_location(address: int, equations: list, block_power: int = 8):
 
 def function_entry_matches_address(address: int, exception_index: list,
                                    index: int):
-    return (exception_index[index] <= address and
-            address < exception_index[index + 1])
+    if index >= len(exception_index) - 1:
+        return address >= exception_index[index]
+    else:
+        return (exception_index[index] <= address and
+                address < exception_index[index + 1])
 
 
 def prediction_error(address: int, exception_index: list, index: int):
-
-    if not (0 <= index and index <= len(exception_index)):
+    if not (0 <= index and index <= len(exception_index) - 1):
         logging.error("Index out of bounds! CLAMPING!!")
         index = min(index, len(exception_index) - 1)
 
@@ -188,7 +190,6 @@ def write_error_csv(filename: str,
                     entries: list,
                     equations: list,
                     block_power: int,
-                    starting_entry: int = 0,
                     address_offset: int = 0) -> int:
     over_cache_miss_count = 0
     small_block_start = 0
@@ -201,6 +202,10 @@ def write_error_csv(filename: str,
                 address=NEW_ADDRESS,
                 equations=equations,
                 block_power=block_power)
+            logging.info(
+                f"est:{estimated_entry_number}, act:{actual_entry_number}")
+            logging.info(
+                f"   ori:{address}, new:{NEW_ADDRESS}")
             error = estimated_entry_number - actual_entry_number
             if abs(error) > 8:
                 over_cache_miss_count += 1
@@ -244,7 +249,7 @@ class NearPointTable:
 def make_smaller_block_table(small_block_start: int,
                              entries: list,
                              block_power: int):
-    SMALL_ENTRY_TRANSITION = entries[small_block_start]
+    SMALL_TABLE_ADDRESS = entries[small_block_start]
     SMALL_ENTRIES_SLICE = entries[small_block_start:]
     SMALLER_BLOCK_POWER = block_power - 3
     pprint.pprint(SMALL_ENTRIES_SLICE)
@@ -258,7 +263,7 @@ def make_smaller_block_table(small_block_start: int,
         exception_index=SMALL_ENTRIES_SLICE,
         block_power=SMALLER_BLOCK_POWER)
 
-    return (blocks, equations, SMALL_ENTRY_TRANSITION, SMALLER_BLOCK_POWER)
+    return (blocks, equations, SMALL_TABLE_ADDRESS, SMALLER_BLOCK_POWER)
 
 
 def prompt_user_for_guess_with_small(small_tuple,
@@ -267,7 +272,7 @@ def prompt_user_for_guess_with_small(small_tuple,
                                      equations: list,
                                      block_power: int) -> int:
     guess_count = 0
-    (_, small_equations, SMALL_ENTRY_TRANSITION,
+    (_, small_equations, SMALL_TABLE_ADDRESS,
         SMALLER_BLOCK_POWER) = small_tuple
     while True:
         try:
@@ -275,15 +280,17 @@ def prompt_user_for_guess_with_small(small_tuple,
             guess_count += 1
             address = int(input("Provide a memory address: "))
 
-            if address > SMALL_ENTRY_TRANSITION:
+            if address > SMALL_TABLE_ADDRESS:
                 logging.warning("Using small table")
-                NEW_ADDRESS = address - SMALL_ENTRY_TRANSITION
-                logging.info(f"new address = {NEW_ADDRESS}")
+                NEW_ADDRESS = address - SMALL_TABLE_ADDRESS
+                logging.info(
+                    f"new address = {NEW_ADDRESS}, {SMALL_TABLE_ADDRESS}")
                 guess_location = predict_location(
                     address=NEW_ADDRESS,
                     equations=small_equations,
                     block_power=SMALLER_BLOCK_POWER)
-                guess_location += small_block_start
+                guess_location += small_block_start - 1
+                guess_location = clamp(guess_location, 0, len(entries) - 1)
                 logging.info(f"guess_location = {guess_location}")
                 # We use the normal entries and address for prediction error
                 error = prediction_error(address=address,
@@ -306,7 +313,7 @@ def prompt_user_for_guess_with_small(small_tuple,
 
 
 if __name__ == "__main__":
-    csv_file = 'firefox.csv'
+    csv_file = 'multi.csv'
     data = pd.read_csv(csv_file)
     entries = data['memory_address'].values
     BLOCK_POWER = 10
@@ -337,16 +344,18 @@ if __name__ == "__main__":
             block_power=BLOCK_POWER)
 
     if True:
-        (_, small_equations, SMALL_ENTRY_TRANSITION,
+        (_, small_equations, SMALL_TABLE_ADDRESS,
          SMALLER_BLOCK_POWER) = small_tuple
+
+        # logging.basicConfig(level=logging.DEBUG, force=True)
         write_error_csv(
             filename=f"{csv_file}.error_small.csv",
             entries=entries[small_block_start:],
             equations=small_equations,
             block_power=SMALLER_BLOCK_POWER,
-            starting_entry=small_block_start,
-            address_offset=SMALL_ENTRY_TRANSITION,
+            address_offset=SMALL_TABLE_ADDRESS,
         )
+        # logging.basicConfig(level=logging.INFO, force=True)
     if True:
         prompt_user_for_guess_with_small(small_tuple=small_tuple,
                                          small_block_start=small_block_start,
