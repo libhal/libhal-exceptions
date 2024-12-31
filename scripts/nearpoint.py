@@ -279,6 +279,13 @@ def prompt_user_for_guess_with_small(entries: list,
                                      small_table_address_start: int,
                                      small_block_power: int) -> int:
     guess_count = 0
+    final_equation_block = small_table_address_start >> block_power
+    total_blocks_needed = len(small_equations) + final_equation_block
+    total_bytes_needed = total_blocks_needed * 4
+    final_entry_address = entries[-1]
+    percent_increase = (total_bytes_needed / final_entry_address) * 100
+    logging.info(
+        f"📏 total_blocks_needed = {total_blocks_needed} x 4B = {total_bytes_needed}, or +{percent_increase:.5f}%")
     while True:
         try:
             logging.info(f"guess #{guess_count}")
