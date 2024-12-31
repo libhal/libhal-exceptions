@@ -1,9 +1,11 @@
 import pandas as pd
-import numpy as np
 from sklearn.linear_model import LinearRegression
 import math
 import pprint
 import logging
+import argparse
+from pathlib import Path
+
 
 # Configure the logging module
 logging.basicConfig(level=logging.INFO)
@@ -193,6 +195,7 @@ def write_error_csv(filename: str,
                     address_offset: int = 0) -> int:
     over_cache_miss_count = 0
     small_block_start = 0
+    max_error = 0
 
     with open(filename, "w") as f:
         f.write(f"actual_entry_number,address,error\n")
@@ -202,18 +205,21 @@ def write_error_csv(filename: str,
                 address=NEW_ADDRESS,
                 equations=equations,
                 block_power=block_power)
-            logging.info(
+            logging.debug(
                 f"est:{estimated_entry_number}, act:{actual_entry_number}")
-            logging.info(
+            logging.debug(
                 f"   ori:{address}, new:{NEW_ADDRESS}")
-            error = estimated_entry_number - actual_entry_number
-            if abs(error) > 8:
+            error = abs(estimated_entry_number - actual_entry_number)
+            if error > max_error:
+                max_error = error
+            f.write(f"{actual_entry_number},{address},{error}\n")
+            if error > 8:
                 over_cache_miss_count += 1
-                f.write(f"{actual_entry_number},{address},{error}\n")
                 if small_block_start == 0:
                     small_block_start = actual_entry_number
                     logging.info(f"small_block_start = {small_block_start}")
 
+    logging.info(f"max_error = {max_error}")
     return over_cache_miss_count, small_block_start
 
 
@@ -251,47 +257,45 @@ def make_smaller_block_table(small_block_start: int,
                              block_power: int):
     SMALL_TABLE_ADDRESS = entries[small_block_start]
     SMALL_ENTRIES_SLICE = entries[small_block_start:]
-    SMALLER_BLOCK_POWER = block_power - 3
     pprint.pprint(SMALL_ENTRIES_SLICE)
 
     blocks = break_into_blocks(
         exception_index=SMALL_ENTRIES_SLICE,
-        block_power=SMALLER_BLOCK_POWER)
+        block_power=block_power)
 
     equations = convert_blocks_to_linear_equations(
         blocks=blocks,
         exception_index=SMALL_ENTRIES_SLICE,
-        block_power=SMALLER_BLOCK_POWER)
+        block_power=block_power)
 
-    return (blocks, equations, SMALL_TABLE_ADDRESS, SMALLER_BLOCK_POWER)
+    return (equations, SMALL_TABLE_ADDRESS)
 
 
-def prompt_user_for_guess_with_small(small_tuple,
-                                     small_block_start: int,
-                                     entries: list,
+def prompt_user_for_guess_with_small(entries: list,
                                      equations: list,
-                                     block_power: int) -> int:
+                                     block_power: int,
+                                     small_equations: list,
+                                     small_block_start: int,
+                                     small_table_address_start: int,
+                                     small_block_power: int) -> int:
     guess_count = 0
-    (_, small_equations, SMALL_TABLE_ADDRESS,
-        SMALLER_BLOCK_POWER) = small_tuple
     while True:
         try:
             logging.info(f"guess #{guess_count}")
             guess_count += 1
             address = int(input("Provide a memory address: "))
 
-            if address > SMALL_TABLE_ADDRESS:
+            if address > small_table_address_start:
                 logging.warning("Using small table")
-                NEW_ADDRESS = address - SMALL_TABLE_ADDRESS
+                NEW_ADDRESS = address - small_table_address_start
                 logging.info(
-                    f"new address = {NEW_ADDRESS}, {SMALL_TABLE_ADDRESS}")
+                    f"new address = {NEW_ADDRESS}, {small_table_address_start}")
                 guess_location = predict_location(
                     address=NEW_ADDRESS,
                     equations=small_equations,
-                    block_power=SMALLER_BLOCK_POWER)
+                    block_power=small_block_power)
                 guess_location += small_block_start - 1
                 guess_location = clamp(guess_location, 0, len(entries) - 1)
-                logging.info(f"guess_location = {guess_location}")
                 # We use the normal entries and address for prediction error
                 error = prediction_error(address=address,
                                          exception_index=entries,
@@ -304,6 +308,7 @@ def prompt_user_for_guess_with_small(small_tuple,
                 error = prediction_error(address=address,
                                          exception_index=entries,
                                          index=guess_location)
+            logging.info(f"guess_location = {guess_location}")
             logging.info(f"ERROR = { error }")
             if abs(error) > 8:
                 logging.warning(
@@ -313,10 +318,31 @@ def prompt_user_for_guess_with_small(small_tuple,
 
 
 if __name__ == "__main__":
-    csv_file = 'multi.csv'
-    data = pd.read_csv(csv_file)
-    entries = data['memory_address'].values
-    BLOCK_POWER = 10
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "csv",
+        help="csv file with columns entry_number and memory_address",
+        type=Path)
+    parser.add_argument(
+        "-b",
+        "--block_power",
+        help="Set the block size based on a power of 2.",
+        default=10,
+        type=int)
+    parser.add_argument(
+        "-s",
+        "--small_block_power",
+        help="Set the small block size based on a power of 2.",
+        default=7,
+        type=int)
+    args = parser.parse_args()
+    csv_file = args.csv
+    entries = pd.read_csv(csv_file)['memory_address'].values
+    BLOCK_POWER = args.block_power
+    SMALL_BLOCK_POWER = args.small_block_power
+
+    logging.info(f"Block power = {BLOCK_POWER}, size = {1 << BLOCK_POWER}")
+
     blocks = break_into_blocks(entries, block_power=BLOCK_POWER)
     logging.debug(pprint.pformat(blocks))
 
@@ -338,27 +364,27 @@ if __name__ == "__main__":
                               equations=equations,
                               block_power=BLOCK_POWER)
     if True:
-        small_tuple = make_smaller_block_table(
+        (small_equations, SMALL_TABLE_ADDRESS) = make_smaller_block_table(
             small_block_start=small_block_start,
             entries=entries,
-            block_power=BLOCK_POWER)
+            block_power=SMALL_BLOCK_POWER)
 
     if True:
-        (_, small_equations, SMALL_TABLE_ADDRESS,
-         SMALLER_BLOCK_POWER) = small_tuple
-
         # logging.basicConfig(level=logging.DEBUG, force=True)
         write_error_csv(
             filename=f"{csv_file}.error_small.csv",
             entries=entries[small_block_start:],
             equations=small_equations,
-            block_power=SMALLER_BLOCK_POWER,
+            block_power=SMALL_BLOCK_POWER,
             address_offset=SMALL_TABLE_ADDRESS,
         )
         # logging.basicConfig(level=logging.INFO, force=True)
     if True:
-        prompt_user_for_guess_with_small(small_tuple=small_tuple,
-                                         small_block_start=small_block_start,
-                                         entries=entries,
-                                         equations=equations,
-                                         block_power=BLOCK_POWER)
+        prompt_user_for_guess_with_small(
+            entries=entries,
+            equations=equations,
+            block_power=BLOCK_POWER,
+            small_equations=small_equations,
+            small_block_start=small_block_start,
+            small_table_address_start=SMALL_TABLE_ADDRESS,
+            small_block_power=SMALL_BLOCK_POWER)
