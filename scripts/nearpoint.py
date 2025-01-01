@@ -348,7 +348,15 @@ if __name__ == "__main__":
     BLOCK_POWER = args.block_power
     SMALL_BLOCK_POWER = args.small_block_power
 
+    if BLOCK_POWER <= SMALL_BLOCK_POWER:
+        logging.error(f"Block power must be greater than small block power!")
+        logging.error(f"Block power       = {BLOCK_POWER}")
+        logging.error(f"Small Block Power = {SMALL_BLOCK_POWER}")
+        exit(1)
+
     logging.info(f"Block power = {BLOCK_POWER}, size = {1 << BLOCK_POWER}")
+    logging.info(
+        f"Small Block Power = {SMALL_BLOCK_POWER}, size = {1 << SMALL_BLOCK_POWER}")
 
     blocks = break_into_blocks(entries, block_power=BLOCK_POWER)
     logging.debug(pprint.pformat(blocks))
@@ -370,28 +378,34 @@ if __name__ == "__main__":
         prompt_user_for_guess(entries=entries,
                               equations=equations,
                               block_power=BLOCK_POWER)
-    if True:
-        (small_equations, SMALL_TABLE_ADDRESS) = make_smaller_block_table(
+    if True and over_cache_miss_count > 0:
+        (small_equations, small_table_address_start) = make_smaller_block_table(
             small_block_start=small_block_start,
             entries=entries,
             block_power=SMALL_BLOCK_POWER)
 
-    if True:
+    if True and over_cache_miss_count > 0:
         # logging.basicConfig(level=logging.DEBUG, force=True)
         write_error_csv(
             filename=f"{csv_file}.error_small.csv",
             entries=entries[small_block_start:],
             equations=small_equations,
             block_power=SMALL_BLOCK_POWER,
-            address_offset=SMALL_TABLE_ADDRESS,
+            address_offset=small_table_address_start,
         )
         # logging.basicConfig(level=logging.INFO, force=True)
     if True:
+        if over_cache_miss_count == 0:
+            small_equations = []
+            small_block_start = len(entries) - 1
+            small_table_address_start = entries[-1]
+            small_block_power = SMALL_BLOCK_POWER
+
         prompt_user_for_guess_with_small(
             entries=entries,
             equations=equations,
             block_power=BLOCK_POWER,
             small_equations=small_equations,
             small_block_start=small_block_start,
-            small_table_address_start=SMALL_TABLE_ADDRESS,
+            small_table_address_start=small_table_address_start,
             small_block_power=SMALL_BLOCK_POWER)
