@@ -1,5 +1,6 @@
 import pandas as pd
 from sklearn.linear_model import LinearRegression
+import numpy as np
 import math
 import pprint
 import logging
@@ -110,7 +111,7 @@ def convert_blocks_to_linear_equations(blocks: list,
         index_slice = exception_index[start:end + 1]
 
         # Perform linear fit
-        X = index_slice.reshape(-1, 1)
+        X = np.array(index_slice).reshape(-1, 1)
         y = [*range(start, end + 1, 1)]
 
         model = LinearRegression()
@@ -257,7 +258,6 @@ def make_smaller_block_table(small_block_start: int,
                              block_power: int):
     SMALL_TABLE_ADDRESS = entries[small_block_start]
     SMALL_ENTRIES_SLICE = entries[small_block_start:]
-    pprint.pprint(SMALL_ENTRIES_SLICE)
 
     blocks = break_into_blocks(
         exception_index=SMALL_ENTRIES_SLICE,
@@ -342,9 +342,27 @@ if __name__ == "__main__":
         help="Set the small block size based on a power of 2.",
         default=7,
         type=int)
+    parser.add_argument(
+        "-n",
+        "--nm",
+        help="""The csv file is actually output from an NM command:
+        nm app.elf --size-sort --radix=d | grep " [Tt] " | awk '{print $1}'
+        """,
+        action='store_true')
     args = parser.parse_args()
     csv_file = args.csv
-    entries = pd.read_csv(csv_file)['memory_address'].values
+    if args.nm:
+        with open(csv_file) as f:
+            sorted_sizes = [int(line.strip()) for line in f]
+        sorted_sizes.reverse()
+        entries = []
+        function_address = 0
+        for next_function_size in sorted_sizes:
+            entries.append(function_address)
+            function_address += next_function_size
+        entries.append(function_address)
+    else:
+        entries = pd.read_csv(csv_file)['memory_address'].values
     BLOCK_POWER = args.block_power
     SMALL_BLOCK_POWER = args.small_block_power
 
