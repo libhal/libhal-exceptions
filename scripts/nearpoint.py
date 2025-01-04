@@ -248,11 +248,6 @@ def prompt_user_for_guess(entries: list,
             break
 
 
-class NearPointTable:
-    def __init__(self):
-        pass
-
-
 def make_smaller_block_table(small_block_start: int,
                              entries: list,
                              block_power: int):
@@ -279,13 +274,13 @@ def prompt_user_for_guess_with_small(entries: list,
                                      small_table_address_start: int,
                                      small_block_power: int) -> int:
     guess_count = 0
-    final_equation_block = small_table_address_start >> block_power
-    total_blocks_needed = len(small_equations) + final_equation_block
-    total_bytes_needed = total_blocks_needed * 4
-    final_entry_address = entries[-1]
-    percent_increase = (total_bytes_needed / final_entry_address) * 100
+    FINAL_EQUATION_BLOCK = small_table_address_start >> block_power
+    TOTAL_BLOCKS_NEEDED = len(small_equations) + FINAL_EQUATION_BLOCK
+    TOTAL_BYTES_NEEDED = TOTAL_BLOCKS_NEEDED * 4
+    FINAL_ENTRY_ADDRESS = entries[-1]
+    percent_increase = (TOTAL_BYTES_NEEDED / FINAL_ENTRY_ADDRESS) * 100
     logging.info(
-        f"📏 total_blocks_needed = {total_blocks_needed} x 4B = {total_bytes_needed}, or +{percent_increase:.5f}%")
+        f"📏 total_blocks_needed = {TOTAL_BLOCKS_NEEDED} x 4B = {TOTAL_BYTES_NEEDED}, or +{percent_increase:.5f}%")
     while True:
         try:
             logging.info(f"guess #{guess_count}")
@@ -327,8 +322,11 @@ def prompt_user_for_guess_with_small(entries: list,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "csv",
-        help="csv file with columns entry_number and memory_address",
+        "file",
+        help="""text file with a list of function addresses in your code
+        starting from 0 to N where N is the last function address, or output
+        from the command: nm app.elf --size-sort --radix=d | grep " [Tt] " | awk '{print $1}'
+        """,
         type=Path)
     parser.add_argument(
         "-b",
@@ -345,14 +343,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "-n",
         "--nm",
-        help="""The csv file is actually output from an NM command:
+        help="""The input file is actually output from an NM command:
+
         nm app.elf --size-sort --radix=d | grep " [Tt] " | awk '{print $1}'
+
         """,
         action='store_true')
     args = parser.parse_args()
-    csv_file = args.csv
+
     if args.nm:
-        with open(csv_file) as f:
+        with open(args.file) as f:
             sorted_sizes = [int(line.strip()) for line in f]
         sorted_sizes.reverse()
         entries = []
@@ -362,7 +362,8 @@ if __name__ == "__main__":
             function_address += next_function_size
         entries.append(function_address)
     else:
-        entries = pd.read_csv(csv_file)['memory_address'].values
+        with open(args.file) as f:
+            entries = [int(line.strip()) for line in f]
     BLOCK_POWER = args.block_power
     SMALL_BLOCK_POWER = args.small_block_power
 
@@ -372,9 +373,11 @@ if __name__ == "__main__":
         logging.error(f"Small Block Power = {SMALL_BLOCK_POWER}")
         exit(1)
 
-    logging.info(f"Block power = {BLOCK_POWER}, size = {1 << BLOCK_POWER}")
+    BLOCK_SIZE = 1 << BLOCK_POWER
+    SMALL_BLOCK_SIZE = 1 << SMALL_BLOCK_POWER
+    logging.info(f"Block power = {BLOCK_POWER}, size = {BLOCK_SIZE}")
     logging.info(
-        f"Small Block Power = {SMALL_BLOCK_POWER}, size = {1 << SMALL_BLOCK_POWER}")
+        f"Small Block Power = {SMALL_BLOCK_POWER}, size = {SMALL_BLOCK_SIZE}")
 
     blocks = break_into_blocks(entries, block_power=BLOCK_POWER)
     logging.debug(pprint.pformat(blocks))
@@ -385,45 +388,38 @@ if __name__ == "__main__":
     logging.debug(f"len(equations) = {len(equations)}")
     logging.debug(f"len(entries) = {len(entries)}")
 
-    if True:
-        over_cache_miss_count, small_block_start = write_error_csv(
-            filename=f"{csv_file}.error.csv",
-            entries=entries,
-            equations=equations,
-            block_power=BLOCK_POWER)
-        logging.info(f"over_cache_miss_count={over_cache_miss_count}")
-    if False:
-        prompt_user_for_guess(entries=entries,
-                              equations=equations,
-                              block_power=BLOCK_POWER)
-    if True and over_cache_miss_count > 0:
+    over_cache_miss_count, small_block_start = write_error_csv(
+        filename=f"{args.file}.error.csv",
+        entries=entries,
+        equations=equations,
+        block_power=BLOCK_POWER)
+
+    logging.info(f"over_cache_miss_count={over_cache_miss_count}")
+
+    if over_cache_miss_count > 0:
         (small_equations, small_table_address_start) = make_smaller_block_table(
             small_block_start=small_block_start,
             entries=entries,
             block_power=SMALL_BLOCK_POWER)
 
-    if True and over_cache_miss_count > 0:
-        # logging.basicConfig(level=logging.DEBUG, force=True)
         write_error_csv(
-            filename=f"{csv_file}.error_small.csv",
+            filename=f"{args.file}.error_small.csv",
             entries=entries[small_block_start:],
             equations=small_equations,
             block_power=SMALL_BLOCK_POWER,
             address_offset=small_table_address_start,
         )
-        # logging.basicConfig(level=logging.INFO, force=True)
-    if True:
-        if over_cache_miss_count == 0:
-            small_equations = []
-            small_block_start = len(entries) - 1
-            small_table_address_start = entries[-1]
-            small_block_power = SMALL_BLOCK_POWER
+    else:
+        small_equations = []
+        small_block_start = len(entries) - 1
+        small_table_address_start = entries[-1]
+        small_block_power = SMALL_BLOCK_POWER
 
-        prompt_user_for_guess_with_small(
-            entries=entries,
-            equations=equations,
-            block_power=BLOCK_POWER,
-            small_equations=small_equations,
-            small_block_start=small_block_start,
-            small_table_address_start=small_table_address_start,
-            small_block_power=SMALL_BLOCK_POWER)
+    prompt_user_for_guess_with_small(
+        entries=entries,
+        equations=equations,
+        block_power=BLOCK_POWER,
+        small_equations=small_equations,
+        small_block_start=small_block_start,
+        small_table_address_start=small_table_address_start,
+        small_block_power=SMALL_BLOCK_POWER)
