@@ -11,6 +11,9 @@ from pathlib import Path
 # Configure the logging module
 logging.basicConfig(level=logging.INFO)
 
+ERROR_ALLOWANCE_POWER = 3
+ERROR_ALLOWANCE = 1 << 3
+
 
 class Block:
     def __init__(self, start_entry: int, end_entry: int):
@@ -91,8 +94,64 @@ class Equation:
     def __repr__(self):
         return f"Equation(entry='{self.entry}', function_size={self.size})"
 
-    def to_packed_u32(self):
-        return self.size << 24 | self.entry
+    def to_u32(self, block_power: int) -> int:
+        # Since ARM functions are 4-byte aligned, we can trim the least
+        # significant 2 bits as no function will have a function size that
+        # isn't some multiple of 4.
+        LSB_TRIM = 2
+        SIZE_BIT_LIMIT = 9
+        SIZE_BIT_REDUCTION = LSB_TRIM + ERROR_ALLOWANCE_POWER
+        MAX_ALLOWED_BLOCK_SIZE = SIZE_BIT_LIMIT + SIZE_BIT_REDUCTION
+        BLOCK_SIZE = 1 << block_power
+
+        if block_power > MAX_ALLOWED_BLOCK_SIZE:
+            raise Exception("Block power is too high! Must be below 14")
+
+        # Sets size to zero
+        # Zero is a sentinel value representing a block with less than 8
+        # functions within it.
+        u32 = 0
+
+        if self.size < (BLOCK_SIZE / ERROR_ALLOWANCE):
+            u32 = self.size >> LSB_TRIM
+            # Why minus 1? To expand the size you must do the following in C:
+            #
+            #    avg_size = (value & 0x1FF) << 2;
+            #
+            # The smallest function is 4 bytes so 4 >> 2 will result in 1.
+        u32 = u32 | (self.entry << SIZE_BIT_LIMIT)
+        return u32
+
+    def to_verbose_code(self, block_power: int) -> str:
+        # TODO(...): copy and paste of the above, should have a single function
+        # performing these calculations to eliminate divergence
+
+        # Since ARM functions are 4-byte aligned, we can trim the least
+        # significant 2 bits as no function will have a function size that
+        # isn't some multiple of 4.
+        LSB_TRIM = 2
+        SIZE_BIT_LIMIT = 9
+        SIZE_BIT_REDUCTION = LSB_TRIM + ERROR_ALLOWANCE_POWER
+        MAX_ALLOWED_BLOCK_SIZE = SIZE_BIT_LIMIT + SIZE_BIT_REDUCTION
+        BLOCK_SIZE = 1 << block_power
+
+        if block_power > MAX_ALLOWED_BLOCK_SIZE:
+            raise Exception("Block power is too high! Must be below 14")
+
+        # Sets size to zero
+        # Zero is a sentinel value representing a block with less than 8
+        # functions within it.
+        final_size = 0
+
+        if self.size < (BLOCK_SIZE / ERROR_ALLOWANCE):
+            final_size = self.size >> LSB_TRIM
+            # Why minus 1? To expand the size you must do the following in C:
+            #
+            #    avg_size = (value & 0x1FF) << 2;
+            #
+            # The smallest function is 4 bytes so 4 >> 2 will result in 1.
+
+        return f"({self.entry} << {SIZE_BIT_LIMIT}) | {final_size}"
 
 
 def convert_blocks_to_linear_equations(blocks: list,
@@ -326,41 +385,46 @@ def generate_cpp_table_file(filename: str,
                             equations: list,
                             block_power: int,
                             small_equations: list,
+                            small_block_start: int,
                             small_table_address_start: int,
                             small_block_power: int):
+    code = """
+#include <cstdint>
 
-    _UNIVERSAL_START = """
-        #include <array>
-        #include <cstdint>
+#include <span>
 
-        namespace hal::__except_abi {
-        """
-    _UNIVERSAL_END = """
-        }  // namespace hal::__except_abi
-        """
+namespace hal::__except_abi {
 
-    near_point_descriptor = "std::uint32_t near_point_descriptor[] = {\n"
-    normal_table = "std::uint32_t normal_table[] = {\n"
-    small_table = "std::uint32_t small_table[] = {\n"
+using u32 = std::uint32_t;
+using u32_span = std::span<std::uint32_t>;
 
-    near_point_descriptor += f"  {block_power},\n"
-    near_point_descriptor += f"  {small_block_power},\n"
-    near_point_descriptor += f"  {small_block_start},\n"
-    near_point_descriptor += f"  {small_table_address_start},\n"
-    near_point_descriptor += "};\n"
+namespace {
+"""
 
+    code += "u32 _near_point_descriptor_data[] = {\n"
+    code += f"  0x{block_power:08x},\n"
+    code += f"  0x{small_block_power:08x},\n"
+    code += f"  0x{small_block_start:08x},\n"
+    code += f"  0x{small_table_address_start:08x},\n"
+    code += "};\n"
+    code += "\n\n"
+
+    code += "u32 _normal_table_data[] = {\n"
     for equation in equations:
-        packed_u32 = equation.to_packed_u32()
-        normal_table += f"  {packed_u32},\n"
-    normal_table += "};\n"
+        code += f"  {equation.to_verbose_code(block_power)},\n"
+    code += "};\n"
 
+    code += "u32 _small_table_data[] = {\n"
     for equation in small_equations:
-        packed_u32 = equation.to_packed_u32()
-        small_table += f"  {packed_u32},\n"
-    small_table += "};\n"
+        code += f"  {equation.to_verbose_code(small_block_power)},\n"
+    code += "};\n"
+    code += "}  // namespace\n\n"
 
-    code = _UNIVERSAL_START + near_point_descriptor + \
-        normal_table + small_table + _UNIVERSAL_END
+    code += "u32_span near_point_descriptor = _near_point_descriptor_data;\n"
+    code += "u32_span normal_table = _normal_table_data;\n"
+    code += "u32_span small_table = _small_table_data;\n"
+
+    code += "}  // namespace hal::__except_abi\n"
 
     with open(filename, "w") as f:
         f.write(code)
@@ -462,7 +526,7 @@ if __name__ == "__main__":
         small_table_address_start = entries[-1]
         small_block_power = SMALL_BLOCK_POWER
 
-    generate_cpp_table_file(filename=f"{args.file}.near_point.cpp",
+    generate_cpp_table_file(filename=f"{args.file}.np.cpp",
                             equations=equations,
                             block_power=BLOCK_POWER,
                             small_equations=small_equations,
