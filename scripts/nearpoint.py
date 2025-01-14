@@ -91,6 +91,9 @@ class Equation:
     def __repr__(self):
         return f"Equation(entry='{self.entry}', function_size={self.size})"
 
+    def to_packed_u32(self):
+        return self.size << 24 | self.entry
+
 
 def convert_blocks_to_linear_equations(blocks: list,
                                        exception_index: list,
@@ -319,6 +322,50 @@ def prompt_user_for_guess_with_small(entries: list,
             break
 
 
+def generate_cpp_table_file(filename: str,
+                            equations: list,
+                            block_power: int,
+                            small_equations: list,
+                            small_table_address_start: int,
+                            small_block_power: int):
+
+    _UNIVERSAL_START = """
+        #include <array>
+        #include <cstdint>
+
+        namespace hal::__except_abi {
+        """
+    _UNIVERSAL_END = """
+        }  // namespace hal::__except_abi
+        """
+
+    near_point_descriptor = "std::uint32_t near_point_descriptor[] = {\n"
+    normal_table = "std::uint32_t normal_table[] = {\n"
+    small_table = "std::uint32_t small_table[] = {\n"
+
+    near_point_descriptor += f"  {block_power},\n"
+    near_point_descriptor += f"  {small_block_power},\n"
+    near_point_descriptor += f"  {small_block_start},\n"
+    near_point_descriptor += f"  {small_table_address_start},\n"
+    near_point_descriptor += "};\n"
+
+    for equation in equations:
+        packed_u32 = equation.to_packed_u32()
+        normal_table += f"  {packed_u32},\n"
+    normal_table += "};\n"
+
+    for equation in small_equations:
+        packed_u32 = equation.to_packed_u32()
+        small_table += f"  {packed_u32},\n"
+    small_table += "};\n"
+
+    code = _UNIVERSAL_START + near_point_descriptor + \
+        normal_table + small_table + _UNIVERSAL_END
+
+    with open(filename, "w") as f:
+        f.write(code)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -414,6 +461,14 @@ if __name__ == "__main__":
         small_block_start = len(entries) - 1
         small_table_address_start = entries[-1]
         small_block_power = SMALL_BLOCK_POWER
+
+    generate_cpp_table_file(filename=f"{args.file}.near_point.cpp",
+                            equations=equations,
+                            block_power=BLOCK_POWER,
+                            small_equations=small_equations,
+                            small_block_start=small_block_start,
+                            small_table_address_start=small_table_address_start,
+                            small_block_power=SMALL_BLOCK_POWER)
 
     prompt_user_for_guess_with_small(
         entries=entries,
