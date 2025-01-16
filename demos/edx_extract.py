@@ -3,7 +3,7 @@ import subprocess
 import sys
 import os
 import struct
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 import ctypes
 
 
@@ -11,6 +11,33 @@ class SectionInfo:
     def __init__(self, section_name: str, address: int):
         self.name = section_name
         self.address = address
+
+    def __repr__(self):
+        return f"SectionInfo(name = {self.name}, address = {self.address})"
+
+
+class EntryInfo:
+    def __init__(self,
+                 absolute_address: int,
+                 offset: int,
+                 handler_bytes: bytes):
+        self.address = absolute_address
+        self.offset = offset
+        self.handler_bytes = handler_bytes
+
+    def __repr__(self):
+        return f"EntryInfo(address = 0x{self.address:08x}, offset = {self.offset}, handler_bytes = 0x{self.handler_bytes[::-1].hex()})\n"
+
+
+class FunctionInfo:
+    def __init__(self, addr: int, size: int, type: str, name: str):
+        self.address = addr
+        self.size = size
+        self.type = type
+        self.name = name
+
+    def __repr__(self):
+        return f"FunctionInfo(address = 0x{self.address:08x}, size = {self.size}, type = {self.type}, name = '{self.name}')\n"
 
 
 def find_exidx_section(elf_file: str) -> SectionInfo:
@@ -63,7 +90,7 @@ def parse_prel31(data: bytes, entry_index: int) -> int:
 
 
 def parse_exidx_data(binary_file: str,
-                     info: SectionInfo) -> List[Tuple[int, int, bytes]]:
+                     info: SectionInfo) -> List[EntryInfo]:
     """Parse the extracted .ARM.exidx section data."""
     with open(binary_file, 'rb') as f:
         data = f.read()
@@ -81,12 +108,12 @@ def parse_exidx_data(binary_file: str,
         # the memory we need the starting position of the index as well as the
         # offset from the start into the index.
         absolute_address = (info.address + i) + offset
-        entries.append((absolute_address, offset, handler_bytes))
+        entries.append(EntryInfo(absolute_address, offset, handler_bytes))
 
     return entries
 
 
-def get_functions(elf_file: str):
+def get_functions(elf_file: str) -> Dict[int, FunctionInfo]:
     """Get all functions with their addresses and sizes using nm."""
     cmd = ['arm-none-eabi-nm', '--print-size', '--size-sort', elf_file]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -94,7 +121,7 @@ def get_functions(elf_file: str):
     if result.returncode != 0:
         raise RuntimeError(f"nm failed: {result.stderr}")
 
-    functions = []
+    functions: Dict[int, FunctionInfo] = {}
     for line in result.stdout.splitlines():
         parts = line.strip().split()
         if len(parts) == 4 and parts[2].lower() in ['t', 'w', 'T', 'W']:
@@ -102,17 +129,39 @@ def get_functions(elf_file: str):
             size = int(parts[1], 16)
             type = parts[2]
             name = parts[3]
-            functions.append((addr, size, type, name))
+            functions[addr] = (FunctionInfo(addr, size, type, name))
 
     return functions
 
 
-def print_entries(entries: List[Tuple[int, int, bytes]]):
-    for i, (absolute_address, offset, handler) in enumerate(entries):
-        hex_offset = ctypes.c_uint32(offset).value
-        print(f"Entry {i} (0x{absolute_address:08x}):")
-        print(f"   PREL31 offset: {offset} (0x{hex_offset:08x})")
-        print(f"    Handler data: {handler[::-1].hex()}")
+def print_entries(entries: List[EntryInfo]):
+    for i, entry in enumerate(entries):
+        hex_offset = ctypes.c_uint32(entry.offset).value
+        print(f"Entry {i} (0x{entry.address:08x}):")
+        print(f"   PREL31 offset: {entry.offset} (0x{hex_offset:08x})")
+        print(f"    Handler data: {entry.handler_bytes[::-1].hex()}")
+
+
+def find_and_sort_exceptional_functions(entries: List[EntryInfo],
+                                        functions: Dict[int, FunctionInfo]):
+    exceptional_functions: List[FunctionInfo] = []
+
+    for entry in entries:
+        if entry.address in functions:
+            exceptional_functions.append(functions[entry.address])
+
+    sorted_functions = sorted(exceptional_functions,
+                              key=lambda function: function.size,
+                              reverse=True)
+
+    return sorted_functions
+
+
+def generate_linker_script_list(linker_partition_file: str,
+                                functions: List[FunctionInfo]):
+    with open(linker_partition_file, 'w') as f:
+        for funct in functions:
+            f.write(f"KEEP(*(.text.{funct.name}))\n")
 
 
 def main():
@@ -135,9 +184,16 @@ def main():
 
         entries = parse_exidx_data(temp_bin, section_info)
 
+        exceptional_functions = find_and_sort_exceptional_functions(
+            entries=entries, functions=function_set)
+
         # Print the results
         print(f"\nFound {len(entries)} exception index entries:")
         print_entries(entries)
+        print(exceptional_functions)
+
+        generate_linker_script_list(
+            linker_partition_file=f"{elf_file}.part.ld", functions=exceptional_functions)
 
     finally:
         # Clean up temporary file

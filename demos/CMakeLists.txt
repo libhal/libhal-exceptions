@@ -34,5 +34,5 @@ libhal_build_demos(
   libhal::exceptions
 
   LINK_FLAGS
-  -T${CMAKE_SOURCE_DIR}/linker-lpc4078.ld
+  -T${CMAKE_SOURCE_DIR}/linker-stm32f103.ld
 )
