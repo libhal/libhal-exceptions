@@ -87,6 +87,12 @@ void foo()
   throw error{};
 }
 
+namespace hal::__except_abi {
+std::span<std::uint32_t> near_point_descriptor{};
+std::span<std::uint32_t> normal_table{};
+std::span<std::uint32_t> small_table{};
+}  // namespace hal::__except_abi
+
 int main()
 {
   [[maybe_unused]] static constexpr auto error_size = sizeof(error);

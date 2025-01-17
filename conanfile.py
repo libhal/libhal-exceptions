@@ -120,6 +120,7 @@ class libhal_exceptions_conan(ConanFile):
                 "-Wl,--wrap=__cxa_end_catch",
                 "-Wl,--wrap=__cxa_begin_catch",
                 "-Wl,--wrap=__cxa_end_cleanup",
+                "-Wl,--wrap=__cxa_call_unexpected",
                 "-Wl,--wrap=__gnu_unwind_pr_common",
                 "-Wl,--wrap=__aeabi_unwind_cpp_pr0",
                 "-Wl,--wrap=_sig_func",

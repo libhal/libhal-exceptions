@@ -24,8 +24,7 @@ struct error
 std::uint64_t start = 0;
 std::uint64_t end = 0;
 int volatile value = 5;
-
-void foo()
+__attribute__((section(".text._Z3foov"))) void foo()
 {
   if (value) {
     start = resources->clock->uptime();
