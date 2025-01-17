@@ -23,6 +23,12 @@
 
 #include "internal.hpp"
 
+namespace hal::__except_abi {
+extern std::span<std::uint32_t> near_point_descriptor;
+extern std::span<std::uint32_t> normal_table;
+extern std::span<std::uint32_t> small_table;
+}  // namespace hal::__except_abi
+
 namespace ke {
 
 union instructions_t
@@ -121,34 +127,20 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 
 std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
 {
-#if 0
-  // -31.7 + 6.8E-03x + -2.04E-07x^2 + 1.46E-11x^3
-  auto x = static_cast<float>(p_program_counter - 0x0800'0000);
-  auto result = -31.7f;
-  result += 6.8E-03f * x;
-  result += (-2.04E-07f * x) * x;
-  result += ((1.46E-11f * x) * x) * x;
-#elif 0
-  // -30.4 + 0.0386x + -9.32E-06x^2 + 8.7E-10x^3 + -3.25E-14x^4 + 4.32E-19x^5
-  auto x = static_cast<float>(p_program_counter - 0x0800'0000);
-  auto result = -30.4f;
-  result += 0.0386f * x;
-  result += (-9.32E-06f * x) * x;
-  result += ((8.7E-10f * x) * x) * x;
-  result += (((-3.25E-14f * x) * x) * x) * x;
-  result += ((((4.32E-19f * x) * x) * x) * x) * x;
-#else
-  // -25 + 0.0365x + -9.92E-06x^2 + 1.05E-09x^3 + -4.41E-14x^4 + 6.53E-19x^5
-  // LPC4078 near point
-  auto x = static_cast<float>(p_program_counter);
-  auto result = -25.0f;
-  result += 0.0365f * x;
-  result += (-9.92E-06f * x) * x;
-  result += ((1.05E-09f * x) * x) * x;
-  result += (((-4.41E-14f * x) * x) * x) * x;
-  result += ((((6.53E-19f * x) * x) * x) * x) * x;
-#endif
-  return static_cast<std::uint32_t>(result);
+  auto const pc = p_program_counter - 0x0800'0000;
+  auto const block_power = hal::__except_abi::near_point_descriptor[0];
+  auto const inter_block_mask = (1 << block_power) - 1;
+  auto const inter_block_location = pc & inter_block_mask;
+  auto const block_index = pc >> block_power;
+  auto const linear_info = hal::__except_abi::normal_table[block_index];
+  auto const entry_start = linear_info >> 9;
+  auto const average_function_size = linear_info & 0x1FF;
+  if (average_function_size == 0) {
+    return entry_start;
+  }
+  auto const guess_offset = inter_block_location / average_function_size;
+  auto const location = entry_start + guess_offset;
+  return static_cast<std::uint32_t>(location);
 }
 
 index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
@@ -826,6 +818,7 @@ inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
 
 void unwind_frame(instructions_t const& p_instructions, cortex_m_cpu& p_cpu)
 {
+  // NOLINTBEGIN(clang-diagnostic-gnu-label-as-value)
   static constexpr std::array<void*, 256> jump_table{
     &&vsp_add_0,   // [0]
     &&vsp_add_1,   // [1]
@@ -1152,6 +1145,7 @@ void unwind_frame(instructions_t const& p_instructions, cortex_m_cpu& p_cpu)
     &&reserved_or_spare_thus_terminate,  // 11011'110 []
     &&reserved_or_spare_thus_terminate,  // 11111'111 [255]
   };
+  // NOLINTEND(clang-diagnostic-gnu-label-as-value)
 
   bool move_lr_to_pc = true;
   std::uint32_t u32_storage = 0;
@@ -1796,7 +1790,8 @@ void raise_exception(exception_object& p_exception_object)
   while (true) {
     switch (p_exception_object.cache.state()) {
       case runtime_state::get_next_frame: {
-        auto const& index_entry = get_index_entry(p_exception_object.cpu.pc);
+        auto const& index_entry =
+          get_index_entry_near_point(p_exception_object.cpu.pc);
         p_exception_object.cache.entry_ptr = &index_entry;
         // SU16 data
         if (index_entry.has_inlined_personality()) {
@@ -1994,7 +1989,7 @@ extern "C"
     std::terminate();
   }
   // TODO(#42): Use the applications's polymorphic allocator, not our own space.
-  void* __wrap___cxa_allocate_exception(size_t p_thrown_size)
+  void* __wrap___cxa_allocate_exception(unsigned int p_thrown_size) throw()
   {
     if (p_thrown_size >
         ke::exception_buffer.size() + sizeof(ke::exception_object)) {
@@ -2004,7 +1999,9 @@ extern "C"
     return ke::exception_buffer.data() + sizeof(ke::exception_object);
   }
 
-  void __wrap___cxa_free_exception([[maybe_unused]] void* p_thrown_exception)
+  [[gnu::section(".text.cxa_free_exception_section")]]
+  void __wrap___cxa_free_exception(
+    [[maybe_unused]] void* p_thrown_exception) throw()
   {
     ke::exception_buffer.fill(0);
   }
@@ -2040,7 +2037,8 @@ extern "C"
     std::terminate();
   }
 
-  void __wrap___cxa_rethrow() noexcept(false)
+  [[gnu::section(".text.cxa_rethrow_section")]]
+  void __wrap___cxa_rethrow()
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
 
@@ -2048,9 +2046,9 @@ extern "C"
 
     exception_object.cache.state(ke::runtime_state::get_next_frame);
     exception_object.cache.rethrown(true);
-
+#if 1
     // This must ALWAYS evaluate to false. But since the variable is volatile,
-    // the compiler will not optimize it away and thus, __wrap___cxa_throw will
+    // the compiler will not optimize it away and thus, __cxa_throw will
     // require unwind information. This prevents the compiler from optimizing
     // the data away.
     if (libhal_convince_compiler_to_emit_metadata) {
@@ -2059,6 +2057,7 @@ extern "C"
                                // have in the C++ throw RTTI list, might as well
                                // reuse it here.
     }
+#endif
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(exception_object);
     // TODO(#38): this area is considered a catch block, meaning that the
@@ -2066,19 +2065,23 @@ extern "C"
     std::terminate();
   }
 
-  void __wrap___cxa_throw(ke::exception_ptr p_thrown_exception,
-                          std::type_info* p_type_info,
-                          ke::destructor_t p_destructor) noexcept(false)
+  [[gnu::section(".text.cxa_throw_section")]] void __wrap___cxa_throw(
+    void* p_thrown_exception,
+    void* p_type_info,
+    void (*p_destructor)(void*))
   {
+    // real_cxa_throw(p_thrown_exception, p_type_info, p_destructor);
+
     ke::active_exception = p_thrown_exception;
     auto& exception_object = ke::extract_exception_object(p_thrown_exception);
     exception_object.destructor = p_destructor;
     ke::capture_cpu_core(exception_object.cpu);
-    ke::flatten_rtti<12>(
-      p_thrown_exception, exception_object.type_info, p_type_info);
-
+    ke::flatten_rtti<12>(p_thrown_exception,
+                         exception_object.type_info,
+                         reinterpret_cast<std::type_info*>(p_type_info));
+#if 1
     // This must ALWAYS evaluate to false. But since the variable is volatile,
-    // the compiler will not optimize it away and thus, __wrap___cxa_throw will
+    // the compiler will not optimize it away and thus, __cxa_throw will
     // require unwind information. This prevents the compiler from optimizing
     // the data away.
     if (libhal_convince_compiler_to_emit_metadata) {
@@ -2087,6 +2090,7 @@ extern "C"
                                // have in the C++ throw RTTI list, might as well
                                // reuse it here.
     }
+#endif
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(exception_object);
     // TODO(#38): this area is considered a catch block, meaning that the

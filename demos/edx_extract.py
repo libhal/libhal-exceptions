@@ -157,11 +157,18 @@ def find_and_sort_exceptional_functions(entries: List[EntryInfo],
     return sorted_functions
 
 
-def generate_linker_script_list(linker_partition_file: str,
+def generate_linker_script_list(filename: str,
                                 functions: List[FunctionInfo]):
-    with open(linker_partition_file, 'w') as f:
-        for funct in functions:
-            f.write(f"KEEP(*(.text.{funct.name}))\n")
+    with open(filename, 'w') as file:
+        for func in functions:
+            file.write(f"KEEP(*(.text.{func.name}))\n")
+
+
+def generate_nm_size_file(filename: str,
+                          functions: List[FunctionInfo]):
+    with open(filename, 'w') as file:
+        for func in functions:
+            file.write(f"{func.size}\n")
 
 
 def main():
@@ -193,7 +200,9 @@ def main():
         print(exceptional_functions)
 
         generate_linker_script_list(
-            linker_partition_file=f"{elf_file}.part.ld", functions=exceptional_functions)
+            filename=f"{elf_file}.part.ld", functions=exceptional_functions)
+        generate_nm_size_file(
+            filename=f"{elf_file}.nm", functions=exceptional_functions)
 
     finally:
         # Clean up temporary file

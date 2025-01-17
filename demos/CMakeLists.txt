@@ -27,6 +27,9 @@ libhal_build_demos(
   INCLUDES
   .
 
+  SOURCES
+  single_level.elf.nm.np.cpp
+
   PACKAGES
   libhal-exceptions
 
@@ -34,5 +37,6 @@ libhal_build_demos(
   libhal::exceptions
 
   LINK_FLAGS
-  -T${CMAKE_SOURCE_DIR}/linker-stm32f103.ld
+  -L${CMAKE_SOURCE_DIR}/
+  -Tlinker-stm32f103.ld
 )

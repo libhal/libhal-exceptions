@@ -465,7 +465,7 @@ if __name__ == "__main__":
     if args.nm:
         with open(args.file) as f:
             sorted_sizes = [int(line.strip()) for line in f]
-        sorted_sizes.reverse()
+        sorted_sizes = sorted(sorted_sizes, reverse=True)
         entries = []
         function_address = 0
         for next_function_size in sorted_sizes:
