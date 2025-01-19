@@ -39,4 +39,6 @@ libhal_build_demos(
   LINK_FLAGS
   -L${CMAKE_SOURCE_DIR}/
   -Tlinker-stm32f103.ld
+  -Wl,--wrap=_ZSt17__throw_bad_allocv
+  -Wl,--wrap=abort
 )

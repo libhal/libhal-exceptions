@@ -77,7 +77,8 @@ SECTIONS
   } >flash AT>flash :text
 
   .text : {
-    INCLUDE "single_level.elf.part.ld"
+    /* INCLUDE "single_level.elf.part.ld" */
+    INCLUDE "multi_levels.elf.part.ld"
     *(.text.unlikely .text.unlikely.*)
     *(.text.startup .text.startup.*)
     *(.text .text.*)
