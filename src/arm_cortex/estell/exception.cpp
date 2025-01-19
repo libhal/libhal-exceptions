@@ -127,17 +127,18 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 
 std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
 {
-  auto const pc = p_program_counter - 0x0800'0000;
+  auto const pc = p_program_counter - 0x0800'00c0;
   auto const block_power = hal::__except_abi::near_point_descriptor[0];
   auto const inter_block_mask = (1 << block_power) - 1;
   auto const inter_block_location = pc & inter_block_mask;
   auto const block_index = pc >> block_power;
   auto const linear_info = hal::__except_abi::normal_table[block_index];
   auto const entry_start = linear_info >> 9;
-  auto const average_function_size = linear_info & 0x1FF;
-  if (average_function_size == 0) {
+  auto const average_function_size_bits = linear_info & 0x1FF;
+  if (average_function_size_bits == 0) {
     return entry_start;
   }
+  auto const average_function_size = average_function_size_bits << 2;
   auto const guess_offset = inter_block_location / average_function_size;
   auto const location = entry_start + guess_offset;
   return static_cast<std::uint32_t>(location);
