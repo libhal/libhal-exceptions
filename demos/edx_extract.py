@@ -40,6 +40,20 @@ class FunctionInfo:
         return f"FunctionInfo(address = 0x{self.address:08x}, size = {self.size}, type = {self.type}, name = '{self.name}')\n"
 
 
+class EntryGroup:
+    def __init__(self, info: FunctionInfo):
+        self.list = [info]
+        self.top_address = info.address
+        self.size = info.size
+
+    def __repr__(self):
+        return f"EntryGroup(top_address = 0x{self.top_address:08x}, size = {self.size}, top_name = '{self.list[0].name}, len(list) = {len(self.list)}')\n"
+
+    def add_function(self, info: FunctionInfo):
+        self.list.append(info)
+        self.size += info.size
+
+
 def find_exidx_section(elf_file: str) -> SectionInfo:
     """Find the section name and offset of the ARM_EXIDX section."""
     cmd = ['arm-none-eabi-readelf', '-S', elf_file]
@@ -113,15 +127,15 @@ def parse_exidx_data(binary_file: str,
     return entries
 
 
-def get_functions(elf_file: str) -> Dict[int, FunctionInfo]:
+def get_functions(elf_file: str) -> List[FunctionInfo]:
     """Get all functions with their addresses and sizes using nm."""
-    cmd = ['arm-none-eabi-nm', '--print-size', '--size-sort', elf_file]
+    cmd = ['arm-none-eabi-nm', '--print-size', '--numeric-sort', elf_file]
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
         raise RuntimeError(f"nm failed: {result.stderr}")
 
-    functions: Dict[int, FunctionInfo] = {}
+    functions: List[FunctionInfo] = []
     for line in result.stdout.splitlines():
         parts = line.strip().split()
         if len(parts) == 4 and parts[2].lower() in ['t', 'w', 'T', 'W']:
@@ -129,7 +143,7 @@ def get_functions(elf_file: str) -> Dict[int, FunctionInfo]:
             size = int(parts[1], 16)
             type = parts[2]
             name = parts[3]
-            functions[addr] = (FunctionInfo(addr, size, type, name))
+            functions.append(FunctionInfo(addr, size, type, name))
 
     return functions
 
@@ -142,33 +156,45 @@ def print_entries(entries: List[EntryInfo]):
         print(f"    Handler data: {entry.handler_bytes[::-1].hex()}")
 
 
-def find_and_sort_exceptional_functions(entries: List[EntryInfo],
-                                        functions: Dict[int, FunctionInfo]):
-    exceptional_functions: List[FunctionInfo] = []
+def find_and_sort_exceptional_functions(
+        entries: List[EntryInfo],
+        functions: List[FunctionInfo]) -> List[EntryGroup]:
 
-    for entry in entries:
-        if entry.address in functions:
-            exceptional_functions.append(functions[entry.address])
+    exceptional_functions: List[EntryGroup] = []
 
-    sorted_functions = sorted(exceptional_functions,
-                              key=lambda function: function.size,
-                              reverse=True)
+    f_index = 0
+    for i in range(1, len(entries)):
+        if entries[i - 1].address == functions[f_index].address:
+            group = EntryGroup(functions[f_index])
+            f_index += 1
+            while functions[f_index].address < entries[i].address:
+                group.add_function(functions[f_index])
+                f_index += 1
+            exceptional_functions.append(group)
 
-    return sorted_functions
+    sorted_function_groups = sorted(exceptional_functions,
+                                    key=lambda group: group.size,
+                                    reverse=True)
+
+    return sorted_function_groups
 
 
 def generate_linker_script_list(filename: str,
-                                functions: List[FunctionInfo]):
+                                function_groups: List[EntryGroup]):
     with open(filename, 'w') as file:
-        for func in functions:
-            file.write(f"KEEP(*(.text.{func.name}))\n")
+        for group in function_groups:
+            for func in group.list:
+                func_name = func.name
+                if func.name.startswith("__wrap_"):
+                    func_name = func.name.replace("__wrap_", "relocate.", 1)
+                file.write(f"KEEP(*(.text.{func_name}))\n")
 
 
 def generate_nm_size_file(filename: str,
-                          functions: List[FunctionInfo]):
+                          function_groups: List[EntryGroup]):
     with open(filename, 'w') as file:
-        for func in functions:
-            file.write(f"{func.size}\n")
+        for group in function_groups:
+            file.write(f"{group.size}\n")
 
 
 def main():
@@ -200,9 +226,10 @@ def main():
         print(exceptional_functions)
 
         generate_linker_script_list(
-            filename=f"{elf_file}.part.ld", functions=exceptional_functions)
+            filename=f"{elf_file}.part.ld",
+            function_groups=exceptional_functions)
         generate_nm_size_file(
-            filename=f"{elf_file}.nm", functions=exceptional_functions)
+            filename=f"{elf_file}.nm", function_groups=exceptional_functions)
 
     finally:
         # Clean up temporary file

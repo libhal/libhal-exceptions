@@ -10,6 +10,7 @@ void terminate_handler()
   }
 }
 
+[[gnu::section(".text.main")]]
 int main()
 {
   hal::set_terminate(terminate_handler);
@@ -20,13 +21,13 @@ int main()
 extern "C"
 {
 
-  [[gnu::section(".text.throw_bad_alloc")]]
+  [[gnu::section(".text.relocate._ZSt17__throw_bad_allocv")]]
   void __wrap__ZSt17__throw_bad_allocv()
   {
     throw std::bad_alloc();
   }
 
-  [[gnu::section(".text.abort")]]
+  [[gnu::section(".text.relocate.abort")]]
   void __wrap_abort()
   {
     while (true) {

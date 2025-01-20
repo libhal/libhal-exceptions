@@ -28,13 +28,16 @@ libhal_build_demos(
   .
 
   SOURCES
-  single_level.elf.nm.np.cpp
+  multi_levels.elf.nm.np.cpp
 
   PACKAGES
   libhal-exceptions
 
   LINK_LIBRARIES
   libhal::exceptions
+
+  SOURCE_FLAGS
+  -fno-ipa-sra
 
   LINK_FLAGS
   -L${CMAKE_SOURCE_DIR}/

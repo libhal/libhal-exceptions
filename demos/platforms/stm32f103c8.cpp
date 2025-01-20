@@ -20,7 +20,7 @@
 resource_list initialize_platform()
 {
   using namespace hal::literals;
-  hal::stm32f1::maximum_speed_using_internal_oscillator();
+  // hal::stm32f1::maximum_speed_using_internal_oscillator();
 
   auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
   static hal::cortex_m::dwt_counter dwt_steady_clock(cpu_frequency);

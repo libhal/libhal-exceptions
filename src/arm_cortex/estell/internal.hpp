@@ -422,8 +422,8 @@ struct [[gnu::packed]] lu_t
 
 extern "C"
 {
-  extern std::uint32_t __exidx_start;
-  extern std::uint32_t __exidx_end;
+  extern ke::index_entry_t __exidx_start;
+  extern ke::index_entry_t __exidx_end;
   extern std::uint32_t __extab_start;
   extern std::uint32_t __extab_end;
 }
