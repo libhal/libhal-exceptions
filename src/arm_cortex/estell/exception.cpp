@@ -65,6 +65,7 @@ exception_ptr current_exception() noexcept
   return active_exception;
 }
 
+[[gnu::always_inline]]
 inline void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
 {
   register std::uint32_t* res asm("r3") = &p_cpu_core.r4.data;
@@ -102,8 +103,7 @@ struct index_less_than
 
 std::span<index_entry_t const> get_arm_exception_index()
 {
-  return { reinterpret_cast<index_entry_t const*>(&__exidx_start),
-           reinterpret_cast<index_entry_t const*>(&__exidx_end) };
+  return { &__exidx_start, &__exidx_end };
 }
 
 // [[gnu::used]] std::span<std::uint32_t const> get_arm_exception_table()
@@ -148,28 +148,42 @@ index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
 {
   auto const index_table = get_arm_exception_index();
   auto const initial_guess = near_point_guess_index(p_program_counter);
-  auto left = index_table[initial_guess].function();
-  auto const go_left = p_program_counter < left;
+  auto current = index_table[initial_guess].function();
+  auto const go_left = p_program_counter < current;
 
   if (go_left) {
-    for (int iter = initial_guess; iter > 0; iter--) {
-      left = index_table[iter].function();
-      auto right = index_table[iter + 1].function();
-      if (left <= p_program_counter && p_program_counter < right) {
-        return index_table[iter];
+    for (std::size_t iter = initial_guess; iter > 0; iter--) {
+      if constexpr (1) {
+        current = index_table[iter].function();
+        auto next = index_table[iter + 1].function();
+        if (current <= p_program_counter && p_program_counter < next) {
+          return index_table[iter];
+        }
+      } else {
+        current = index_table[iter].function();
+        if (current <= p_program_counter) {
+          return index_table[iter];
+        }
       }
     }
+    return index_table[0];
   } else {
-    for (int iter = initial_guess; iter > 0; iter++) {
-      left = index_table[iter].function();
-      auto right = index_table[iter + 1].function();
-      if (left <= p_program_counter && p_program_counter < right) {
-        return index_table[iter];
+    for (std::size_t iter = initial_guess; iter < index_table.size(); iter++) {
+      if constexpr (1) {
+        current = index_table[iter].function();
+        auto next = index_table[iter + 1].function();
+        if (current <= p_program_counter && p_program_counter < next) {
+          return index_table[iter];
+        }
+      } else {
+        auto next = index_table[iter + 1].function();
+        if (p_program_counter < next) {
+          return index_table[iter];
+        }
       }
     }
+    return index_table.end()[-1];
   }
-
-  return *index_table.begin();
 }
 
 [[gnu::always_inline]] inline void pop_registers(cortex_m_cpu& p_cpu,
@@ -1876,7 +1890,7 @@ std::type_info const* extract_si_parent_info(void const* p_info)
 {
   [[maybe_unused]] constexpr std::size_t vtable_entry = 0;
   [[maybe_unused]] constexpr std::size_t name = 1;
-  [[maybe_unused]] constexpr std::size_t parent_info_address = 2;
+  constexpr std::size_t parent_info_address = 2;
 
   auto const* word_pointer = reinterpret_cast<std::uint32_t const*>(p_info);
   auto const address = word_pointer[parent_info_address];
@@ -1892,8 +1906,8 @@ void push_vmi_info(ke::exception_ptr p_thrown_exception,
   [[maybe_unused]] constexpr std::size_t vtable_entry = 0;
   [[maybe_unused]] constexpr std::size_t name = 1;
   [[maybe_unused]] constexpr std::size_t flags = 2;
-  [[maybe_unused]] constexpr std::size_t vla_length = 3;
-  [[maybe_unused]] constexpr std::size_t vla_start = 4;
+  constexpr std::size_t vla_length = 3;
+  constexpr std::size_t vla_start = 4;
 
   auto const* word_pointer =
     reinterpret_cast<std::uint32_t const*>(p_info.type_info);
@@ -1990,6 +2004,7 @@ extern "C"
     std::terminate();
   }
   // TODO(#42): Use the applications's polymorphic allocator, not our own space.
+  [[gnu::section(".text.relocate.__cxa_allocate_exception")]]
   void* __wrap___cxa_allocate_exception(unsigned int p_thrown_size) throw()
   {
     if (p_thrown_size >
@@ -2000,18 +2015,20 @@ extern "C"
     return ke::exception_buffer.data() + sizeof(ke::exception_object);
   }
 
-  [[gnu::section(".text.cxa_free_exception_section")]]
+  [[gnu::section(".text.relocate.__cxa_free_exception")]]
   void __wrap___cxa_free_exception(
     [[maybe_unused]] void* p_thrown_exception) throw()
   {
     ke::exception_buffer.fill(0);
   }
 
+  [[gnu::section(".text.relocate.__cxa_call_unexpected")]]
   void __wrap___cxa_call_unexpected(void*)  // NOLINT
   {
     std::terminate();
   }
 
+  [[gnu::section(".text.relocate.__cxa_end_catch")]]
   void __wrap___cxa_end_catch()
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
@@ -2022,6 +2039,7 @@ extern "C"
     }
   }
 
+  [[gnu::section(".text.relocate.__cxa_begin_catch")]]
   void* __wrap___cxa_begin_catch(void* p_exception_object)
   {
     auto* eo = reinterpret_cast<ke::exception_object*>(p_exception_object);
@@ -2029,6 +2047,7 @@ extern "C"
     return thrown_object;
   }
 
+  [[gnu::section(".text.relocate.__cxa_end_cleanup")]]
   void __wrap___cxa_end_cleanup()
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
@@ -2038,7 +2057,7 @@ extern "C"
     std::terminate();
   }
 
-  [[gnu::section(".text.cxa_rethrow_section")]]
+  [[gnu::section(".text.relocate.__cxa_rethrow")]]
   void __wrap___cxa_rethrow()
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
@@ -2066,10 +2085,10 @@ extern "C"
     std::terminate();
   }
 
-  [[gnu::section(".text.cxa_throw_section")]] void __wrap___cxa_throw(
-    void* p_thrown_exception,
-    void* p_type_info,
-    void (*p_destructor)(void*))
+  [[gnu::section(".text.relocate.__cxa_throw")]]
+  void __wrap___cxa_throw(void* p_thrown_exception,
+                          void* p_type_info,
+                          void (*p_destructor)(void*))
   {
     // real_cxa_throw(p_thrown_exception, p_type_info, p_destructor);
 

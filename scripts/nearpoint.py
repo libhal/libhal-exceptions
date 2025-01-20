@@ -415,8 +415,11 @@ namespace {
     code += "};\n"
 
     code += "u32 _small_table_data[] = {\n"
-    for equation in small_equations:
-        code += f"  {equation.to_verbose_code(small_block_power)},\n"
+    if len(small_equations) == 0:
+        code += "  0,\n"
+    else:
+        for equation in small_equations:
+            code += f"  {equation.to_verbose_code(small_block_power)},\n"
     code += "};\n"
     code += "}  // namespace\n\n"
 
