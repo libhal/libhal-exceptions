@@ -2,7 +2,8 @@ If:
   PathMatch: demos/.*
   CompileFlags:
     CompilationDatabase: demos
+    BuiltinHeaders: QueryDriver
 Else:
   CompileFlags:
     CompilationDatabase: .
-
+    BuiltinHeaders: QueryDriver
