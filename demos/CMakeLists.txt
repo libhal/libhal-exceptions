@@ -36,8 +36,8 @@ libhal_build_demos(
   LINK_LIBRARIES
   libhal::exceptions
 
-  SOURCE_FLAGS
-  -fno-ipa-sra
+  # SOURCE_FLAGS
+  # -fno-ipa-sra
 
   LINK_FLAGS
   -L${CMAKE_SOURCE_DIR}/
