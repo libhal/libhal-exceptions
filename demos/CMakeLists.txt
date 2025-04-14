@@ -27,9 +27,21 @@ libhal_build_demos(
   INCLUDES
   .
 
+  SOURCES
+  multi_levels.elf.nm.np.cpp
+
   PACKAGES
   libhal-exceptions
 
   LINK_LIBRARIES
   libhal::exceptions
+
+  # SOURCE_FLAGS
+  # -fno-ipa-sra
+
+  LINK_FLAGS
+  -L${CMAKE_SOURCE_DIR}/
+  -Tlinker-stm32f103.ld
+  -Wl,--wrap=_ZSt17__throw_bad_allocv
+  -Wl,--wrap=abort
 )

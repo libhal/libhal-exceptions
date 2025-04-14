@@ -24,7 +24,6 @@ struct error
 std::uint64_t start = 0;
 std::uint64_t end = 0;
 int volatile value = 5;
-
 void foo()
 {
   if (value) {

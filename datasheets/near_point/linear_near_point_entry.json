@@ -1,0 +1,21 @@
+{
+  "reg": [
+    {
+      "bits": 24,
+      "name": "entry number offset",
+      "type": 5
+    },
+    {
+      "bits": 8,
+      "name": "average function size",
+      "type": 6
+    }
+  ],
+  "config": {
+    "fontsize": 14,
+    "bits": 32,
+    "hflip": true,
+    "lanes": 1,
+    "compact": true
+  }
+}
