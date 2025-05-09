@@ -14,21 +14,32 @@
 
 extern "C"
 {
+  [[gnu::section(".text.relocate.__gnu_unwind_pr_common")]]
   void __wrap___gnu_unwind_pr_common()
   {
   }
+
+  [[gnu::section(".text.relocate.__aeabi_unwind_cpp_pr0")]]
   void __wrap___aeabi_unwind_cpp_pr0()
   {
   }
+
+  [[gnu::section(".text.relocate._sig_func")]]
   void __wrap__sig_func()
   {
   }
+
+  [[gnu::section(".text.relocate.__gxx_personality_v0")]]
   void __wrap___gxx_personality_v0()
   {
   }
+
+  [[gnu::section(".text.relocate.deregister_tm_clones")]]
   void __wrap_deregister_tm_clones()
   {
   }
+
+  [[gnu::section(".text.relocate.sregister_tm_clones")]]
   void __wrap_register_tm_clones()
   {
   }

@@ -81,7 +81,7 @@ class libhal_exceptions_conan(ConanFile):
         self.test_requires("boost-ext-ut/1.1.9")
 
     def requirements(self):
-        self.requires("libhal-util/[^5.0.0]")
+        self.requires("libhal-util/[^5.2.0]")
 
     def build(self):
         cmake = CMake(self)
@@ -120,6 +120,7 @@ class libhal_exceptions_conan(ConanFile):
                 "-Wl,--wrap=__cxa_end_catch",
                 "-Wl,--wrap=__cxa_begin_catch",
                 "-Wl,--wrap=__cxa_end_cleanup",
+                "-Wl,--wrap=__cxa_call_unexpected",
                 "-Wl,--wrap=__gnu_unwind_pr_common",
                 "-Wl,--wrap=__aeabi_unwind_cpp_pr0",
                 "-Wl,--wrap=_sig_func",

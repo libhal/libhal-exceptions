@@ -56,9 +56,7 @@ class single_exception_allocator : public std::pmr::memory_resource
 {
 public:
   single_exception_allocator() = default;
-  virtual ~single_exception_allocator() override
-  {
-  }
+  ~single_exception_allocator() override = default;
 
 private:
   void* do_allocate(std::size_t p_size,
@@ -81,7 +79,7 @@ private:
     m_allocated = false;
   }
 
-  bool do_is_equal(
+  [[nodiscard]] bool do_is_equal(
     std::pmr::memory_resource const& other) const noexcept override
   {
     return this == &other;
@@ -94,8 +92,8 @@ private:
 // TODO(#11): Add macro to IFDEF this out if the user want to save 256 bytes.
 using default_exception_allocator = single_exception_allocator<256>;
 default_exception_allocator _default_allocator{};  // NOLINT
-std::pmr::memory_resource* _exception_allocator =
-  &_default_allocator;  // NOLINT
+// NOLINTNEXTLINE(readability-identifier-naming)
+std::pmr::memory_resource* _exception_allocator = &_default_allocator;
 
 void set_exception_allocator(std::pmr::memory_resource* p_allocator) noexcept
 {
