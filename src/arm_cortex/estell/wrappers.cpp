@@ -32,4 +32,4 @@ extern "C"
   void __wrap_register_tm_clones()
   {
   }
-}  // extern "C"
+}
