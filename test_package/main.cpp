@@ -16,31 +16,33 @@
 
 #include <libhal-exceptions/control.hpp>
 
-// These are just here to resolve linker errors. This will not work in practice.
-std::uint64_t __extab_start = 0;
-std::uint64_t __extab_end = 0;
+// NOLINTBEGIN(readability-identifier-naming)
+// NOLINTBEGIN(bugprone-reserved-identifier)
+// // These are just here to resolve linker errors. This will not work in
+// practice. std::uint64_t __extab_start = 0; std::uint64_t __extab_end = 0;
+// NOLINTEND(bugprone-reserved-identifier)
 
-struct V
+struct V  // NOLINT(readability-identifier-naming)
 {
   int inner_detail_v = 0;
 };
 
-struct R1
+struct R1  // NOLINT(readability-identifier-naming)
 {
   int inner_detail_r1 = 0;
 };
 
-struct R2
+struct R2  // NOLINT(readability-identifier-naming)
 {
   int inner_detail_r2 = 0;
 };
 
-struct R3
+struct R3  // NOLINT(readability-identifier-naming)
 {
   int inner_detail_r3 = 0;
 };
 
-struct R4
+struct R4  // NOLINT(readability-identifier-naming)
 {
   int inner_detail_r4 = 0;
 };
@@ -76,6 +78,7 @@ struct S
 {
   int detail_s = 0;
 };
+// NOLINTEND(readability-identifier-naming)
 
 struct error : public S
 {
@@ -95,6 +98,6 @@ int main()
   try {
     foo();
   } catch (error const&) {
-    // ...
+    return -1;
   }
 }
