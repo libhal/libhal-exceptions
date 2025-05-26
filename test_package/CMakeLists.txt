@@ -22,3 +22,18 @@ target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(${PROJECT_NAME} PRIVATE libhal::exceptions)
+target_compile_options(${PROJECT_NAME} PRIVATE -fexceptions -fno-rtti)
+
+# Add nano newlib and nosys specs for ARM embedded systems
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm" OR
+   CMAKE_SYSTEM_PROCESSOR MATCHES "^ARM")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Generic" OR
+       CMAKE_CROSSCOMPILING OR
+       CMAKE_C_COMPILER MATCHES "arm.*gcc" OR
+       CMAKE_CXX_COMPILER MATCHES "arm.*g\\+\\+")
+
+        target_link_options(${PROJECT_NAME} PRIVATE --specs=nosys.specs)
+
+        message(STATUS "Added nosys.specs for ARM embedded target")
+    endif()
+endif()
