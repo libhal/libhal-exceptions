@@ -34,7 +34,7 @@ extern "C"
   constexpr size_t gcc_header_size = 128;
   constexpr auto header_size = sizeof(std::size_t) + gcc_header_size;
 
-  void* __wrap___cxa_allocate_exception(unsigned int p_size) noexcept  // NOLINT
+  void* __wrap___cxa_allocate_exception(std::size_t p_size) noexcept  // NOLINT
   {
     auto const total_allocation = header_size + p_size;
     auto* exception_memory = reinterpret_cast<std::uint8_t*>(
