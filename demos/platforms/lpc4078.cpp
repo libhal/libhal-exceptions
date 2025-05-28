@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/lpc40/clock.hpp>
-#include <libhal-armcortex/dwt_counter.hpp>
 
 #include "../resource_list.hpp"
 
