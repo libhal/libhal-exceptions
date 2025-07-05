@@ -1,0 +1,46 @@
+# Copyright 2024 - 2025 Khalil Estell and the libhal contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 🏷️ Semantic Release
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Version
+        id: version
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          bump_each_commit: true
+          major_pattern: "(major)"
+          minor_pattern: "(minor)"
+          bump_each_commit_patch_pattern: "(patch)"
+          tag_prefix: ""
+          debug: true
+      - name: Release
+        if: steps.version.outputs.version_type != 'none'
+        run: |
+          gh release create ${{ steps.version.outputs.version_tag }} \
+            --generate-notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.SEMANTIC_RELEASE }}
