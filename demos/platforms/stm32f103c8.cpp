@@ -15,17 +15,21 @@
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 
-#include "../resource_list.hpp"
+#include <resource_list.hpp>
 
-resource_list initialize_platform()
+hal::cortex_m::dwt_counter* counter;
+
+void initialize_platform()
 {
   using namespace hal::literals;
   hal::stm32f1::maximum_speed_using_internal_oscillator();
 
-  auto cpu_frequency = hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu);
-  static hal::cortex_m::dwt_counter dwt_steady_clock(cpu_frequency);
+  static hal::cortex_m::dwt_counter dwt_steady_clock(
+    hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
+  counter = &dwt_steady_clock;
+};
 
-  return {
-    .clock = &dwt_steady_clock,
-  };
+hal::u64 get_uptime()
+{
+  return counter->uptime();
 }

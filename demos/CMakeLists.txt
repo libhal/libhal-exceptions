@@ -32,4 +32,7 @@ libhal_build_demos(
 
   LINK_LIBRARIES
   libhal::exceptions
+
+  LINK_FLAGS
+  -Wl,-Map=link.map
 )
