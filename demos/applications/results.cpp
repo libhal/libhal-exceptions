@@ -70,11 +70,10 @@ std::expected<int, my_error_t> funct_group24_0();
 using signature = std::expected<int, my_error_t>(void);
 
 std::array<signature*, 25> functions = {
-  funct_group0_0, funct_group1_0, funct_group2_0,
-  funct_group3_0, funct_group4_0, funct_group5_0,
-  // funct_group6_0,  funct_group7_0,
-  // funct_group8_0,  funct_group9_0,  funct_group10_0, funct_group11_0,
-  // funct_group12_0, funct_group13_0,
+  funct_group0_0,  funct_group1_0,  funct_group2_0,  funct_group3_0,
+  funct_group4_0,  funct_group5_0,  funct_group6_0,  funct_group7_0,
+  funct_group8_0,  funct_group9_0,  funct_group10_0, funct_group11_0,
+  funct_group12_0, funct_group13_0,
   // funct_group14_0, funct_group15_0,
   // funct_group16_0, funct_group17_0, funct_group18_0, funct_group19_0,
   // funct_group20_0, funct_group21_0, funct_group22_0, funct_group23_0,
