@@ -116,23 +116,19 @@ class libhal_exceptions_conan(ConanFile):
         if self.options.runtime == "estell":
             self.cpp_info.exelinkflags.extend([
                 "-fexceptions",
-                # Ensure that all symbols are added to the linker's symbol table
-                "-Wl,--whole-archive",
                 "-Wl,--wrap=__cxa_throw",
                 "-Wl,--wrap=__cxa_rethrow",
                 "-Wl,--wrap=__cxa_end_catch",
                 "-Wl,--wrap=__cxa_begin_catch",
                 "-Wl,--wrap=__cxa_end_cleanup",
-                "-Wl,--wrap=___Unwind_Resume",
-                "-Wl,--wrap=__gnu_Unwind_Resume",
                 "-Wl,--wrap=__gnu_unwind_pr_common",
                 "-Wl,--wrap=__aeabi_unwind_cpp_pr0",
-                "-Wl,--wrap=__aeabi_unwind_cpp_pr1",
-                "-Wl,--wrap=__aeabi_unwind_cpp_pr2",
                 "-Wl,--wrap=_sig_func",
                 "-Wl,--wrap=__gxx_personality_v0",
                 "-Wl,--wrap=deregister_tm_clones",
                 "-Wl,--wrap=register_tm_clones",
+                # Ensure that all symbols are added to the linker's symbol table
+                "-Wl,--whole-archive",
                 lib_path,
                 "-Wl,--no-whole-archive",
             ])

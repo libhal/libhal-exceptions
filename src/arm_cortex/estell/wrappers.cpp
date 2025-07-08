@@ -20,12 +20,6 @@ extern "C"
   void __wrap___aeabi_unwind_cpp_pr0()
   {
   }
-  void __wrap___aeabi_unwind_cpp_pr1()
-  {
-  }
-  void __wrap___aeabi_unwind_cpp_pr2()
-  {
-  }
   void __wrap__sig_func()
   {
   }
