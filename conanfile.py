@@ -79,7 +79,7 @@ class libhal_exceptions_conan(ConanFile):
     def build_requirements(self):
         self.tool_requires("cmake/3.27.1")
         self.tool_requires("libhal-cmake-util/[^4.0.3]")
-        self.test_requires("boost-ext-ut/1.1.9")
+        self.test_requires("boost-ext-ut/2.1.0")
 
     def requirements(self):
         self.requires("libhal-util/[^5.0.0]")

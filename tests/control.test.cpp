@@ -6,18 +6,18 @@
 #include <boost/ut.hpp>
 
 namespace hal {
-void control_test()
-{
+boost::ut::suite<"control_test_suite"> control_test_suite = []() {
   using namespace boost::ut;
+  "hal::set_exception_allocator()"_test = []() {
+    // setup
+    std::array<std::byte, 1024> buffer;
+    std::pmr::monotonic_buffer_resource resource(buffer.data(), buffer.size());
 
-  // setup
-  std::array<std::byte, 1024> buffer;
-  std::pmr::monotonic_buffer_resource resource(buffer.data(), buffer.size());
+    // exercise
+    hal::set_exception_allocator(resource);
 
-  // exercise
-  hal::set_exception_allocator(resource);
-
-  // verify
-  expect(that % &resource == &hal::get_exception_allocator());
-}
+    // verify
+    expect(that % &resource == &hal::get_exception_allocator());
+  };
+};
 }  // namespace hal
