@@ -22,7 +22,7 @@ set(SOURCE_LIST src/builtin/gcc/impl.cpp)
 elseif("${RUNTIME}" STREQUAL "ARM_CORTEX_ESTELL")
 set(SOURCE_LIST
     src/arm_cortex/estell/exception.cpp
-    src/arm_cortex/estell/wrappers.cpp
+    src/arm_cortex/estell/libunwind_wrappers.cpp
 )
 else()
 message(FATAL "Invalid Exception RUNTIME: '${RUNTIME}' provided!")
