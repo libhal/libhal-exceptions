@@ -13,9 +13,11 @@
 // limitations under the License.
 
 namespace hal {
+extern void control_test();
 }  // namespace hal
 
 int main()
 {
+  hal::control_test();
   return 0;
 }

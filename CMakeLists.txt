@@ -51,6 +51,7 @@ libhal_unit_test(
   SOURCES
   src/control.cpp
   tests/main.test.cpp
+  tests/control.test.cpp
   ${SOURCE_LIST}
 
   PACKAGES
