@@ -23,6 +23,7 @@ libhal_build_demos(
   single_level
   multi_levels
   multiple_virtual_inheritance
+  results
 
   INCLUDES
   .
@@ -33,6 +34,10 @@ libhal_build_demos(
   LINK_LIBRARIES
   libhal::exceptions
 
+  COMPILE_FLAGS
+  -fno-threadsafe-statics
+
   LINK_FLAGS
   -Wl,-Map=link.map
+  -fno-threadsafe-statics
 )

@@ -1979,7 +1979,8 @@ extern "C"
     ke::raise_exception(exception_object);
     std::terminate();
   }
-  void __wrap__Unwind_Resume(struct _Unwind_Exception*) noexcept(false)
+
+  void _Unwind_Resume(struct _Unwind_Exception*) noexcept(false)
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
 
