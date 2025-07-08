@@ -8,8 +8,6 @@ std::int32_t volatile side_effect = 0;
 std::uint32_t start_cycles = 0;
 std::uint32_t end_cycles = 0;
 
-resource_list* resources;
-
 std::array<std::uint64_t, 25> cycle_map{};
 std::array<std::uint64_t, 25> happy_cycle_map{};
 
@@ -59,17 +57,15 @@ std::array functions{
 #endif
 };
 
-void application(resource_list& p_resources)
+void application()
 {
-  resources = &p_resources;
-
   cycle_map.fill(std::numeric_limits<std::int32_t>::max());
   happy_cycle_map.fill(std::numeric_limits<std::int32_t>::max());
   for (std::size_t i = 0; i < functions.size(); i++) {
     try {
       functions.at(i)();
     } catch ([[maybe_unused]] my_error_t const& p_error) {
-      end_cycles = resources->clock->uptime();
+      end_cycles = get_uptime();
       cycle_map[i] = end_cycles - start_cycles;
     }
   }
@@ -84,7 +80,7 @@ void application(resource_list& p_resources)
       was_caught = true;
     }
     if (!was_caught) {
-      end_cycles = resources->clock->uptime();
+      end_cycles = get_uptime();
       happy_cycle_map[i] = end_cycles - start_cycles;
     }
   }
@@ -230,7 +226,7 @@ int funct_group0_5()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -377,7 +373,7 @@ int funct_group1_11()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xBE, 0xEF } };
   }
 
@@ -668,7 +664,7 @@ int funct_group2_23()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -1247,7 +1243,7 @@ int funct_group3_47()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -2402,7 +2398,7 @@ int funct_group4_95()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -2477,7 +2473,7 @@ int funct_group5_5()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -2624,7 +2620,7 @@ int funct_group6_11()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0x11, 0x22 } };
   }
 
@@ -2917,7 +2913,7 @@ int funct_group7_23()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -3496,7 +3492,7 @@ int funct_group8_47()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -4651,7 +4647,7 @@ int funct_group9_95()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -4726,7 +4722,7 @@ int funct_group10_5()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -4873,7 +4869,7 @@ int funct_group11_11()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -5164,7 +5160,7 @@ int funct_group12_23()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -5743,7 +5739,7 @@ int funct_group13_47()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -6898,7 +6894,7 @@ int funct_group14_95()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -6973,7 +6969,7 @@ int funct_group15_5()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -7120,7 +7116,7 @@ int funct_group16_11()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -7411,7 +7407,7 @@ int funct_group17_23()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -7990,7 +7986,7 @@ int funct_group18_47()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -9145,7 +9141,7 @@ int funct_group19_95()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -9220,7 +9216,7 @@ int funct_group20_5()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -9367,7 +9363,7 @@ int funct_group21_11()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -9658,7 +9654,7 @@ int funct_group22_23()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -10237,7 +10233,7 @@ int funct_group23_47()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 
@@ -11392,7 +11388,7 @@ int funct_group24_95()
   instance_0.trigger();
 
   if (side_effect > 0) {
-    start_cycles = resources->clock->uptime();
+    start_cycles = get_uptime();
     throw my_error_t{ .data = { 0xDE, 0xAD } };
   }
 

@@ -14,8 +14,6 @@
 
 #include <resource_list.hpp>
 
-resource_list* resources;
-
 struct V
 {
   int inner_detail_v = 0;
@@ -80,7 +78,7 @@ std::uint64_t end = 0;
 void foo()
 {
   if (value) {
-    start = resources->clock->uptime();
+    start = get_uptime();
     error obj{};
     obj.inner_detail_r = 0x1111;
     obj.inner_detail_r1 = 0x2222;
@@ -95,20 +93,17 @@ void foo()
 
 std::uint32_t global = 0;
 
-void application(resource_list& p_resources)
+void application()
 {
-  resources = &p_resources;
-
   try {
     foo();
   } catch (M const& p_error) {
-    end = resources->clock->uptime();
+    end = get_uptime();
     global = p_error.inner_detail_m;
   } catch (V const& p_error) {
-    end = resources->clock->uptime();
+    end = get_uptime();
     global = p_error.inner_detail_v;
   }
-
   while (true) {
     // print out `global` in gdb to see its contents. Check to see if it matches
     // the expected value in error for that sub-object.

@@ -15,9 +15,11 @@
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/lpc40/clock.hpp>
 
-#include "../resource_list.hpp"
+#include <resource_list.hpp>
 
-resource_list initialize_platform()
+hal::cortex_m::dwt_counter* counter;
+
+void initialize_platform()
 {
   using namespace hal::literals;
 
@@ -27,7 +29,10 @@ resource_list initialize_platform()
   static hal::cortex_m::dwt_counter dwt_steady_clock(
     hal::lpc40::get_frequency(hal::lpc40::peripheral::cpu));
 
-  return {
-    .clock = &dwt_steady_clock,
-  };
+  counter = &dwt_steady_clock;
+}
+
+hal::u64 get_uptime()
+{
+  return counter->uptime();
 }

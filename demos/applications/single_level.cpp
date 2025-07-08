@@ -14,8 +14,6 @@
 
 #include <resource_list.hpp>
 
-resource_list* resources;
-
 struct error
 {
   int data = 0;
@@ -28,7 +26,7 @@ int volatile value = 5;
 void foo()
 {
   if (value) {
-    start = resources->clock->uptime();
+    start = get_uptime();
     error obj;
     obj.data = 0x9999;
     obj.data = value;
@@ -38,15 +36,14 @@ void foo()
 
 std::uint32_t global = 0;
 
-void application(resource_list& p_resources)
+void application()
 {
   [[maybe_unused]] static constexpr auto error_size = sizeof(error);
-  resources = &p_resources;
 
   try {
     foo();
   } catch (error const& p_error) {
-    end = resources->clock->uptime();
+    end = get_uptime();
     global = p_error.data;
   }
   while (true) {
