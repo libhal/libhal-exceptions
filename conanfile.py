@@ -144,3 +144,8 @@ class libhal_exceptions_conan(ConanFile):
                 lib_path,
                 "-Wl,--no-whole-archive",
             ])
+
+    def compatibility(self):
+        if self.settings.compiler == "gcc":
+            return [{"settings": [("compiler.version", v)]}
+                    for v in ("11.3", "12.2", "12.3", "13.2", "13.3", "14.2")]
