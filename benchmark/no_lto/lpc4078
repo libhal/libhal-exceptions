@@ -1,0 +1,14 @@
+{% if context == "host" %}
+
+include(lpc4078)
+
+{% endif %}
+
+{% if context == "build" %}
+
+include(default)
+
+[options]
+arm-gnu-toolchain/*:lto=False
+
+{% endif %}
