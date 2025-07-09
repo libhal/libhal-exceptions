@@ -25,3 +25,7 @@ void end()
   total_time = end_time - start_time;
   std::println("Total time = {}", total_time);
 }
+
+void end_benchmark()
+{
+}

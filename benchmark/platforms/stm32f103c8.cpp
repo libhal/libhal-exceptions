@@ -35,6 +35,9 @@ void initialize_platform()
   static auto signal_pin = gpio_a.acquire_output_pin(0);
   time_signal = &signal_pin;
   time_signal->level(true);
+
+  static hal::stm32f1::uart serial(hal::port<1>, hal::buffer<128>);
+  analyzer_serial = &serial;
 }
 
 void log_start(std::string_view p_message)
@@ -50,4 +53,11 @@ void start()
 void end()
 {
   time_signal->level(true);
+}
+
+void end_benchmark()
+{
+  while (true) {
+    continue;
+  }
 }
