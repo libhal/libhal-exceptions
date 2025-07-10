@@ -102,6 +102,8 @@ int main()
   }
 }
 
+// These functions only exist here to link in a `start()` or `end()` function
+// which is used by the benchmark software to test the timing of operations.
 void start()
 {
 }
