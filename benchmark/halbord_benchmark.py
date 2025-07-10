@@ -9,10 +9,10 @@ Usage:
 	python halboard_benchmark.py --target stm32f103c8 program.bin
 """
 
+import pandas as pd
 import argparse
 import subprocess
 import time
-import csv
 import sys
 import tempfile
 import logging
@@ -108,7 +108,7 @@ class HALbORDController:
 
                 # Wait for sigrok to complete
                 try:
-                    stdout, stderr = sigrok_process.communicate(
+                    _, stderr = sigrok_process.communicate(
                         timeout=timeout_seconds)
 
                     if sigrok_process.returncode != 0:
@@ -131,10 +131,22 @@ class HALbORDController:
                     sigrok_process.kill()
                     sigrok_process.wait()
                     return True, []  # Flash succeeded but capture timed out
-
         except Exception as e:
             logger.error(f"Failed to flash and capture {program_path}: {e}")
             return False, []
+
+    def _post_process(self, pulses: List[float]):
+        previous_pulse: float = pulses[0]
+        for i, pulse in enumerate(pulses, 1):
+            # When the delta between the previous pulse and the next is more
+            # than 2 microseconds, we return the list from this point on
+            if (previous_pulse - pulse) < -1:
+                trim_point = i - 1
+                logger.debug(f"  trimmed pulses: {pulses[:trim_point]}")
+                logger.debug(f"remaining pulses: {pulses[trim_point:]}")
+                return pulses[trim_point:]
+            previous_pulse = pulse
+        return pulses
 
     def _analyze_hex_data(self, hex_file_path: str) -> List[float]:
         """Analyze hex dump data to extract low pulse durations in microseconds"""
@@ -196,7 +208,8 @@ class HALbORDController:
         except Exception as e:
             logger.error(f"Failed to analyze hex data: {e}")
 
-        return pulse_durations
+        POST_PROCESSED_PULSES = self._post_process(pulse_durations)
+        return POST_PROCESSED_PULSES
 
 
 def load_programs_from_file(file_path: Path) -> List[Path]:
@@ -225,13 +238,13 @@ def main():
     )
     parser.add_argument(
         'programs',
-        nargs='*',
-        help='Program files to flash and test'
+        default="test_order.csv",
+        help='File containing CSV of "binary_path,pulse_ordering"'
     )
     parser.add_argument(
-        '--file', '-f',
-        type=Path,
-        help='File containing list of programs (one per line)'
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose output'
     )
     parser.add_argument(
         '--target', '-t',
@@ -245,13 +258,13 @@ def main():
     )
     parser.add_argument(
         '--sample-rate', '-s',
-        default='16m',
+        default='24m',
         help='Sample rate (default: 16m for 16MHz)'
     )
     parser.add_argument(
         '--samples', '-n',
         type=int,
-        default=1000000,
+        default=1_000_000,
         help='Number of samples to capture (default: 1000000)'
     )
     parser.add_argument(
@@ -260,32 +273,38 @@ def main():
         default=10,
         help='Capture timeout in seconds (default: 10)'
     )
-    parser.add_argument(
-        '--output', '-o',
-        type=Path,
-        help='Output CSV file (default: stdout)'
-    )
 
     args = parser.parse_args()
 
-    # Determine program list
-    programs = []
-    if args.file:
-        programs = load_programs_from_file(args.file)
-    elif args.programs:
-        programs = [Path(p) for p in args.programs]
-    else:
-        parser.error("Must specify either program files or --file")
+    if args.verbose:
+        logger.setLevel(level=logging.DEBUG)
+        logger.info("Debug logging enabled!")
 
-    if not programs:
+    # Determine program list
+    binary_map = {}
+    if args.programs:
+        try:
+            df = pd.read_csv(args.programs)
+            binary_map = dict(zip(df['executable'], df['pulse_order']))
+        except Exception as e:
+            logger.error(f"Failed to load binary map: {e}")
+            sys.exit(1)
+    if not binary_map:
         logger.error("No valid programs found")
         sys.exit(1)
 
     # Verify all programs exist
-    for program in programs:
-        if not program.exists():
+    exit_after_loop = False
+    for program, pulse_order in binary_map.items():
+        if not Path(program).exists():
             logger.error(f"Program file not found: {program}")
-            sys.exit(1)
+            exit_after_loop = True
+        if not Path(pulse_order).exists():
+            logger.error(f"Program file not found: {program}")
+            exit_after_loop = True
+
+    if exit_after_loop:
+        sys.exit(1)
 
     controller = HALbORDController(
         target_type=args.target,
@@ -297,15 +316,15 @@ def main():
     # Prepare CSV output
     results = []
 
-    logger.info(f"Processing {len(programs)} programs")
+    logger.info(f"Processing {len(binary_map.items())} programs")
 
-    for program_path in programs:
+    for program_path, pulse_order_path in binary_map.items():
         logger.info(f"\n{'='*50}")
         logger.info(f"Processing: {program_path}")
 
         # Flash and capture in coordinated fashion
         flash_success, pulse_durations = controller.flash_and_capture(
-            program_path,
+            Path(program_path),
             timeout_seconds=args.timeout
         )
 
@@ -317,6 +336,7 @@ def main():
         if not pulse_durations:
             logger.warning(f"No pulses captured for {program_path}")
             results.append([str(program_path), "NO_PULSES"])
+            rounded_durations = ["NO_PULSES"] * len(pulse_durations)
         else:
             # Round to 2 decimal places for readability
             rounded_durations = [round(duration, 2)
@@ -325,19 +345,24 @@ def main():
             logger.info(
                 f"Captured {len(pulse_durations)} pulses: {rounded_durations} μs")
 
-    if args.output:
-        with open(args.output, 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(['Program'] + [f'Pulse_{i+1}_us' for i in range(
-                max(len(row)-1 for row in results) if results else 0)])
-            writer.writerows(results)
-        logger.info(f"Results written to {args.output}")
-    else:
-        writer = csv.writer(sys.stdout)
-        writer.writerow(['Program'] + [f'Pulse_{i+1}_us' for i in range(
-            max(len(row)-1 for row in results) if results else 0)])
-        writer.writerows(results)
+        df = pd.read_csv(pulse_order_path)
+        # Set the pulse_us column to all of our pulse durations since they
+        # should be in the same exact order.
+        df['pulse_us'] = rounded_durations
+        df.to_csv(pulse_order_path, index=False)
 
 
 if __name__ == "__main__":
     main()
+
+
+# If and when I want to test out dwt counter values
+#
+# from pyocd.core.target import Target
+# from pyocd.debug.elf.symbols import ELFSymbolProvider
+# elf = str((program_path.parent / program_path.stem).absolute())
+# target.elf = elf
+# logger.debug(f"elf = {elf}")
+# provider = ELFSymbolProvider(target.elf)
+# start_addr = provider.get_symbol_value("_Z5startv")
+# end_addr = provider.get_symbol_value("_Z3endv")

@@ -32,7 +32,7 @@ class libhal_exceptions_conan(ConanFile):
     settings = "compiler", "build_type", "os", "arch"
     generators = "CMakeDeps", "CMakeToolchain", "VirtualBuildEnv"
     exports_sources = ("include/*", "tests/*", "LICENSE",
-                       "CMakeLists.txt", "src/*")
+                       "CMakeLists.txt", "src/*", "linker_scripts/*")
     options = {
         "default_allocator": [True, False],
         "runtime": [
@@ -103,6 +103,10 @@ class libhal_exceptions_conan(ConanFile):
              "*.hpp",
              dst=os.path.join(self.package_folder, "include"),
              src=os.path.join(self.source_folder, "include"))
+        copy(self,
+             "*.ld",
+             dst=os.path.join(self.package_folder, "linker_scripts"),
+             src=os.path.join(self.source_folder, "linker_scripts"))
 
         cmake = CMake(self)
         cmake.install()
@@ -115,22 +119,27 @@ class libhal_exceptions_conan(ConanFile):
         using_wrap = False
         if self.options.runtime == "estell":
             using_wrap = True
+            # If the platform matches the linker script, just use that linker
+            # script
             self.cpp_info.exelinkflags.extend([
                 "-fexceptions",
+                "-L" + os.path.join(self.package_folder, "linker_scripts"),
+                '-Wl,-Tarm-none-eabi-gcc-14.2_discard.ld',
                 "-Wl,--wrap=__cxa_throw",
                 "-Wl,--wrap=__cxa_rethrow",
                 "-Wl,--wrap=__cxa_end_catch",
                 "-Wl,--wrap=__cxa_begin_catch",
                 "-Wl,--wrap=__cxa_end_cleanup",
                 "-Wl,--wrap=_Unwind_Resume",
-                "-Wl,--wrap=__gnu_unwind_pr_common",
-                "-Wl,--wrap=__aeabi_unwind_cpp_pr0",
-                "-Wl,--wrap=__aeabi_unwind_cpp_pr1",
-                "-Wl,--wrap=__aeabi_unwind_cpp_pr2",
-                "-Wl,--wrap=_sig_func",
-                "-Wl,--wrap=__gxx_personality_v0",
-                "-Wl,--wrap=deregister_tm_clones",
-                "-Wl,--wrap=register_tm_clones",
+                # "-Wl,--wrap=__gnu_unwind_pr_common",
+                # "-Wl,--wrap=__aeabi_unwind_cpp_pr0",
+                # "-Wl,--wrap=__aeabi_unwind_cpp_pr1",
+                # "-Wl,--wrap=__aeabi_unwind_cpp_pr2",
+                # "-Wl,--wrap=_sig_func",
+                # "-Wl,--wrap=__gxx_personality_v0",
+                # "-Wl,--wrap=__gcc_personality_v0",
+                # "-Wl,--wrap=deregister_tm_clones",
+                # "-Wl,--wrap=register_tm_clones",
             ])
 
         # Keep this for now, will update this for the runtime select
