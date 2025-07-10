@@ -21,9 +21,7 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --save-temps")
 libhal_build_demos(
   DEMOS
   single_level
-  multi_levels
-  multiple_virtual_inheritance
-  results
+  multiple_inheritance
 
   INCLUDES
   .
@@ -38,6 +36,5 @@ libhal_build_demos(
   -fno-threadsafe-statics
 
   LINK_FLAGS
-  -Wl,-Map=link.map
   -fno-threadsafe-statics
 )

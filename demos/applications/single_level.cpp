@@ -26,10 +26,10 @@ int volatile value = 5;
 void foo()
 {
   if (value) {
-    start = get_uptime();
     error obj;
     obj.data = 0x9999;
     obj.data = value;
+    start = get_uptime();
     throw obj;
   }
 }
@@ -49,6 +49,9 @@ void application()
   while (true) {
     // print out `global` in gdb to see its contents. Check to see if it matches
     // the expected value in error for that sub-object.
+    //
+    // Subtract end from start to see the time it took to throw and catch the
+    // error.
     continue;
   }
 }
