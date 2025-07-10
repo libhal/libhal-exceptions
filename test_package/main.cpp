@@ -17,11 +17,6 @@
 #include <libhal-exceptions/control.hpp>
 
 // NOLINTBEGIN(readability-identifier-naming)
-// NOLINTBEGIN(bugprone-reserved-identifier)
-// // These are just here to resolve linker errors. This will not work in
-// practice. std::uint64_t __extab_start = 0; std::uint64_t __extab_end = 0;
-// NOLINTEND(bugprone-reserved-identifier)
-
 struct V  // NOLINT(readability-identifier-naming)
 {
   int inner_detail_v = 0;
@@ -100,13 +95,4 @@ int main()
   } catch (error const&) {
     return -1;
   }
-}
-
-// These functions only exist here to link in a `start()` or `end()` function
-// which is used by the benchmark software to test the timing of operations.
-void start()
-{
-}
-void end()
-{
 }

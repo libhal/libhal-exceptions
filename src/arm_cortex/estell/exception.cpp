@@ -128,6 +128,71 @@ std::span<index_entry_t const> get_arm_exception_index()
   return { &__exidx_start, &__exidx_end };
 }
 
+// NOLINTBEGIN(bugprone-reserved-identifier)
+// NOLINTBEGIN(readability-identifier-naming)
+namespace __except_abi::inline v1 {
+// This is here for documentation purposes. This will change and should not be
+// considered to be stable.
+struct nearpoint_descriptor
+{
+  std::uint32_t normal_block_size = 0;
+  std::uint32_t text_starting_address = 0;
+};
+[[gnu::weak]] std::span<std::uint32_t const> near_point_descriptor{};
+[[gnu::weak]] std::span<std::uint32_t const> normal_table{};
+[[gnu::weak]] std::span<std::uint32_t const> small_table{};
+}  // namespace __except_abi::inline v1
+// NOLINTEND(readability-identifier-naming)
+// NOLINTEND(bugprone-reserved-identifier)
+
+std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
+{
+  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
+  auto const pc = p_program_counter - progarm_offset;
+  auto const block_power = ke::__except_abi::near_point_descriptor[0];
+  auto const inter_block_mask = (1U << block_power) - 1U;
+  auto const inter_block_location = pc & inter_block_mask;
+  auto const block_index = pc >> block_power;
+  auto const linear_info = ke::__except_abi::normal_table[block_index];
+
+  auto const entry_start = linear_info >> block_power;
+  auto const average_function_size = linear_info & inter_block_mask;
+  if (average_function_size == 0) {
+    return entry_start;
+  }
+  auto const guess_offset = inter_block_location / average_function_size;
+  auto const location = entry_start + guess_offset;
+  return location;
+}
+
+index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
+{
+  auto const index_table = get_arm_exception_index();
+  auto const initial_guess = near_point_guess_index(p_program_counter);
+  auto current = index_table[initial_guess].function();
+  auto const go_left = p_program_counter < current;
+
+  if (go_left) {
+    for (std::size_t iter = initial_guess; iter > 0; iter--) {
+      current = index_table[iter].function();
+      auto next = index_table[iter + 1].function();
+      if (current <= p_program_counter && p_program_counter < next) {
+        return index_table[iter];
+      }
+    }
+    return index_table[0];
+  } else {
+    for (std::size_t iter = initial_guess; iter < index_table.size(); iter++) {
+      current = index_table[iter].function();
+      auto next = index_table[iter + 1].function();
+      if (current <= p_program_counter && p_program_counter < next) {
+        return index_table[iter];
+      }
+    }
+    return index_table.end()[-1];
+  }
+}
+
 index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 {
   auto const index_table = get_arm_exception_index();
@@ -1753,7 +1818,14 @@ void raise_exception(exception_control_block& p_exception_object)
         std::terminate();
       }
       case runtime_state::get_next_frame: {
-        auto const& index_entry = get_index_entry(p_exception_object.cpu.pc);
+        auto const& index_entry = [&p_exception_object]() -> decltype(auto) {
+          if (__except_abi::normal_table.empty()) {
+            return get_index_entry(p_exception_object.cpu.pc);
+          } else {
+            return get_index_entry_near_point(p_exception_object.cpu.pc);
+          }
+        }();
+
         p_exception_object.cache.entry_ptr = &index_entry;
         // SU16 data
         if (index_entry.has_inlined_personality()) {
@@ -1807,6 +1879,8 @@ consteval instructions_t spare_instruction()
 template<typename F>
 instructions_t cache(F* p_function_to_be_cached)
 {
+  ke::control_block.cache.state(runtime_state::handled_state);
+
   auto const function_address =
     reinterpret_cast<std::uintptr_t>(p_function_to_be_cached);
 
@@ -1888,7 +1962,7 @@ std::type_info const* extract_si_parent_info(void const* p_info)
 }
 
 template<std::size_t map_length>
-void push_vmi_info(ke::exception_ptr p_thrown_exception,
+void push_vmi_info(exception_ptr p_thrown_exception,
                    base_class_type_info& p_info,
                    flattened_hierarchy<map_length>& p_map)
 {
@@ -1947,7 +2021,7 @@ void push_vmi_info(ke::exception_ptr p_thrown_exception,
 }
 
 template<std::size_t length>
-void flatten_rtti(ke::exception_ptr p_thrown_exception,
+void flatten_rtti(exception_ptr p_thrown_exception,
                   flattened_hierarchy<length>& p_map,
                   std::type_info const* p_type_info)
 {
@@ -2028,9 +2102,10 @@ extern "C"
     object->allocator->deallocate(object, object->size);
   }
 
-  // NOLINTNEXTLINE(readability-identifier-naming)
+  // NOLINTBEGIN(readability-identifier-naming)
   [[gnu::used]]
   void __wrap___cxa_call_unexpected(void*)
+  // NOLINTEND(readability-identifier-naming)
   {
     std::terminate();
   }
