@@ -1980,6 +1980,12 @@ extern "C"
     std::terminate();
   }
 
+  [[gnu::used]]
+  void __wrap__Unwind_Resume(void*)
+  {
+    __wrap___cxa_end_cleanup();
+  }
+
   void __wrap___cxa_rethrow() noexcept(false)
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);

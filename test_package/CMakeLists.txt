@@ -31,8 +31,13 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm" OR
        CMAKE_CROSSCOMPILING OR
        CMAKE_C_COMPILER MATCHES "arm.*gcc" OR
        CMAKE_CXX_COMPILER MATCHES "arm.*g\\+\\+")
-
-        target_link_options(${PROJECT_NAME} PRIVATE --specs=nosys.specs)
+        # NOTE: We disable the ODR violation because we need to have a way to
+        # spell and address the types for the RTTI parent classes, but seeing
+        # identical symbols with different representation triggers this warning.
+        target_link_options(${PROJECT_NAME} PRIVATE
+            --specs=nosys.specs
+            -Wno-odr
+        )
 
         message(STATUS "Added nosys.specs for ARM embedded target")
     endif()
