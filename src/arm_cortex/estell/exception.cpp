@@ -1980,15 +1980,6 @@ extern "C"
     std::terminate();
   }
 
-  void __wrap__Unwind_Resume(void*)
-  {
-    auto& exception_object = ke::extract_exception_object(ke::active_exception);
-    exception_object.cache.state(ke::runtime_state::unwind_frame);
-    // Raise exception returns when an error or call to terminate has been found
-    ke::raise_exception(exception_object);
-    std::terminate();
-  }
-
   void __wrap___cxa_rethrow() noexcept(false)
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
