@@ -101,3 +101,10 @@ int main()
     return -1;
   }
 }
+
+void start()
+{
+}
+void end()
+{
+}

@@ -18,6 +18,7 @@
 #include <libhal-arm-mcu/stm32f1/gpio.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-util/serial.hpp>
+#include <libhal-util/steady_clock.hpp>
 
 using output_pin =
   decltype(hal::stm32f1::gpio<hal::stm32f1::peripheral::gpio_a>()
@@ -25,16 +26,35 @@ using output_pin =
 
 output_pin* time_signal = nullptr;
 hal::serial* analyzer_serial = nullptr;
+hal::cortex_m::dwt_counter* counter = nullptr;
 
 void initialize_platform()
 {
+  using namespace std::literals;
   using namespace hal::literals;
   hal::stm32f1::maximum_speed_using_internal_oscillator();
 
   static hal::stm32f1::gpio<hal::stm32f1::peripheral::gpio_a> gpio_a;
   static auto signal_pin = gpio_a.acquire_output_pin(0);
   time_signal = &signal_pin;
+
   time_signal->level(true);
+  time_signal->level(false);
+  time_signal->level(true);
+  time_signal->level(false);
+  time_signal->level(true);
+  time_signal->level(false);
+  time_signal->level(true);
+  time_signal->level(false);
+  time_signal->level(true);
+  time_signal->level(false);
+  time_signal->level(true);
+
+  static hal::cortex_m::dwt_counter dwt_steady_clock(
+    hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
+  counter = &dwt_steady_clock;
+
+  hal::delay(dwt_steady_clock, 1ms);
 
   static hal::stm32f1::uart serial(hal::port<1>, hal::buffer<128>);
   analyzer_serial = &serial;
@@ -48,6 +68,12 @@ void log_start(std::string_view p_message)
 void start()
 {
   time_signal->level(false);
+}
+
+void pause()
+{
+  using namespace std::literals;
+  hal::delay(*counter, 1ms);
 }
 
 void end()

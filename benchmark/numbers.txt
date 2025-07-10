@@ -1,0 +1,25 @@
+170us
+6.345us
+
+100% depth = 70
+GCC           = 4446.5us
+Estell        = 946us
+std::expected = 45.5us
+
+0% depth = 70
+GCC           = 171us
+Estell        = 33.16667us
+std::expected = 32us
+
+0% depth = 70 👀
+GCC           = 3184us x99.5
+Estell        = 422us x13
+std::expected = 32us
+
+
+```gdb
+print ((void *)(&index_entry)) + ((int)(index_entry.function_offset | (1 << 31)))
+```
+
+24 = (void *) 0x8002614 <__wrap___cxa_throw(ke::exception_ptr, std::type_info*, ke::destructor_t*)>
+$27 = (void *) 0x8001888 <depth_01()>

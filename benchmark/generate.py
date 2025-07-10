@@ -78,10 +78,17 @@ private:
 int depth_{i:02d}() {{
   {obj_type} obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
 '''
 
         if i == 1:  # Last function - this is where we throw
             content += f'''
+  // Use the variable after the call
+  if (preserve_frame < 0) {{
+    return -1; // Never executed but prevents optimization
+  }}
+
   // This is where the exception originates
   if (side_effect > 0) {{
     start();
@@ -93,7 +100,14 @@ int depth_{i:02d}() {{
 
 '''
         else:  # Call next function in chain
-            content += f'''  return depth_{i-1:02d}();
+            content += f'''
+            int result = depth_{i-1:02d}();
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {{
+    return -1; // Never executed but prevents optimization
+  }}
+  return result + side_effect;
 }}
 
 '''
@@ -193,6 +207,8 @@ private:
 result_type depth_{i:02d}() {{
   {obj_type} obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
 '''
 
         if i == 1:  # Last function - this is where we return error
@@ -201,6 +217,11 @@ result_type depth_{i:02d}() {{
   if (side_effect > 0) {{
     start();
     return std::unexpected(test_error{{.data = {{0xDE, 0xAD, 0xBE, 0xEF}}}});
+  }}
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {{
+    return -1; // Never executed but prevents optimization
   }}
 
   return side_effect;
@@ -212,6 +233,12 @@ result_type depth_{i:02d}() {{
   if (!result) {{
     return result; // Propagate error
   }}
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {{
+    return -1; // Never executed but prevents optimization
+  }}
+
   return result.value();
 }}
 

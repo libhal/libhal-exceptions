@@ -23,6 +23,9 @@
 
 #include "internal.hpp"
 
+extern void start();
+extern void end();
+
 namespace ke {
 
 union instructions_t
@@ -1736,8 +1739,10 @@ void raise_exception(exception_object& p_exception_object)
   while (true) {
     switch (p_exception_object.cache.state()) {
       case runtime_state::get_next_frame: {
+        start();
         auto const& index_entry = get_index_entry(p_exception_object.cpu.pc);
         p_exception_object.cache.entry_ptr = &index_entry;
+        end();
         // SU16 data
         if (index_entry.has_inlined_personality()) {
           p_exception_object.cache.state(runtime_state::unwind_frame);
@@ -1972,6 +1977,15 @@ extern "C"
   }
 
   void __wrap___cxa_end_cleanup()
+  {
+    auto& exception_object = ke::extract_exception_object(ke::active_exception);
+    exception_object.cache.state(ke::runtime_state::unwind_frame);
+    // Raise exception returns when an error or call to terminate has been found
+    ke::raise_exception(exception_object);
+    std::terminate();
+  }
+
+  void __wrap__Unwind_Resume(void*)
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
     exception_object.cache.state(ke::runtime_state::unwind_frame);

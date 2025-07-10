@@ -67,10 +67,18 @@ result_type depth_01();
 result_type depth_10() {
   simple_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_09();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -78,10 +86,18 @@ result_type depth_10() {
 result_type depth_09() {
   simple_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_08();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -89,10 +105,18 @@ result_type depth_09() {
 result_type depth_08() {
   simple_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_07();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -100,10 +124,18 @@ result_type depth_08() {
 result_type depth_07() {
   simple_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_06();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -111,10 +143,18 @@ result_type depth_07() {
 result_type depth_06() {
   simple_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_05();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -122,10 +162,18 @@ result_type depth_06() {
 result_type depth_05() {
   destructor_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_04();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -133,10 +181,18 @@ result_type depth_05() {
 result_type depth_04() {
   destructor_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_03();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -144,10 +200,18 @@ result_type depth_04() {
 result_type depth_03() {
   destructor_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_02();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -155,10 +219,18 @@ result_type depth_03() {
 result_type depth_02() {
   destructor_object obj(side_effect >> 8);
   obj.do_work();
+
+  volatile int preserve_frame = side_effect;
   auto result = depth_01();
   if (!result) {
     return result; // Propagate error
   }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
+  }
+
   return result.value();
 }
 
@@ -167,10 +239,17 @@ result_type depth_01() {
   destructor_object obj(side_effect >> 8);
   obj.do_work();
 
+  volatile int preserve_frame = side_effect;
+
   // This is where the error originates
   if (side_effect > 0) {
     start();
     return std::unexpected(test_error{.data = {0xDE, 0xAD, 0xBE, 0xEF}});
+  }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1; // Never executed but prevents optimization
   }
 
   return side_effect;
