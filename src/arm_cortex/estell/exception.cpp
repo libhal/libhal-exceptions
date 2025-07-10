@@ -128,6 +128,61 @@ std::span<index_entry_t const> get_arm_exception_index()
   return { &__exidx_start, &__exidx_end };
 }
 
+namespace ke::__except_abi {
+extern std::span<std::uint32_t> near_point_descriptor;
+extern std::span<std::uint32_t> normal_table;
+extern std::span<std::uint32_t> small_table;
+}  // namespace ke::__except_abi
+
+std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
+{
+  // TODO(kammce): do not hard code
+  constexpr auto program_offset = 0x0800'00c0;
+  auto const pc = p_program_counter - program_offset;
+  auto const block_power = ke::__except_abi::near_point_descriptor[0];
+  auto const inter_block_mask = (1 << block_power) - 1;
+  auto const inter_block_location = pc & inter_block_mask;
+  auto const block_index = pc >> block_power;
+  auto const linear_info = ke::__except_abi::normal_table[block_index];
+  auto const entry_start = linear_info >> 9;
+  auto const average_function_size_bits = linear_info & 0x1FF;
+  if (average_function_size_bits == 0) {
+    return entry_start;
+  }
+  auto const average_function_size = average_function_size_bits << 2;
+  auto const guess_offset = inter_block_location / average_function_size;
+  auto const location = entry_start + guess_offset;
+  return static_cast<std::uint32_t>(location);
+}
+
+index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
+{
+  auto const index_table = get_arm_exception_index();
+  auto const initial_guess = near_point_guess_index(p_program_counter);
+  auto current = index_table[initial_guess].function();
+  auto const go_left = p_program_counter < current;
+
+  if (go_left) {
+    for (std::size_t iter = initial_guess; iter > 0; iter--) {
+      current = index_table[iter].function();
+      auto next = index_table[iter + 1].function();
+      if (current <= p_program_counter && p_program_counter < next) {
+        return index_table[iter];
+      }
+    }
+    return index_table[0];
+  } else {
+    for (std::size_t iter = initial_guess; iter < index_table.size(); iter++) {
+      current = index_table[iter].function();
+      auto next = index_table[iter + 1].function();
+      if (current <= p_program_counter && p_program_counter < next) {
+        return index_table[iter];
+      }
+    }
+    return index_table.end()[-1];
+  }
+}
+
 index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 {
   auto const index_table = get_arm_exception_index();

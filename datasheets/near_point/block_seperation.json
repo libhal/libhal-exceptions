@@ -1,0 +1,21 @@
+{
+  "reg": [
+    {
+      "bits": 10,
+      "name": "inter-block offset",
+      "type": 6
+    },
+    {
+      "bits": 22,
+      "name": "block index",
+      "type": 5
+    }
+  ],
+  "config": {
+    "fontsize": 14,
+    "bits": 32,
+    "hflip": true,
+    "lanes": 1,
+    "compact": true
+  }
+}
