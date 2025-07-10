@@ -14,7 +14,7 @@
 
 cmake_minimum_required(VERSION 3.25)
 
-project(benchmark-error-handling LANGUAGES CXX)
+project(benchmark_error_handling LANGUAGES CXX)
 
 # Always check that the $ENV{LIBHAL_PLATFORM_LIBRARY} & $ENV{LIBHAL_PLATFORM}
 # environment variables are set by the profile.
@@ -30,10 +30,6 @@ endif()
 
 find_package(libhal-$ENV{LIBHAL_PLATFORM_LIBRARY} REQUIRED)
 find_package(prebuilt-picolibc QUIET)
-
-if(${CMAKE_CROSSCOMPILING})
-  find_package(${PACKAGE} REQUIRED)
-endif()
 
 set(startup_source_files main.cpp filler.cpp)
 
@@ -73,6 +69,7 @@ foreach(test_path ${GENERATED_TEST})
   message(STATUS "Generating Demo for \"${elf}\"")
   add_executable(${elf} ${test_path})
 
+  target_include_directories(${elf} PRIVATE .)
   target_compile_options(${elf} PRIVATE
     -g
     -Werror

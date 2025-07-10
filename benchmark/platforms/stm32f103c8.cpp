@@ -17,8 +17,11 @@
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
 #include <libhal-arm-mcu/stm32f1/gpio.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
+#include <libhal-exceptions/control.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
+
+#include <platform.hpp>
 
 using output_pin =
   decltype(hal::stm32f1::gpio<hal::stm32f1::peripheral::gpio_a>()
@@ -33,6 +36,11 @@ void initialize_platform()
   using namespace std::literals;
   using namespace hal::literals;
   hal::stm32f1::maximum_speed_using_internal_oscillator();
+  hal::set_terminate([]() {
+    while (true) {
+      continue;
+    }
+  });
 
   static hal::stm32f1::gpio<hal::stm32f1::peripheral::gpio_a> gpio_a;
   static auto signal_pin = gpio_a.acquire_output_pin(0);
