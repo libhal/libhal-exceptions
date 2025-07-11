@@ -27,10 +27,7 @@ def generate_exception_file(destructor_percent: int, depth: int) -> str:
 #include <cstdint>
 #include <string_view>
 
-// External functions
-extern void start();
-extern void end();
-extern void log_start(std::string_view);
+#include <platform.hpp>
 
 // Global side effect to prevent optimization
 std::int32_t volatile side_effect = 0;
@@ -84,10 +81,24 @@ private:
 
     # Generate function implementations
     for i in range(depth, 0, -1):
-        # Determine if this function should have a destructor
-        has_destructor = i <= destructor_count
-        obj_type = "destructor_object" if has_destructor else "simple_object"
+        # Calculate which functions should have destructors - evenly distributed
+        function_index = depth - i  # 0-based index for this function
 
+        # Calculate total destructor count and distribute evenly
+        destructor_count = int((destructor_percent / 100.0) * depth)
+
+        if destructor_count == 0:
+            has_destructor = False
+        elif destructor_count >= depth:
+            has_destructor = True
+        else:
+            # Even distribution using integer arithmetic
+            current_position = function_index * destructor_count // depth
+            next_position = (function_index + 1) * destructor_count // depth
+            has_destructor = next_position > current_position
+
+        obj_type = "destructor_object" if has_destructor else "simple_object"
+        obj_type = "destructor_object" if has_destructor else "simple_object"
         content += f'''[[gnu::noinline]]
 int depth_{i:02d}() {{
   {obj_type} obj(side_effect >> 8);
@@ -133,11 +144,38 @@ void run_test() {{
   side_effect = 1; // Ensure we will throw
 
   try {{
-    depth_{depth:02d}();
-  }} catch (const test_error& e) {{
+    depth_70();
+  }} catch (test_error const& e) {{
     end();
   }}
+
+  pause();
+
+  try {{
+    depth_50();
+  }} catch (test_error const& e) {{
+    end();
+  }}
+
+  pause();
+
+  try {{
+    depth_30();
+  }} catch (test_error const& e) {{
+    end();
+  }}
+
+  pause();
+
+  try {{
+    depth_10();
+  }} catch (test_error const& e) {{
+    end();
+  }}
+
+  pause();
 }}
+
 '''
 
     return content
@@ -154,10 +192,7 @@ def generate_result_file(destructor_percent: int, depth: int) -> str:
 #include <expected>
 #include <string_view>
 
-// External functions
-extern void start();
-extern void end();
-extern void log_start(std::string_view);
+#include <platform.hpp>
 
 // Global side effect to prevent optimization
 std::int32_t volatile side_effect = 0;
@@ -261,11 +296,23 @@ result_type depth_{i:02d}() {{
     # Generate test runner
     content += f'''// Test runner
 void run_test() {{
-  log_start("RESULT_{destructor_percent}PCT_DEPTH{depth}");
+  log_start("RESULT-{destructor_percent}%-DEPTH{depth}");
   side_effect = 1; // Ensure we will return error
 
-  auto result = depth_{depth:02d}();
-  if (!result) {{
+  auto result_70 = depth_70();
+  if (!result_70) {{
+    end();
+  }}
+  auto result_50 = depth_50();
+  if (!result_50) {{
+    end();
+  }}
+  auto result_30 = depth_30();
+  if (!result_30) {{
+    end();
+  }}
+  auto result_10 = depth_10();
+  if (!result_10) {{
     end();
   }}
 }}
@@ -303,15 +350,14 @@ def main():
     """Generate test files for all combinations."""
 
     destructor_percentages = [0, 25, 50, 75, 100]
-    depths = [10, 30, 50, 70]
+    max_depth = 70
     output_dir = Path("generated_tests")
 
     for destructor_pct in destructor_percentages:
-        for depth in depths:
-            generate_test_files(destructor_pct, depth, output_dir)
+        generate_test_files(destructor_pct, max_depth, output_dir)
 
     print(
-        f"\nGenerated {len(destructor_percentages) * len(depths) * 2} test files in {output_dir}/")
+        f"\nGenerated {len(destructor_percentages) * 2} test files in {output_dir}/")
 
 
 if __name__ == "__main__":
