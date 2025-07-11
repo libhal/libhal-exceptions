@@ -1973,6 +1973,7 @@ extern "C"
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
+  [[gnu::used]]
   void __wrap___cxa_call_unexpected(void*)
   {
     std::terminate();
