@@ -128,11 +128,15 @@ std::span<index_entry_t const> get_arm_exception_index()
   return { &__exidx_start, &__exidx_end };
 }
 
-namespace ke::__except_abi {
+// NOLINTBEGIN(bugprone-reserved-identifier)
+// NOLINTBEGIN(readability-identifier-naming)
+namespace __except_abi {
 extern std::span<std::uint32_t> near_point_descriptor;
 extern std::span<std::uint32_t> normal_table;
 extern std::span<std::uint32_t> small_table;
-}  // namespace ke::__except_abi
+}  // namespace __except_abi
+// NOLINTEND(readability-identifier-naming)
+// NOLINTEND(bugprone-reserved-identifier)
 
 std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
 {
@@ -1808,7 +1812,8 @@ void raise_exception(exception_control_block& p_exception_object)
         std::terminate();
       }
       case runtime_state::get_next_frame: {
-        auto const& index_entry = get_index_entry(p_exception_object.cpu.pc);
+        auto const& index_entry =
+          get_index_entry_near_point(p_exception_object.cpu.pc);
         p_exception_object.cache.entry_ptr = &index_entry;
         // SU16 data
         if (index_entry.has_inlined_personality()) {
@@ -1943,7 +1948,7 @@ std::type_info const* extract_si_parent_info(void const* p_info)
 }
 
 template<std::size_t map_length>
-void push_vmi_info(ke::exception_ptr p_thrown_exception,
+void push_vmi_info(exception_ptr p_thrown_exception,
                    base_class_type_info& p_info,
                    flattened_hierarchy<map_length>& p_map)
 {
@@ -2002,7 +2007,7 @@ void push_vmi_info(ke::exception_ptr p_thrown_exception,
 }
 
 template<std::size_t length>
-void flatten_rtti(ke::exception_ptr p_thrown_exception,
+void flatten_rtti(exception_ptr p_thrown_exception,
                   flattened_hierarchy<length>& p_map,
                   std::type_info const* p_type_info)
 {
@@ -2083,9 +2088,10 @@ extern "C"
     object->allocator->deallocate(object, object->size);
   }
 
-  // NOLINTNEXTLINE(readability-identifier-naming)
+  // NOLINTBEGIN(readability-identifier-naming)
   [[gnu::used]]
   void __wrap___cxa_call_unexpected(void*)
+  // NOLINTEND(readability-identifier-naming)
   {
     std::terminate();
   }

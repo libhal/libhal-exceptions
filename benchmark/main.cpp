@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <span>
+
 #include "platform.hpp"
 
 int main()
@@ -21,3 +23,13 @@ int main()
   run_test();
   end_benchmark();
 }
+
+// // NOLINTBEGIN(bugprone-reserved-identifier)
+// // NOLINTBEGIN(readability-identifier-naming)
+// namespace ke::__except_abi {
+// [[gnu::weak]] std::span<std::uint32_t> near_point_descriptor{};
+// [[gnu::weak]] std::span<std::uint32_t> normal_table{};
+// [[gnu::weak]] std::span<std::uint32_t> small_table{};
+// }  // namespace ke::__except_abi
+// // NOLINTEND(readability-identifier-naming)
+// // NOLINTEND(bugprone-reserved-identifier)

@@ -38,7 +38,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/platforms/$ENV{LIBHAL_PLATFORM}.cpp")
     list(APPEND startup_source_files platforms/$ENV{LIBHAL_PLATFORM}.cpp)
 endif()
 
-add_library(startup_code ${startup_source_files})
+add_library(startup_code ${startup_source_files} except0_depth70.nm.np.cpp)
 
 target_include_directories(startup_code PUBLIC .)
 target_compile_options(startup_code PRIVATE
