@@ -59,22 +59,35 @@ exception_ptr current_exception() noexcept
   return active_exception;
 }
 
-inline void capture_cpu_core(ke::cortex_m_cpu& p_cpu_core)
+/**
+ * @brief Captures all registers CPU registers
+ *
+ * Registers captured are R4-R12 and SP. The LR (link) register is copied into
+ * the PC register of the `ke::cortex_m_cpu&`. The LR member variable of the
+ * input parameter is left as is and will be updated as the unwinding proceeds.
+ *
+ */
+[[gnu::naked, gnu::noinline]] void capture_cpu_core(ke::cortex_m_cpu&)
 {
-  register std::uint32_t* res asm("r3") = &p_cpu_core.r4.data;
-
-  // We only capture r4 to r12 because __cxa_throw & __cxa_rethrow should be
-  // normal functions. Meaning they will not utilize the `sp = r[nnnn]`
-  // instruction, meaning that the callee unpreserved registers can be left
-  // alone.
-  asm volatile("mov r0, pc\n"          // Move PC to r0 (Before pipeline)
-               "stmia r3, {r4-r12}\n"  // Store r4 to r12 into the array @ &r4
-               "str sp, [r3, #36]\n"   // Store SP @ 36
-               "str lr, [r3, #40]\n"   // Store LR @ 40
-               "str r0, [r3, #44]\n"   // Store PC @ 44
-               :                       // no output
-               : "r"(res)              // input is the address of the array
-               : "memory", "r0");
+  asm volatile(
+    // ARM calling conventions states that arguments are passed into R0-R3.
+    // The single reference parameter p_cpu_core is in R0.
+    //
+    // Add 16 bytes to the address within R0 to skip over R0-R3. We assume
+    // `__cxa_throw` & `__cxa_rethrow` will never utilize the `sp = r[nnnn]`
+    // instruction, meaning that the non-callee preserved registers can be
+    // skipped. R0 now points to `ke::cortex_m_cpu::r4`
+    "add   r0, #16\n"
+    // Store R4 to R12 into `ke::cortex_m_cpu::r4` to `ke::cortex_m_cpu::r12`.
+    // The ! means, increment R<N> by the number of words stored. R0 now points
+    // at the `ke::cortex_m_cpu&`'s SP register.
+    "stmia r0!, {r4-r12}\n"
+    // Store SP into [R0] (`ke::cortex_m_cpu&`'s SP register)
+    "str sp, [r0]\n"
+    // Store LR into [R0 + 8] (`ke::cortex_m_cpu&`'s PC register)
+    "str lr, [r0, #8]\n"
+    "bx lr\n"
+    "\n");
 }
 
 struct index_less_than
@@ -92,26 +105,22 @@ struct index_less_than
   {
     return left < right.function();
   }
+  bool operator()(std::uint32_t left, std::uint32_t right)
+  {
+    return left < right;
+  }
 };
 
 std::span<index_entry_t const> get_arm_exception_index()
 {
-  return { reinterpret_cast<index_entry_t const*>(&__exidx_start),
-           reinterpret_cast<index_entry_t const*>(&__exidx_end) };
+  return { &__exidx_start, &__exidx_end };
 }
-
-// [[gnu::used]] std::span<std::uint32_t const> get_arm_exception_table()
-// {
-//   return { &__extab_start, &__extab_end };
-// }
 
 index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 {
   auto const index_table = get_arm_exception_index();
-  auto const& index = std::upper_bound(index_table.begin(),
-                                       index_table.end(),
-                                       p_program_counter,
-                                       index_less_than{});
+  auto const& index =
+    std::ranges::upper_bound(index_table, p_program_counter, index_less_than{});
 
   if (index == index_table.begin()) {
     return *index;
@@ -176,7 +185,8 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
     if ((sleb128 & 0x80) == 0x00) {
       auto const bytes_consumed = i + 1;
       auto const loaded_bits = bytes_consumed * leb128_bits;
-      auto const ext_shift_amount = (32 - loaded_bits);
+      auto const ext_shift_amount =
+        static_cast<std::int32_t>(32L - loaded_bits);
       // Shift to the left up to the signed MSB bit
       result <<= ext_shift_amount;
       // Arithmetic shift right to sign extend number
@@ -322,6 +332,7 @@ template<lsda_encoding encoding>
 
   // Handle indirection GCC extension
   if constexpr (static_cast<bool>(encoding & 0x80)) {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     result = *reinterpret_cast<std::uintptr_t const*>(result);
   }
 
@@ -377,42 +388,40 @@ template<lsda_encoding encoding>
 
   // Handle indirection GCC extension
   if (static_cast<bool>(p_encoding & 0x80)) {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     result = *reinterpret_cast<std::uintptr_t const*>(result);
   }
 
   return result;
 }
 
-inline void restore_cpu_core(ke::cortex_m_cpu& p_cpu_core)
+[[gnu::naked]] [[noreturn]] inline void restore_cpu_core(cortex_m_cpu&)
 {
-  // Skip R2 because it is not used in the exception unwinding
-  // Skip R3 because we are using it
-  asm volatile("ldmia.w	%[reg], {r0, r1}\n"  // R3 is incremented by 8
-               "add     %[reg], #16\n"       // Skip Past R2 + R3
-               "ldmia.w	%[reg], {r4, r5, r6, r7, r8, r9, r10, r11, r12}\n"
-               "ldr sp, [%[reg], #36]\n"  // Load SP
-               "ldr lr, [%[reg], #40]\n"  // Load LR
-               "ldr pc, [%[reg], #44]\n"  // Load PC
-               :
-               : [reg] "r"(&p_cpu_core)
-               : "memory",
-                 "r0",
-                 "r1",
-                 "r2",
-                 // skip r3 & use it as the offset register
-                 "r4",
-                 "r5",
-                 "r6",
-                 "r7",
-                 "fp",
-                 "r8",
-                 "r9",
-                 "r10",
-                 "r11",
-                 "r12",
-                 // sp skipped here as it is deprecated
-                 "lr",
-                 "pc");
+  asm volatile(
+    "\n"
+    // ARM calling conventions states that arguments are passed into R0-R3.
+    // The single reference parameter p_cpu_core is in R0.
+    // We move the address to R2, since we need to set r0 and r1 to the
+    // exception error object's address and filter number respectively
+    "mov      r2, r0\n"
+    // Since our cortex_m_cpu object has the layout of 16x u32 values, we can
+    // just iterate through the struct like an array.
+    //
+    // This instruction loads R0 and R1 with the contents addressed by R2
+    "ldmia.w	r2, {r0, r1}\n"
+    // Move address by 16-bytes or 4x 32-bit words which skips past R0 to R3.
+    // R2 now points to R4 within the `cortex_m_cpu` object.
+    "add      r2, #16\n"
+    // Load R4 to R12 from `cortex_m_cpu` and increment the register's
+    // address. R2 now points to the SP register
+    "ldmia.w	r2!, {r4, r5, r6, r7, r8, r9, r10, r11, r12}\n"
+    // Unfortunately SP cannot be in the list above, so we set it here
+    "ldr sp, [r2]\n"
+    // Load LR
+    "ldr lr, [r2, #4]\n"
+    // Load PC which will jump us to the landing pad
+    "ldr pc, [r2, #8]\n"
+    "");
 }
 
 inline void skip_dwarf_info(std::uint8_t const** p_lsda)
@@ -534,9 +543,11 @@ inline call_site_info parse_uleb128_call_site(
 class action_decoder
 {
 public:
+  // NOLINTBEGIN(bugprone-easily-swappable-parameters)
   action_decoder(std::uint8_t const* p_type_table_end,
                  std::uint8_t const* p_end_of_callsite,
                  std::uint32_t p_action)
+    // NOLINTEND(bugprone-easily-swappable-parameters)
     : m_type_table_end(p_type_table_end)
     , m_action_position(p_end_of_callsite + (p_action - 1))
   {
@@ -544,6 +555,7 @@ public:
 
   static std::type_info const* to_type_info(void const* p_type_info_address)
   {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     return reinterpret_cast<std::type_info const*>(
       to_absolute_address(p_type_info_address));
   }
@@ -563,11 +575,12 @@ public:
     // prel31_offsets
     auto const* current_type = &type_table[-m_filter];
 
-    if (*current_type == 0x0) {
+    if (*current_type == nullptr) {
       return install_context_type();
     }
 
-    auto const* test = to_absolute_address_ptr(current_type);
+    auto const* test =
+      to_absolute_address_ptr(static_cast<void const*>(current_type));
     return reinterpret_cast<std::type_info const*>(test);
   }
 
@@ -694,11 +707,10 @@ inline void enter_function(exception_object& p_exception_object)
        type_info = a_decoder.get_next_catch_type()) {
 
     // This is our dynamic cast :P
-    auto position = std::find_if(p_exception_object.type_info.begin(),
-                                 p_exception_object.type_info.end(),
-                                 [&type_info](auto const& element) -> bool {
-                                   return element.type_info == type_info;
-                                 });
+    auto position = std::ranges::find_if(
+      p_exception_object.type_info, [&type_info](auto const& element) -> bool {
+        return element.type_info == type_info;
+      });
 
     if (position == p_exception_object.type_info.end() &&
         type_info != action_decoder::install_context_type()) {
@@ -728,7 +740,7 @@ constexpr std::uint32_t vsp_deallocate_amount()
   return Amount + 1;
 }
 
-enum class pop_lr
+enum class pop_lr : std::uint8_t
 {
   skip = 0,
   do_it = 1,
@@ -1778,6 +1790,8 @@ void raise_exception(exception_object& p_exception_object)
 }
 }  // namespace ke
 
+// NOLINTBEGIN(bugprone-reserved-identifier)
+// NOLINTBEGIN(readability-identifier-naming)
 extern "C"
 {
   // mangled name for vtable for __cxxabi::__class_type_info
@@ -1787,9 +1801,11 @@ extern "C"
   // mangled name for vtable for __cxxabi::__vmi_class_type_info
   extern void* _ZTVN10__cxxabiv121__vmi_class_type_infoE[];
 }
+// NOLINTEND(readability-identifier-naming)
+// NOLINTEND(bugprone-reserved-identifier)
 
 namespace ke {
-enum class rtti_type
+enum class rtti_type : std::uint8_t
 {
   class_type,
   single_inheritance,
@@ -1803,6 +1819,7 @@ rtti_type get_rtti_type(void const* p_type_info)
     reinterpret_cast<std::uint32_t const*>(p_type_info);
   auto const vtable_method_location = word_pointer[0];
   auto const vtable_start = vtable_method_location - 8;
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   auto const* vtable_address = reinterpret_cast<void const*>(vtable_start);
 
   if (vtable_address == &_ZTVN10__cxxabiv117__class_type_infoE) {
@@ -1825,6 +1842,7 @@ std::type_info const* extract_si_parent_info(void const* p_info)
   auto const* word_pointer = reinterpret_cast<std::uint32_t const*>(p_info);
   auto const address = word_pointer[parent_info_address];
 
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   return reinterpret_cast<std::type_info const*>(address);
 }
 
@@ -1856,6 +1874,7 @@ void push_vmi_info(ke::exception_ptr p_thrown_exception,
     }
 
     auto const offset = offset_flags >> 8;
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     parent_info.type_info = reinterpret_cast<void*>(parent_address);
     if (offset >= 0) {
       // Shift the lower 8-bits of flag information
@@ -1927,15 +1946,18 @@ namespace {
 bool const volatile libhal_convince_compiler_to_emit_metadata = false;
 }
 
+// NOLINTBEGIN(bugprone-reserved-identifier)
 extern "C"
 {
   void _exit([[maybe_unused]] int rc)  // NOLINT
   {
     std::terminate();
   }
-  // TODO(#42): Use the applications's polymorphic allocator, not our own space.
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void* __wrap___cxa_allocate_exception(size_t p_thrown_size)
   {
+    // TODO(#42): Use the applications's polymorphic allocator, not our own
+    // space.
     if (p_thrown_size >
         ke::exception_buffer.size() + sizeof(ke::exception_object)) {
       std::terminate();
@@ -1944,16 +1966,19 @@ extern "C"
     return ke::exception_buffer.data() + sizeof(ke::exception_object);
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_free_exception([[maybe_unused]] void* p_thrown_exception)
   {
     ke::exception_buffer.fill(0);
   }
 
-  void __wrap___cxa_call_unexpected(void*)  // NOLINT
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  void __wrap___cxa_call_unexpected(void*)
   {
     std::terminate();
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_end_catch()
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
@@ -1964,6 +1989,7 @@ extern "C"
     }
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void* __wrap___cxa_begin_catch(void* p_exception_object)
   {
     auto* eo = reinterpret_cast<ke::exception_object*>(p_exception_object);
@@ -1971,6 +1997,7 @@ extern "C"
     return thrown_object;
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_end_cleanup()
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
@@ -1980,12 +2007,15 @@ extern "C"
     std::terminate();
   }
 
+  // NOLINTBEGIN(readability-identifier-naming)
   [[gnu::used]]
   void __wrap__Unwind_Resume(void*)
+  // NOLINTEND(readability-identifier-naming)
   {
     __wrap___cxa_end_cleanup();
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_rethrow() noexcept(false)
   {
     auto& exception_object = ke::extract_exception_object(ke::active_exception);
@@ -2012,6 +2042,7 @@ extern "C"
     std::terminate();
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_throw(ke::exception_ptr p_thrown_exception,
                           std::type_info* p_type_info,
                           ke::destructor_t p_destructor) noexcept(false)
@@ -2020,6 +2051,7 @@ extern "C"
     auto& exception_object = ke::extract_exception_object(p_thrown_exception);
     exception_object.destructor = p_destructor;
     ke::capture_cpu_core(exception_object.cpu);
+
     ke::flatten_rtti<12>(
       p_thrown_exception, exception_object.type_info, p_type_info);
 
@@ -2040,3 +2072,4 @@ extern "C"
     std::terminate();
   }
 }  // extern "C"
+// NOLINTEND(bugprone-reserved-identifier)

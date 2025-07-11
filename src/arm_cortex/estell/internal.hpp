@@ -55,6 +55,7 @@ struct register_t
 
   std::uint32_t* operator*()
   {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     return reinterpret_cast<std::uint32_t*>(data);
   }
 };
@@ -65,7 +66,7 @@ constexpr std::uint32_t end_descriptor = 0x0000'0000;
 constexpr std::uint32_t su16_mask = 0b1111'1111'1111'1110;
 }  // namespace arm_ehabi
 
-inline std::uint32_t to_absolute_address(void const* p_object)
+constexpr std::uint32_t to_absolute_address(void const* p_object)
 {
   auto const object_address = std::bit_cast<std::int32_t>(p_object);
   auto offset = *std::bit_cast<std::int32_t const*>(p_object);
@@ -79,50 +80,10 @@ inline std::uint32_t to_absolute_address(void const* p_object)
   return static_cast<std::uint32_t>(final_address);
 }
 
-[[gnu::used]] inline std::uint32_t runtime_to_absolute_address(
-  void const* p_object)
-{
-  return to_absolute_address(p_object);
-}
-
-inline std::uint32_t* to_absolute_address_ptr(void const* p_object)
+constexpr std::uint32_t* to_absolute_address_ptr(void const* p_object)
 {
   return std::bit_cast<std::uint32_t*>(to_absolute_address(p_object));
 }
-
-// This is only to make GDB debugging easier, the functions are never actually
-// called so it is not important to include the correct types.
-struct function_t
-{
-  using callable_t = void();
-
-  callable_t* address;
-
-  function_t(std::uint32_t p_address)
-    : address(reinterpret_cast<callable_t*>(p_address))
-  {
-  }
-
-  operator std::uint32_t()
-  {
-    return reinterpret_cast<std::uint32_t>(address);
-  }
-
-  operator void*()
-  {
-    return reinterpret_cast<void*>(address);
-  }
-
-  bool operator<(function_t const& p_other) const
-  {
-    return address < p_other.address;  // NOLINT
-  }
-
-  bool operator==(function_t const& p_other) const
-  {
-    return address == p_other.address;
-  }
-};
 
 namespace su16 {
 constexpr auto instruction0 = hal::bit_mask{ .position = 16, .width = 8 };
@@ -141,12 +102,46 @@ constexpr auto instruction5 = hal::bit_mask::from<7, 0>();
 constexpr auto instruction6 = hal::bit_mask::from<24, 31>();
 }  // namespace lu16_32
 
+struct function_t
+{
+  using callable_t = void();
+
+  std::uint32_t address;
+
+  function_t(std::uint32_t p_address)
+    : address(p_address)
+  {
+  }
+
+  operator std::uint32_t()
+  {
+    return reinterpret_cast<std::uint32_t>(address);
+  }
+
+  operator void*()
+  {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    return reinterpret_cast<void*>(address);
+  }
+
+  bool operator<(function_t const& p_other) const
+  {
+    return address < p_other.address;
+  }
+
+  bool operator==(function_t const& p_other) const
+  {
+    return address == p_other.address;
+  }
+};
+
 struct index_entry_t
 {
   std::uint32_t function_offset;
   std::uint32_t personality_offset;
 
-  [[gnu::always_inline]] inline constexpr bool has_inlined_personality() const
+  [[gnu::always_inline]] [[nodiscard]] constexpr bool has_inlined_personality()
+    const
   {
     // 31st bit is `1` when the personality/unwind information is inlined, other
     // otherwise, personality_offset is an offset.
@@ -154,18 +149,19 @@ struct index_entry_t
     return hal::bit_extract<mask>(personality_offset);
   }
 
-  [[gnu::always_inline]] inline bool is_noexcept() const
+  [[gnu::always_inline]] [[nodiscard]] constexpr bool is_noexcept() const
   {
     return personality_offset == 0x1;
   }
 
-  [[gnu::always_inline]] inline std::uint32_t const* personality() const
+  [[gnu::always_inline]] [[nodiscard]] constexpr std::uint32_t const*
+  personality() const
   {
     return to_absolute_address_ptr(&personality_offset);
   }
 
-  [[gnu::always_inline]] static inline std::uint32_t const* lsda_data(
-    std::uint32_t const* p_personality)
+  [[gnu::always_inline]] [[nodiscard]] static inline std::uint32_t const*
+  lsda_data(std::uint32_t const* p_personality)
   {
     constexpr auto personality_type = hal::bit_mask::from<24, 27>();
     // +1 to skip the prel31 offset to the personality function
@@ -210,9 +206,9 @@ struct index_entry_t
     return p_personality + 2;
   }
 
-  [[gnu::always_inline]] function_t function() const
+  [[gnu::always_inline]] [[nodiscard]] function_t function() const
   {
-    return function_t(to_absolute_address(&function_offset));
+    return { to_absolute_address(&function_offset) };
   }
 };
 
@@ -249,7 +245,7 @@ struct cortex_m_cpu
     static_assert(sizeof(cortex_m_cpu) == sizeof(register_file));
     static_assert(sizeof(std::uint32_t) == sizeof(register_t));
 
-    register_file* file = reinterpret_cast<register_file*>(this);
+    auto* file = reinterpret_cast<register_file*>(this);
     return (*file)[p_size];
   }
 };
@@ -283,32 +279,32 @@ struct cache_t
     .width = 24,
   };
 
-  constexpr inline runtime_state state() const
+  [[nodiscard]] constexpr runtime_state state() const
   {
     return inner_state;
   }
 
-  constexpr inline std::uint32_t relative_address() const
+  [[nodiscard]] constexpr std::uint32_t relative_address() const
   {
     return rel_address;
   }
 
-  constexpr inline void state(runtime_state p_state)
+  constexpr void state(runtime_state p_state)
   {
     inner_state = p_state;
   }
 
-  constexpr inline void rethrown(bool p_rethrown)
+  constexpr void rethrown(bool p_rethrown)
   {
     previously_rethrown = p_rethrown;
   }
 
-  constexpr inline bool rethrown() const
+  [[nodiscard]] constexpr bool rethrown() const
   {
     return previously_rethrown;
   }
 
-  constexpr inline void relative_address(std::uint32_t p_rel_address)
+  constexpr void relative_address(std::uint32_t p_rel_address)
   {
     rel_address = p_rel_address;
   }
@@ -336,26 +332,24 @@ struct flattened_hierarchy
     size++;
   }
 
-  flattened_hierarchy()
-  {
-  }
+  flattened_hierarchy() = default;
 
-  auto begin()
+  [[nodiscard]] auto begin()
   {
     return bases.begin();
   }
 
-  auto end()
+  [[nodiscard]] auto end()
   {
     return bases.begin() + size;
   }
 
-  auto cbegin() const
+  [[nodiscard]] auto cbegin() const
   {
     return bases.cbegin();
   }
 
-  auto cend() const
+  [[nodiscard]] auto cend() const
   {
     return bases.cbegin() + size;
   }
@@ -386,6 +380,7 @@ inline exception_object& extract_exception_object(void* p_thrown_exception)
 {
   auto thrown_address = reinterpret_cast<std::intptr_t>(p_thrown_exception);
   auto start_of_exception_object = thrown_address - sizeof(exception_object);
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   return *reinterpret_cast<exception_object*>(start_of_exception_object);
 }
 
@@ -394,11 +389,11 @@ inline void* extract_thrown_object(exception_object* p_exception_object)
   auto object_address = reinterpret_cast<std::intptr_t>(p_exception_object);
   auto start_of_thrown = object_address + sizeof(exception_object) +
                          p_exception_object->choosen_type_offset;
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   return reinterpret_cast<void*>(start_of_thrown);
 }
 
 inline constexpr auto eo_size = sizeof(exception_object);
-}  // namespace ke
 
 struct [[gnu::packed]] su16_t
 {
@@ -419,11 +414,14 @@ struct [[gnu::packed]] lu_t
   std::uint8_t reserved : 3;
   std::uint8_t handler_data_flag : 1;
 };
+}  // namespace ke
 
+// NOLINTBEGIN(bugprone-reserved-identifier)
+// NOLINTBEGIN(readability-identifier-naming)
 extern "C"
 {
-  extern std::uint32_t __exidx_start;
-  extern std::uint32_t __exidx_end;
-  extern std::uint32_t __extab_start;
-  extern std::uint32_t __extab_end;
+  extern ke::index_entry_t const __exidx_start;
+  extern ke::index_entry_t const __exidx_end;
 }
+// NOLINTEND(readability-identifier-naming)
+// NOLINTEND(bugprone-reserved-identifier)
