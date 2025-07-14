@@ -53,5 +53,4 @@ std::terminate_handler set_terminate(
  * @return std::terminate_handler - the currently set terminate handler
  */
 std::terminate_handler get_terminate() noexcept;
-
 }  // namespace hal
