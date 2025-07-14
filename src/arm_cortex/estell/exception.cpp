@@ -18,8 +18,11 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <memory_resource>
 #include <span>
 #include <typeinfo>
+
+#include <libhal-exceptions/control.hpp>
 
 #include "internal.hpp"
 
@@ -57,13 +60,7 @@ struct instructions_t
   };
 };
 
-namespace {
-// TODO(#19): Make this thread local and figure out how to support is using
-// emutls.
-exception_ptr active_exception = nullptr;
-// TODO(#42): Use the applications's polymorphic allocator, not our own space.
-std::array<std::uint8_t, 256> exception_buffer{};
-}  // namespace
+thread_local exception_control_block control_block{};
 
 su16_t* get_su16(void* p_ptr)
 {
@@ -72,11 +69,6 @@ su16_t* get_su16(void* p_ptr)
 lu_t* get_lu(void* p_ptr)
 {
   return reinterpret_cast<lu_t*>(p_ptr);
-}
-
-exception_ptr current_exception() noexcept
-{
-  return active_exception;
 }
 
 /**
@@ -473,13 +465,13 @@ inline lsda_header_info parse_header(std::uint8_t const** p_lsda)
   return info;
 }
 
-inline auto const* to_lsda(exception_object& p_exception_object)
+inline auto const* to_lsda(exception_control_block& p_exception_object)
 {
   return reinterpret_cast<std::uint8_t const*>(
     index_entry_t::lsda_data(p_exception_object.cache.personality));
 }
 
-inline auto calculate_relative_pc(exception_object& p_exception_object)
+inline auto calculate_relative_pc(exception_control_block& p_exception_object)
 {
   return p_exception_object.cache.relative_address() & ~1;
 }
@@ -626,7 +618,7 @@ private:
   std::int32_t m_filter = 0;
 };
 
-inline void enter_function(exception_object& p_exception_object)
+inline void enter_function(exception_control_block& p_exception_object)
 {
   auto const* lsda = to_lsda(p_exception_object);
   auto info = parse_header(&lsda);
@@ -1732,7 +1724,7 @@ constexpr instructions_t personality_to_unwind_instructions(
 
 [[gnu::always_inline]]
 constexpr instructions_t create_instructions_from_entry(
-  exception_object const& p_exception_object)
+  exception_control_block const& p_exception_object)
 {
   constexpr auto generic = hal::bit_mask::from<31>();
 
@@ -1752,10 +1744,14 @@ constexpr instructions_t create_instructions_from_entry(
   return personality_to_unwind_instructions(handler_data);
 }
 
-void raise_exception(exception_object& p_exception_object)
+void raise_exception(exception_control_block& p_exception_object)
 {
   while (true) {
     switch (p_exception_object.cache.state()) {
+      [[unlikely]]
+      case runtime_state::handled_state: {
+        std::terminate();
+      }
       case runtime_state::get_next_frame: {
         auto const& index_entry = get_index_entry(p_exception_object.cpu.pc);
         p_exception_object.cache.entry_ptr = &index_entry;
@@ -1831,8 +1827,8 @@ instructions_t cache(F* p_function_to_be_cached)
   }
 }
 
-instructions_t cxa_throw_unwind_instructions = cache(&__wrap___cxa_throw);
-instructions_t cxa_rethrow_unwind_instructions = cache(&__wrap___cxa_rethrow);
+auto const cxa_throw_unwind_instructions = cache(&__wrap___cxa_throw);
+auto const cxa_rethrow_unwind_instructions = cache(&__wrap___cxa_rethrow);
 }  // namespace ke
 
 // NOLINTBEGIN(bugprone-reserved-identifier)
@@ -1960,8 +1956,8 @@ void flatten_rtti(ke::exception_ptr p_thrown_exception,
   auto iter = p_map.begin();
   auto info = get_rtti_type(p_type_info);
 
-  // If this is a non-class type, then there is in hierarchy and this first
-  // element we pushed is the only one.
+  // If this is a non-class type, then there is no hierarchy and the first
+  // element we pushed onto the list is the only one that exists.
   if (info == rtti_type::anything_else) {
     return;
   }
@@ -1985,6 +1981,7 @@ void flatten_rtti(ke::exception_ptr p_thrown_exception,
     }
   }
 }
+
 }  // namespace ke
 
 namespace {
@@ -1998,23 +1995,37 @@ extern "C"
   {
     std::terminate();
   }
+
   // NOLINTNEXTLINE(readability-identifier-naming)
   void* __wrap___cxa_allocate_exception(size_t p_thrown_size)
   {
-    // TODO(#42): Use the applications's polymorphic allocator, not our own
-    // space.
-    if (p_thrown_size >
-        ke::exception_buffer.size() + sizeof(ke::exception_object)) {
+    if (ke::control_block.cache.state() != ke::runtime_state::handled_state) {
       std::terminate();
     }
 
-    return ke::exception_buffer.data() + sizeof(ke::exception_object);
+    // We set the state to `get_next_frame` to prep the control block state but
+    // more importantly, in order to detect if the allocator throws bad alloc
+    // and we re-enter this function, we can detect that and terminate.
+    ke::control_block.cache.state(ke::runtime_state::get_next_frame);
+    auto const allocation_amount =
+      sizeof(ke::exception_allocation<>) + p_thrown_size;
+
+    auto exception_memory_resource = &hal::get_exception_allocator();
+
+    auto* object = static_cast<ke::exception_allocation<>*>(
+      exception_memory_resource->allocate(allocation_amount));
+
+    object->allocator = exception_memory_resource;
+    object->size = allocation_amount;
+
+    return &object->data;
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
-  void __wrap___cxa_free_exception([[maybe_unused]] void* p_thrown_exception)
+  void __wrap___cxa_free_exception(void* p_thrown_exception)
   {
-    ke::exception_buffer.fill(0);
+    auto object = ke::get_allocation_from_exception(p_thrown_exception);
+    object->allocator->deallocate(object, object->size);
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
@@ -2027,29 +2038,29 @@ extern "C"
   // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_end_catch()
   {
-    auto& exception_object = ke::extract_exception_object(ke::active_exception);
-    if (exception_object.cache.rethrown()) {
-      exception_object.cache.rethrown(false);
+    auto& control_block = ke::control_block;
+    if (control_block.cache.rethrown()) {
+      control_block.cache.rethrown(false);
     } else {
-      __wrap___cxa_free_exception(ke::active_exception);
+      __wrap___cxa_free_exception(control_block.thrown_object);
     }
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
-  void* __wrap___cxa_begin_catch(void* p_exception_object)
+  void* __wrap___cxa_begin_catch(void*)
   {
-    auto* eo = reinterpret_cast<ke::exception_object*>(p_exception_object);
-    auto* thrown_object = ke::extract_thrown_object(eo);
-    return thrown_object;
+    auto& control_block = ke::control_block;
+    control_block.cache.state(ke::runtime_state::handled_state);
+    return control_block.thrown_object;
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_end_cleanup()
   {
-    auto& exception_object = ke::extract_exception_object(ke::active_exception);
-    exception_object.cache.state(ke::runtime_state::unwind_frame);
+    auto& control_block = ke::control_block;
+    control_block.cache.state(ke::runtime_state::unwind_frame);
     // Raise exception returns when an error or call to terminate has been found
-    ke::raise_exception(exception_object);
+    ke::raise_exception(control_block);
     std::terminate();
   }
 
@@ -2058,18 +2069,22 @@ extern "C"
   void __wrap__Unwind_Resume(void*)
   // NOLINTEND(readability-identifier-naming)
   {
-    __wrap___cxa_end_cleanup();
+    auto& control_block = ke::control_block;
+    control_block.cache.state(ke::runtime_state::unwind_frame);
+    // Raise exception returns when an error or call to terminate has been found
+    ke::raise_exception(control_block);
+    std::terminate();
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_rethrow() noexcept(false)
   {
-    auto& exception_object = ke::extract_exception_object(ke::active_exception);
+    auto& control_block = ke::control_block;
 
-    ke::capture_cpu_core(exception_object.cpu);
+    ke::capture_cpu_core(control_block.cpu);
 
-    exception_object.cache.state(ke::runtime_state::get_next_frame);
-    exception_object.cache.rethrown(true);
+    control_block.cache.state(ke::runtime_state::get_next_frame);
+    control_block.cache.rethrown(true);
 
     // This must ALWAYS evaluate to false. But since the variable is volatile,
     // the compiler will not optimize it away and thus, __wrap___cxa_throw will
@@ -2081,10 +2096,9 @@ extern "C"
                                // have in the C++ throw RTTI list, might as well
                                // reuse it here.
     }
-    ke::unwind_frame(ke::cxa_rethrow_unwind_instructions, exception_object.cpu);
-
+    ke::unwind_frame(ke::cxa_rethrow_unwind_instructions, control_block.cpu);
     // Raise exception returns when an error or call to terminate has been found
-    ke::raise_exception(exception_object);
+    ke::raise_exception(control_block);
     // TODO(#38): this area is considered a catch block, meaning that the
     // exception is handled at this point. We should mark it as such.
     std::terminate();
@@ -2095,13 +2109,12 @@ extern "C"
                           std::type_info* p_type_info,
                           ke::destructor_t p_destructor) noexcept(false)
   {
-    ke::active_exception = p_thrown_exception;
-    auto& exception_object = ke::extract_exception_object(p_thrown_exception);
-    exception_object.destructor = p_destructor;
-    ke::capture_cpu_core(exception_object.cpu);
+    auto& control_block = ke::control_block;
 
-    ke::flatten_rtti<12>(
-      p_thrown_exception, exception_object.type_info, p_type_info);
+    control_block.thrown_object = p_thrown_exception;
+    control_block.destructor = p_destructor;
+    ke::capture_cpu_core(control_block.cpu);
+    ke::flatten_rtti(p_thrown_exception, control_block.type_info, p_type_info);
 
     // This must ALWAYS evaluate to false. But since the variable is volatile,
     // the compiler will not optimize it away and thus, __wrap___cxa_throw will
@@ -2113,9 +2126,13 @@ extern "C"
                                // have in the C++ throw RTTI list, might as well
                                // reuse it here.
     }
-    ke::unwind_frame(ke::cxa_throw_unwind_instructions, exception_object.cpu);
+    // Use the expanded unwind instructions to quickly unwind cxa_throw.
+    ke::unwind_frame(ke::cxa_throw_unwind_instructions, control_block.cpu);
+
     // Raise exception returns when an error or call to terminate has been found
-    ke::raise_exception(exception_object);
+    ke::raise_exception(control_block);
+
+    control_block.cache.state(ke::runtime_state::handled_state);
     // TODO(#38): this area is considered a catch block, meaning that the
     // exception is handled at this point. We should mark it as such.
     std::terminate();
