@@ -14,6 +14,7 @@
 
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
+#include <libhal-exceptions/control.hpp>
 
 #include <resource_list.hpp>
 

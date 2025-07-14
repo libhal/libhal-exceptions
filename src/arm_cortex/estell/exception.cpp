@@ -23,9 +23,29 @@
 
 #include "internal.hpp"
 
+// NOLINTBEGIN(bugprone-reserved-identifier)
+// NOLINTBEGIN(readability-identifier-naming)
+extern "C"
+{
+  void _exit([[maybe_unused]] int rc);
+  void* __wrap___cxa_allocate_exception(size_t);
+  void __wrap___cxa_free_exception(void*);
+  void __wrap___cxa_call_unexpected(void*);
+  void __wrap___cxa_end_catch();
+  void* __wrap___cxa_begin_catch(void*);
+  void __wrap___cxa_end_cleanup();
+  void __wrap__Unwind_Resume(void*);
+  void __wrap___cxa_rethrow() noexcept(false);
+  void __wrap___cxa_throw(ke::exception_ptr p_thrown_exception,
+                          std::type_info* p_type_info,
+                          ke::destructor_t p_destructor) noexcept(false);
+}  // extern "C"
+// NOLINTEND(readability-identifier-naming)
+// NOLINTEND(bugprone-reserved-identifier)
+
 namespace ke {
 
-union instructions_t
+struct instructions_t
 {
   // Why the length of 8? ARM unwind instructions are capped at 7 bytes for all
   // possible functions. The 8th instruction will always be the finish byte.
@@ -126,23 +146,6 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
     return *index;
   }
   return *(index - 1);
-}
-
-[[gnu::always_inline]] inline void pop_registers(cortex_m_cpu& p_cpu,
-                                                 std::uint32_t mask)
-{
-  // The mask may not demand that the stack pointer be popped, but the
-  // stack pointer will still need to be popped anyway, so this check
-  // determines if the mask handles this or not.
-  std::uint32_t const* stack_pointer = *p_cpu.sp;
-
-  while (mask) {
-    auto reg_to_restore = std::countr_zero(mask);
-    mask &= ~(1 << reg_to_restore);
-    p_cpu[reg_to_restore] = *(stack_pointer++);
-  }
-
-  p_cpu.sp = stack_pointer;
 }
 
 [[gnu::always_inline]] inline constexpr std::uint32_t read_uleb128(
@@ -1669,35 +1672,20 @@ void unwind_frame(instructions_t const& p_instructions, cortex_m_cpu& p_cpu)
 }
 
 [[gnu::always_inline]]
-inline instructions_t create_instructions_from_entry(
-  exception_object const& p_exception_object)
+constexpr instructions_t personality_to_unwind_instructions(
+  std::uint32_t const* p_handler_data)
 {
   constexpr auto personality_type = hal::bit_mask::from<24, 27>();
-  constexpr auto generic = hal::bit_mask::from<31>();
 
-  instructions_t unwind{};
-
-  std::uint32_t const* handler_data = nullptr;
-  auto const& entry = *p_exception_object.cache.entry_ptr;
-  if (entry.has_inlined_personality()) {
-    handler_data = &entry.personality_offset;
-  } else {
-    auto const* personality = p_exception_object.cache.personality;
-    if (hal::bit_extract<generic>(personality[0])) {
-      handler_data = &personality[0];
-    } else {
-      handler_data = &personality[1];
-    }
-  }
-
-  std::uint32_t header = handler_data[0];
+  instructions_t unwind;
+  std::uint32_t header = p_handler_data[0];
 
   if (hal::bit_extract<personality_type>(header) == 0x0) {
     unwind.data[0] = hal::bit_extract<su16::instruction0>(header);
     unwind.data[1] = hal::bit_extract<su16::instruction1>(header);
     unwind.data[2] = hal::bit_extract<su16::instruction2>(header);
   } else {
-    std::uint32_t first_word = handler_data[1];
+    std::uint32_t first_word = p_handler_data[1];
     std::uint32_t length = hal::bit_extract<lu16_32::length>(header);
     switch (length) {
       case 1: {
@@ -1710,7 +1698,7 @@ inline instructions_t create_instructions_from_entry(
         break;
       }
       case 2: {
-        uint32_t last_word = handler_data[2];
+        uint32_t last_word = p_handler_data[2];
         unwind.data[0] = hal::bit_extract<lu16_32::instruction0>(header);
         unwind.data[1] = hal::bit_extract<lu16_32::instruction1>(header);
         unwind.data[2] = hal::bit_extract<lu16_32::instruction2>(first_word);
@@ -1739,8 +1727,29 @@ inline instructions_t create_instructions_from_entry(
       }
     }
   }
-
   return unwind;
+}
+
+[[gnu::always_inline]]
+constexpr instructions_t create_instructions_from_entry(
+  exception_object const& p_exception_object)
+{
+  constexpr auto generic = hal::bit_mask::from<31>();
+
+  std::uint32_t const* handler_data = nullptr;
+  auto const& entry = *p_exception_object.cache.entry_ptr;
+  if (entry.has_inlined_personality()) {
+    handler_data = &entry.personality_offset;
+  } else {
+    auto const* personality = p_exception_object.cache.personality;
+    if (hal::bit_extract<generic>(personality[0])) {
+      handler_data = &personality[0];
+    } else {
+      handler_data = &personality[1];
+    }
+  }
+
+  return personality_to_unwind_instructions(handler_data);
 }
 
 void raise_exception(exception_object& p_exception_object)
@@ -1788,6 +1797,42 @@ void raise_exception(exception_object& p_exception_object)
     }
   }
 }
+
+consteval instructions_t spare_instruction()
+{
+  instructions_t spare{};
+  // This is the SPARE instruction directly after the FINISH instruction within
+  // the ARM EH ABI.
+  spare.data[0] = 0b10110001;
+  spare.data[1] = 0b00000000;
+  return spare;
+}
+
+template<typename F>
+instructions_t cache(F* p_function_to_be_cached)
+{
+  auto const function_address =
+    reinterpret_cast<std::uintptr_t>(p_function_to_be_cached);
+
+  auto const& entry = ke::get_index_entry(function_address);
+  if (entry.has_inlined_personality()) {
+    return personality_to_unwind_instructions(&entry.personality_offset);
+  } else {
+    // Set unwind information for this cached item to SPARE (the one right
+    // after FINISH in the ARM EH-ABI), which will call terminate. Because
+    // this cache call will occur at static initialization, we cannot throw
+    // and hope to be caught by anything. Nor can we terminate as the
+    // application hasn't provided a terminate handler. We could busy loop
+    // here as well and I'm not opposed to that. But for now, we'll just
+    // terminate when either of our cached functions isn't re-entrant. In
+    // general, we must make sure that our cached functions are re-entrant to
+    // reduce on cycles.
+    return spare_instruction();
+  }
+}
+
+instructions_t cxa_throw_unwind_instructions = cache(&__wrap___cxa_throw);
+instructions_t cxa_rethrow_unwind_instructions = cache(&__wrap___cxa_rethrow);
 }  // namespace ke
 
 // NOLINTBEGIN(bugprone-reserved-identifier)
@@ -2036,6 +2081,8 @@ extern "C"
                                // have in the C++ throw RTTI list, might as well
                                // reuse it here.
     }
+    ke::unwind_frame(ke::cxa_rethrow_unwind_instructions, exception_object.cpu);
+
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(exception_object);
     // TODO(#38): this area is considered a catch block, meaning that the
@@ -2066,6 +2113,7 @@ extern "C"
                                // have in the C++ throw RTTI list, might as well
                                // reuse it here.
     }
+    ke::unwind_frame(ke::cxa_throw_unwind_instructions, exception_object.cpu);
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(exception_object);
     // TODO(#38): this area is considered a catch block, meaning that the
