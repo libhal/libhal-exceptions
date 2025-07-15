@@ -32,7 +32,6 @@ libhal_make_library(
   LIBRARY_NAME libhal-exceptions
 
   SOURCES
-  src/control.cpp
   ${SOURCE_LIST}
 
   PACKAGES
@@ -49,7 +48,6 @@ libhal_unit_test(
   LIBRARY_NAME libhal-exceptions
 
   SOURCES
-  src/control.cpp
   tests/main.test.cpp
   tests/control.test.cpp
   ${SOURCE_LIST}
