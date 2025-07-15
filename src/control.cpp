@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory_resource>
 
@@ -53,7 +54,7 @@ public:
   ~single_exception_allocator() override = default;
 
 private:
-  void* do_allocate(std::size_t p_size,
+  void* do_allocate(std::size_t p_size,  // NOLINT
                     [[maybe_unused]] std::size_t p_alignment) override
   {
     if (m_allocated || p_size > m_buffer.size()) {
@@ -64,7 +65,7 @@ private:
   }
 
   void do_deallocate(void* p_address,
-                     [[maybe_unused]] std::size_t p_size,
+                     [[maybe_unused]] std::size_t p_size,  // NOLINT
                      [[maybe_unused]] std::size_t p_alignment) override
   {
     if (p_address != m_buffer.data()) {
@@ -73,20 +74,21 @@ private:
     m_allocated = false;
   }
 
-  bool do_is_equal(
+  [[nodiscard]] bool do_is_equal(
     std::pmr::memory_resource const& other) const noexcept override
   {
     return this == &other;
   }
 
-  std::array<std::uint8_t, 256> m_buffer{};
+  alignas(std::max_align_t) std::array<std::uint8_t, 64> m_buffer{};
   bool m_allocated = false;
 };
 
-// TODO(#11): Add macro to IFDEF this out if the user want to save 256 bytes.
-single_exception_allocator _default_allocator{};  // NOLINT
-std::pmr::memory_resource* _exception_allocator =
-  &_default_allocator;  // NOLINT
+// TODO(#11): Add macro to IFDEF this out if the user want to save 64 bytes.
+// NOLINTNEXTLINE
+single_exception_allocator _default_allocator{};
+// NOLINTNEXTLINE
+std::pmr::memory_resource* _exception_allocator = &_default_allocator;
 
 void set_exception_allocator(std::pmr::memory_resource& p_allocator) noexcept
 {

@@ -19,14 +19,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <memory_resource>
 #include <typeinfo>
 
 #include <libhal-util/bit.hpp>
 
 namespace ke {
 using exception_ptr = void*;
-exception_ptr current_exception() noexcept;
-
 using destructor_t = void(void*);
 
 struct register_t
@@ -214,14 +213,6 @@ struct index_entry_t
 
 struct cortex_m_cpu
 {
-  // NOTE: We could consider removing r0 to r3. Technically, these are not
-  // callee preserved. We also destroy the state of R0 and R1 when we drop into
-  // a function to either run destructors or to execute a catch block.
-  //
-  // The only real issue issue is vsp = r[nnnn] where `nnnn` can be 0
-  // to 3. Pop r0 to r3 could be instructions we ignore by moving the stack
-  // pointer but ignoring the results. For now, we will support all operations
-  // on these registers until we know we can safely remove them.
   register_t r0;
   register_t r1;
   register_t r2;
@@ -252,13 +243,13 @@ struct cortex_m_cpu
 
 enum class runtime_state : std::uint8_t
 {
-  get_next_frame = 0,
-  enter_function = 1,
-  unwind_frame = 2,
-  // TODO(#37): Add handled state
+  handled_state = 0,
+  get_next_frame = 1,
+  enter_function = 2,
+  unwind_frame = 3,
 };
 
-struct cache_t
+struct exception_cache
 {
   index_entry_t const* entry_ptr = nullptr;
   std::uint32_t const* personality = nullptr;
@@ -363,37 +354,34 @@ struct flattened_hierarchy
   }
 };
 
-struct exception_object
+template<typename T = std::byte>
+struct exception_allocation
 {
-  cortex_m_cpu cpu{};
-  flattened_hierarchy<12> type_info{};
-  std::size_t choosen_type_offset = 0;
-  destructor_t* destructor = nullptr;
-  cache_t cache{};
+  std::pmr::memory_resource* allocator = nullptr;
+  std::size_t size = 0uz;
+  alignas(std::max_align_t) T data;
 };
 
-constexpr size_t exception_object_size = sizeof(exception_object);
-
-exception_object& get_exception_object(void* p_thrown_exception);
-
-inline exception_object& extract_exception_object(void* p_thrown_exception)
+template<typename T = std::byte>
+exception_allocation<T>* get_allocation_from_exception(void* p_exception_ptr)
 {
-  auto thrown_address = reinterpret_cast<std::intptr_t>(p_thrown_exception);
-  auto start_of_exception_object = thrown_address - sizeof(exception_object);
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
-  return *reinterpret_cast<exception_object*>(start_of_exception_object);
+  auto const member_offset = offsetof(exception_allocation<T>, data);
+  auto const exception_bytes = static_cast<std::byte*>(p_exception_ptr);
+  return reinterpret_cast<exception_allocation<T>*>(exception_bytes -
+                                                    member_offset);
 }
 
-inline void* extract_thrown_object(exception_object* p_exception_object)
+struct exception_control_block
 {
-  auto object_address = reinterpret_cast<std::intptr_t>(p_exception_object);
-  auto start_of_thrown = object_address + sizeof(exception_object) +
-                         p_exception_object->choosen_type_offset;
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
-  return reinterpret_cast<void*>(start_of_thrown);
-}
+  cortex_m_cpu cpu{};
+  flattened_hierarchy<8> type_info{};
+  void* thrown_object;
+  std::size_t choosen_type_offset = 0;
+  destructor_t* destructor = nullptr;
+  exception_cache cache{};
+};
 
-inline constexpr auto eo_size = sizeof(exception_object);
+constexpr auto ecb_size = sizeof(exception_control_block);
 
 struct [[gnu::packed]] su16_t
 {
