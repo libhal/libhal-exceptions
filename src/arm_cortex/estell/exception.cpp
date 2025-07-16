@@ -131,9 +131,9 @@ std::span<index_entry_t const> get_arm_exception_index()
 // NOLINTBEGIN(bugprone-reserved-identifier)
 // NOLINTBEGIN(readability-identifier-naming)
 namespace __except_abi {
-extern std::span<std::uint32_t> near_point_descriptor;
-extern std::span<std::uint32_t> normal_table;
-extern std::span<std::uint32_t> small_table;
+[[gnu::weak]] std::span<std::uint32_t> near_point_descriptor{};
+[[gnu::weak]] std::span<std::uint32_t> normal_table{};
+[[gnu::weak]] std::span<std::uint32_t> small_table{};
 }  // namespace __except_abi
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(bugprone-reserved-identifier)
@@ -1812,8 +1812,14 @@ void raise_exception(exception_control_block& p_exception_object)
         std::terminate();
       }
       case runtime_state::get_next_frame: {
-        auto const& index_entry =
-          get_index_entry_near_point(p_exception_object.cpu.pc);
+        auto const& index_entry = [&p_exception_object]() -> decltype(auto) {
+          if (__except_abi::near_point_descriptor.empty()) {
+            return get_index_entry(p_exception_object.cpu.pc);
+          } else {
+            return get_index_entry_near_point(p_exception_object.cpu.pc);
+          }
+        }();
+
         p_exception_object.cache.entry_ptr = &index_entry;
         // SU16 data
         if (index_entry.has_inlined_personality()) {
@@ -1867,6 +1873,8 @@ consteval instructions_t spare_instruction()
 template<typename F>
 instructions_t cache(F* p_function_to_be_cached)
 {
+  ke::control_block.cache.state(runtime_state::handled_state);
+
   auto const function_address =
     reinterpret_cast<std::uintptr_t>(p_function_to_be_cached);
 

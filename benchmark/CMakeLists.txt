@@ -38,7 +38,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/platforms/$ENV{LIBHAL_PLATFORM}.cpp")
     list(APPEND startup_source_files platforms/$ENV{LIBHAL_PLATFORM}.cpp)
 endif()
 
-add_library(startup_code ${startup_source_files} except0_depth70.nm.np.cpp)
+add_library(startup_code ${startup_source_files}
+# except0_depth70.nm.np.cpp
+)
 
 target_include_directories(startup_code PUBLIC .)
 target_compile_options(startup_code PRIVATE
@@ -87,7 +89,7 @@ foreach(test_path ${GENERATED_TEST})
 
   target_link_options(${elf} PRIVATE -fno-threadsafe-statics
     -L${CMAKE_SOURCE_DIR}/
-    -Tstm32f103.ld
+    # -Tstm32f103.ld
   )
 
   if(prebuilt-picolibc_FOUND)
