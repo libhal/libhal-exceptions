@@ -174,6 +174,14 @@ void run_test() {{
   }}
 
   pause();
+
+  try {{
+    depth_01();
+  }} catch (test_error const& e) {{
+    end();
+  }}
+
+  pause();
 }}
 
 '''
@@ -303,16 +311,32 @@ void run_test() {{
   if (!result_70) {{
     end();
   }}
+
+  pause();
+
   auto result_50 = depth_50();
   if (!result_50) {{
     end();
   }}
+
+  pause();
+
   auto result_30 = depth_30();
   if (!result_30) {{
     end();
   }}
+
+  pause();
+
   auto result_10 = depth_10();
   if (!result_10) {{
+    end();
+  }}
+
+  pause();
+
+  auto result_01 = depth_01();
+  if (!result_01) {{
     end();
   }}
 }}

@@ -2099,8 +2099,9 @@ extern "C"
     ke::unwind_frame(ke::cxa_rethrow_unwind_instructions, control_block.cpu);
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(control_block);
-    // TODO(#38): this area is considered a catch block, meaning that the
-    // exception is handled at this point. We should mark it as such.
+
+    // If raise exception returns it means it failed and we should terminate
+    control_block.cache.state(ke::runtime_state::handled_state);
     std::terminate();
   }
 
@@ -2132,9 +2133,8 @@ extern "C"
     // Raise exception returns when an error or call to terminate has been found
     ke::raise_exception(control_block);
 
+    // If raise exception returns it means it failed and we should terminate
     control_block.cache.state(ke::runtime_state::handled_state);
-    // TODO(#38): this area is considered a catch block, meaning that the
-    // exception is handled at this point. We should mark it as such.
     std::terminate();
   }
 }  // extern "C"
