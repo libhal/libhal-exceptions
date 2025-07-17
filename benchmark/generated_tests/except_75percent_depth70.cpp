@@ -1359,4 +1359,12 @@ void run_test()
   }
 
   pause();
+
+  try {
+    depth_01();
+  } catch (test_error const& e) {
+    end();
+  }
+
+  pause();
 }
