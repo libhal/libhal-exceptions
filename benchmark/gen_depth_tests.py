@@ -361,7 +361,7 @@ def generate_test_files(destructor_percent: int,
     # Generate exception file
     exception_content = generate_exception_file(
         destructor_percent, error_object_size)
-    exception_filename = f"except_{destructor_percent}_cleanup_{error_object_size}_error.cpp"
+    exception_filename = f"except_{error_object_size:02d}_error_{destructor_percent:03d}_cleanup.cpp"
     exception_path = output_dir / exception_filename
 
     with open(exception_path, 'w') as f:
@@ -371,7 +371,7 @@ def generate_test_files(destructor_percent: int,
     # Generate result file
     result_content = generate_result_file(
         destructor_percent, error_object_size)
-    result_filename = f"result_{destructor_percent}_cleanup_{error_object_size}-error.cpp"
+    result_filename = f"result_{error_object_size:02d}_error_{destructor_percent:03d}_cleanup.cpp"
     result_path = output_dir / result_filename
 
     with open(result_path, 'w') as f:
@@ -383,13 +383,12 @@ def main():
     """Generate test files for all combinations."""
 
     destructor_percentages = [0, 25, 50, 75, 100]
-    error_sizes = [0, 16, 32, 64, 96]
+    error_sizes = [4, 32, 64, 96]
     output_dir = Path("generated_tests")
 
     for destructor_pct in destructor_percentages:
         for error_size in error_sizes:
-            generate_test_files(destructor_pct, MAX_DEPTH,
-                                output_dir, error_size)
+            generate_test_files(destructor_pct, output_dir, error_size)
 
     print(
         f"\nGenerated {len(error_sizes) * len(destructor_percentages) * 2} test files in {output_dir}/")

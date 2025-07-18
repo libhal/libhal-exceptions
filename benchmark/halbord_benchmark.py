@@ -119,7 +119,7 @@ class HALbORDController:
                     pulse_durations = self._analyze_hex_data(temp_path)
 
                     # Clean up temp file
-                    # Path(temp_path).unlink()
+                    Path(temp_path).unlink()
 
                     logger.info(
                         f"Successfully flashed and captured {len(pulse_durations)} pulses")
@@ -251,8 +251,8 @@ def main():
     parser.add_argument(
         '--samples', '-n',
         type=int,
-        default=500000,
-        help='Number of samples to capture (default: 500000)'
+        default=1000000,
+        help='Number of samples to capture (default: 1000000)'
     )
     parser.add_argument(
         '--timeout',

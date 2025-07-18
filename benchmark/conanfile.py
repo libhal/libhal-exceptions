@@ -20,6 +20,7 @@ import os
 
 class demos(ConanFile):
     python_requires = "libhal-bootstrap/[>=4.3.0 <5]"
+    python_requires_extend = "libhal-bootstrap.demo"
     settings = "compiler", "build_type", "os", "arch"
     options = {
         "platform": ["ANY"],
@@ -61,5 +62,7 @@ class demos(ConanFile):
         cmake.build()
 
     def requirements(self):
+        bootstrap = self.python_requires["libhal-bootstrap"]
+        bootstrap.module.add_demo_requirements(self)
         if self.options.platform != "mac":
             self.requires("libhal-exceptions/1.2.0")
