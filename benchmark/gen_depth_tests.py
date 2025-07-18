@@ -16,12 +16,15 @@
 
 from pathlib import Path
 
+MAX_DEPTH = 70
 
-def generate_exception_file(destructor_percent: int, depth: int) -> str:
+
+def generate_exception_file(destructor_percent: int,
+                            error_object_size: int = 4) -> str:
     """Generate C++ file for exception-based error propagation test."""
 
     # Calculate how many functions should have destructors
-    destructor_count = int((destructor_percent / 100.0) * depth)
+    destructor_count = int((destructor_percent / 100.0) * MAX_DEPTH)
 
     content = f'''#include <array>
 #include <cstdint>
@@ -34,7 +37,7 @@ std::int32_t volatile side_effect = 0;
 
 // Error type for testing
 struct test_error {{
-  std::array<std::uint8_t, 4> data;
+  std::array<std::uint8_t, {error_object_size}> data;
 }};
 
 // Simple class without destructor
@@ -74,27 +77,28 @@ private:
 '''
 
     # Generate forward declarations
-    for i in range(depth, 0, -1):
+    for i in range(MAX_DEPTH, 0, -1):
         content += f"int depth_{i:02d}();\n"
 
     content += "\n"
 
     # Generate function implementations
-    for i in range(depth, 0, -1):
+    for i in range(MAX_DEPTH, 0, -1):
         # Calculate which functions should have destructors - evenly distributed
-        function_index = depth - i  # 0-based index for this function
+        function_index = MAX_DEPTH - i  # 0-based index for this function
 
         # Calculate total destructor count and distribute evenly
-        destructor_count = int((destructor_percent / 100.0) * depth)
+        destructor_count = int((destructor_percent / 100.0) * MAX_DEPTH)
 
         if destructor_count == 0:
             has_destructor = False
-        elif destructor_count >= depth:
+        elif destructor_count >= MAX_DEPTH:
             has_destructor = True
         else:
             # Even distribution using integer arithmetic
-            current_position = function_index * destructor_count // depth
-            next_position = (function_index + 1) * destructor_count // depth
+            current_position = function_index * destructor_count // MAX_DEPTH
+            next_position = (function_index + 1) * \
+                destructor_count // MAX_DEPTH
             has_destructor = next_position > current_position
 
         obj_type = "destructor_object" if has_destructor else "simple_object"
@@ -140,7 +144,7 @@ int depth_{i:02d}() {{
     # Generate test runner
     content += f'''// Test runner
 void run_test() {{
-  log_start("EXCEPT_{destructor_percent}PCT_DEPTH{depth}");
+  log_start("EXCEPT_{destructor_percent}PCT_DEPTH");
   side_effect = 1; // Ensure we will throw
 
   try {{
@@ -189,11 +193,12 @@ void run_test() {{
     return content
 
 
-def generate_result_file(destructor_percent: int, depth: int) -> str:
+def generate_result_file(destructor_percent: int,
+                         error_object_size: int = 4) -> str:
     """Generate C++ file for std::expected-based error propagation test."""
 
     # Calculate how many functions should have destructors
-    destructor_count = int((destructor_percent / 100.0) * depth)
+    destructor_count = int((destructor_percent / 100.0) * MAX_DEPTH)
 
     content = f'''#include <array>
 #include <cstdint>
@@ -207,7 +212,7 @@ std::int32_t volatile side_effect = 0;
 
 // Error type for testing
 struct test_error {{
-  std::array<std::uint8_t, 4> data;
+  std::array<std::uint8_t, {error_object_size}> data;
 }};
 
 using result_type = std::expected<int, test_error>;
@@ -249,13 +254,13 @@ private:
 '''
 
     # Generate forward declarations
-    for i in range(depth, 0, -1):
+    for i in range(MAX_DEPTH, 0, -1):
         content += f"result_type depth_{i:02d}();\n"
 
     content += "\n"
 
     # Generate function implementations
-    for i in range(depth, 0, -1):
+    for i in range(MAX_DEPTH, 0, -1):
         # Determine if this function should have a destructor
         has_destructor = i <= destructor_count
         obj_type = "destructor_object" if has_destructor else "simple_object"
@@ -304,7 +309,7 @@ result_type depth_{i:02d}() {{
     # Generate test runner
     content += f'''// Test runner
 void run_test() {{
-  log_start("RESULT-{destructor_percent}%-DEPTH{depth}");
+  log_start("RESULT-{destructor_percent}%-DEPTH{MAX_DEPTH}");
   side_effect = 1; // Ensure we will return error
 
   auto result_70 = depth_70();
@@ -345,15 +350,18 @@ void run_test() {{
     return content
 
 
-def generate_test_files(destructor_percent: int, depth: int, output_dir: Path):
+def generate_test_files(destructor_percent: int,
+                        output_dir: Path,
+                        error_object_size: int = 4):
     """Generate both exception and result test files."""
 
     # Create output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate exception file
-    exception_content = generate_exception_file(destructor_percent, depth)
-    exception_filename = f"except_{destructor_percent}percent_depth{depth}.cpp"
+    exception_content = generate_exception_file(
+        destructor_percent, error_object_size)
+    exception_filename = f"except_{destructor_percent}_cleanup_{error_object_size}_error.cpp"
     exception_path = output_dir / exception_filename
 
     with open(exception_path, 'w') as f:
@@ -361,8 +369,9 @@ def generate_test_files(destructor_percent: int, depth: int, output_dir: Path):
     print(f"Generated: {exception_path}")
 
     # Generate result file
-    result_content = generate_result_file(destructor_percent, depth)
-    result_filename = f"result_{destructor_percent}percent_depth{depth}.cpp"
+    result_content = generate_result_file(
+        destructor_percent, error_object_size)
+    result_filename = f"result_{destructor_percent}_cleanup_{error_object_size}-error.cpp"
     result_path = output_dir / result_filename
 
     with open(result_path, 'w') as f:
@@ -374,14 +383,16 @@ def main():
     """Generate test files for all combinations."""
 
     destructor_percentages = [0, 25, 50, 75, 100]
-    max_depth = 70
+    error_sizes = [0, 16, 32, 64, 96]
     output_dir = Path("generated_tests")
 
     for destructor_pct in destructor_percentages:
-        generate_test_files(destructor_pct, max_depth, output_dir)
+        for error_size in error_sizes:
+            generate_test_files(destructor_pct, MAX_DEPTH,
+                                output_dir, error_size)
 
     print(
-        f"\nGenerated {len(destructor_percentages) * 2} test files in {output_dir}/")
+        f"\nGenerated {len(error_sizes) * len(destructor_percentages) * 2} test files in {output_dir}/")
 
 
 if __name__ == "__main__":
