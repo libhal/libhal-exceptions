@@ -25,7 +25,9 @@ void initialize_platform()
   using namespace hal::literals;
 
   // Set the MCU to the maximum clock speed
+#ifndef DEBUG
   hal::lpc40::maximum(12.0_MHz);
+#endif
 
   static hal::cortex_m::dwt_counter dwt_steady_clock(
     hal::lpc40::get_frequency(hal::lpc40::peripheral::cpu));
