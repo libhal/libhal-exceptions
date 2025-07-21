@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -31,6 +32,44 @@ output_pin* time_signal = nullptr;
 hal::serial* analyzer_serial = nullptr;
 hal::cortex_m::dwt_counter* counter = nullptr;
 
+template<std::size_t N>
+class single_block_memory_resource : public std::pmr::memory_resource
+{
+public:
+  single_block_memory_resource() = default;
+
+private:
+  void* do_allocate(std::size_t p_bytes, std::size_t) override
+  {
+    if (m_allocated || p_bytes > N) {
+      std::terminate();
+    }
+    m_allocated = true;
+    return m_buffer.data();
+  }
+
+  void do_deallocate(void* p_ptr, std::size_t, std::size_t) override
+  {
+    if (p_ptr != m_buffer.data()) {
+      std::terminate();
+    }
+    m_buffer.fill(0);
+    m_allocated = false;
+  }
+
+  [[nodiscard]] bool do_is_equal(
+    std::pmr::memory_resource const& other) const noexcept override
+  {
+    return this == &other;
+  }
+
+private:
+  alignas(std::max_align_t) std::array<hal::byte, N> m_buffer;
+  bool m_allocated = false;
+};
+
+single_block_memory_resource<256> exception_memory_resource{};
+
 void initialize_platform()
 {
   using namespace std::literals;
@@ -42,21 +81,22 @@ void initialize_platform()
     }
   });
 
+  hal::set_exception_allocator(exception_memory_resource);
+
   static hal::stm32f1::gpio<hal::stm32f1::peripheral::gpio_a> gpio_a;
   static auto signal_pin = gpio_a.acquire_output_pin(0);
   time_signal = &signal_pin;
 
-  time_signal->level(true);
-  time_signal->level(false);
-  time_signal->level(true);
-  time_signal->level(false);
-  time_signal->level(true);
-  time_signal->level(false);
-  time_signal->level(true);
-  time_signal->level(false);
-  time_signal->level(true);
-  time_signal->level(false);
-  time_signal->level(true);
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
 
   static hal::cortex_m::dwt_counter dwt_steady_clock(
     hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));

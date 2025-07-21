@@ -10,7 +10,7 @@ std::int32_t volatile side_effect = 0;
 // Error type for testing
 struct test_error
 {
-  std::array<std::uint8_t, 4> data;
+  std::array<std::uint8_t, 96> data;
 };
 
 // Simple class without destructor
@@ -147,7 +147,7 @@ int depth_70()
 [[gnu::noinline]]
 int depth_69()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -181,7 +181,7 @@ int depth_68()
 [[gnu::noinline]]
 int depth_67()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -198,7 +198,7 @@ int depth_67()
 [[gnu::noinline]]
 int depth_66()
 {
-  destructor_object obj(side_effect >> 8);
+  simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -215,7 +215,7 @@ int depth_66()
 [[gnu::noinline]]
 int depth_65()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -249,7 +249,7 @@ int depth_64()
 [[gnu::noinline]]
 int depth_63()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -266,7 +266,7 @@ int depth_63()
 [[gnu::noinline]]
 int depth_62()
 {
-  destructor_object obj(side_effect >> 8);
+  simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -283,7 +283,7 @@ int depth_62()
 [[gnu::noinline]]
 int depth_61()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -317,7 +317,7 @@ int depth_60()
 [[gnu::noinline]]
 int depth_59()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -334,7 +334,7 @@ int depth_59()
 [[gnu::noinline]]
 int depth_58()
 {
-  destructor_object obj(side_effect >> 8);
+  simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -351,7 +351,7 @@ int depth_58()
 [[gnu::noinline]]
 int depth_57()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -385,7 +385,7 @@ int depth_56()
 [[gnu::noinline]]
 int depth_55()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -402,7 +402,7 @@ int depth_55()
 [[gnu::noinline]]
 int depth_54()
 {
-  destructor_object obj(side_effect >> 8);
+  simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -419,7 +419,7 @@ int depth_54()
 [[gnu::noinline]]
 int depth_53()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -453,7 +453,7 @@ int depth_52()
 [[gnu::noinline]]
 int depth_51()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -470,7 +470,7 @@ int depth_51()
 [[gnu::noinline]]
 int depth_50()
 {
-  destructor_object obj(side_effect >> 8);
+  simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -487,7 +487,7 @@ int depth_50()
 [[gnu::noinline]]
 int depth_49()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -521,7 +521,7 @@ int depth_48()
 [[gnu::noinline]]
 int depth_47()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -538,7 +538,7 @@ int depth_47()
 [[gnu::noinline]]
 int depth_46()
 {
-  destructor_object obj(side_effect >> 8);
+  simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -555,7 +555,7 @@ int depth_46()
 [[gnu::noinline]]
 int depth_45()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -589,7 +589,7 @@ int depth_44()
 [[gnu::noinline]]
 int depth_43()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -606,7 +606,7 @@ int depth_43()
 [[gnu::noinline]]
 int depth_42()
 {
-  destructor_object obj(side_effect >> 8);
+  simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -623,7 +623,7 @@ int depth_42()
 [[gnu::noinline]]
 int depth_41()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -657,7 +657,7 @@ int depth_40()
 [[gnu::noinline]]
 int depth_39()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -674,7 +674,7 @@ int depth_39()
 [[gnu::noinline]]
 int depth_38()
 {
-  destructor_object obj(side_effect >> 8);
+  simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -691,7 +691,7 @@ int depth_38()
 [[gnu::noinline]]
 int depth_37()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -725,7 +725,7 @@ int depth_36()
 [[gnu::noinline]]
 int depth_35()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -793,7 +793,7 @@ int depth_32()
 [[gnu::noinline]]
 int depth_31()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -861,7 +861,7 @@ int depth_28()
 [[gnu::noinline]]
 int depth_27()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -929,7 +929,7 @@ int depth_24()
 [[gnu::noinline]]
 int depth_23()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -997,7 +997,7 @@ int depth_20()
 [[gnu::noinline]]
 int depth_19()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -1065,7 +1065,7 @@ int depth_16()
 [[gnu::noinline]]
 int depth_15()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -1133,7 +1133,7 @@ int depth_12()
 [[gnu::noinline]]
 int depth_11()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -1201,7 +1201,7 @@ int depth_08()
 [[gnu::noinline]]
 int depth_07()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -1269,7 +1269,7 @@ int depth_04()
 [[gnu::noinline]]
 int depth_03()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
@@ -1325,7 +1325,7 @@ int depth_01()
 // Test runner
 void run_test()
 {
-  log_start("EXCEPT_25PCT_DEPTH70");
+  log_start("EXCEPT_50PCT_DEPTH");
   side_effect = 1;  // Ensure we will throw
 
   try {

@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <string_view>
 
 #include <platform.hpp>
@@ -10,8 +11,10 @@ std::int32_t volatile side_effect = 0;
 // Error type for testing
 struct test_error
 {
-  std::array<std::uint8_t, 4> data;
+  std::array<std::uint8_t, 96> data;
 };
+
+using result_type = std::expected<int, test_error>;
 
 // Simple class without destructor
 class simple_object
@@ -56,1267 +59,1474 @@ private:
   std::int32_t m_value;
 };
 
-int depth_70();
-int depth_69();
-int depth_68();
-int depth_67();
-int depth_66();
-int depth_65();
-int depth_64();
-int depth_63();
-int depth_62();
-int depth_61();
-int depth_60();
-int depth_59();
-int depth_58();
-int depth_57();
-int depth_56();
-int depth_55();
-int depth_54();
-int depth_53();
-int depth_52();
-int depth_51();
-int depth_50();
-int depth_49();
-int depth_48();
-int depth_47();
-int depth_46();
-int depth_45();
-int depth_44();
-int depth_43();
-int depth_42();
-int depth_41();
-int depth_40();
-int depth_39();
-int depth_38();
-int depth_37();
-int depth_36();
-int depth_35();
-int depth_34();
-int depth_33();
-int depth_32();
-int depth_31();
-int depth_30();
-int depth_29();
-int depth_28();
-int depth_27();
-int depth_26();
-int depth_25();
-int depth_24();
-int depth_23();
-int depth_22();
-int depth_21();
-int depth_20();
-int depth_19();
-int depth_18();
-int depth_17();
-int depth_16();
-int depth_15();
-int depth_14();
-int depth_13();
-int depth_12();
-int depth_11();
-int depth_10();
-int depth_09();
-int depth_08();
-int depth_07();
-int depth_06();
-int depth_05();
-int depth_04();
-int depth_03();
-int depth_02();
-int depth_01();
+result_type depth_70();
+result_type depth_69();
+result_type depth_68();
+result_type depth_67();
+result_type depth_66();
+result_type depth_65();
+result_type depth_64();
+result_type depth_63();
+result_type depth_62();
+result_type depth_61();
+result_type depth_60();
+result_type depth_59();
+result_type depth_58();
+result_type depth_57();
+result_type depth_56();
+result_type depth_55();
+result_type depth_54();
+result_type depth_53();
+result_type depth_52();
+result_type depth_51();
+result_type depth_50();
+result_type depth_49();
+result_type depth_48();
+result_type depth_47();
+result_type depth_46();
+result_type depth_45();
+result_type depth_44();
+result_type depth_43();
+result_type depth_42();
+result_type depth_41();
+result_type depth_40();
+result_type depth_39();
+result_type depth_38();
+result_type depth_37();
+result_type depth_36();
+result_type depth_35();
+result_type depth_34();
+result_type depth_33();
+result_type depth_32();
+result_type depth_31();
+result_type depth_30();
+result_type depth_29();
+result_type depth_28();
+result_type depth_27();
+result_type depth_26();
+result_type depth_25();
+result_type depth_24();
+result_type depth_23();
+result_type depth_22();
+result_type depth_21();
+result_type depth_20();
+result_type depth_19();
+result_type depth_18();
+result_type depth_17();
+result_type depth_16();
+result_type depth_15();
+result_type depth_14();
+result_type depth_13();
+result_type depth_12();
+result_type depth_11();
+result_type depth_10();
+result_type depth_09();
+result_type depth_08();
+result_type depth_07();
+result_type depth_06();
+result_type depth_05();
+result_type depth_04();
+result_type depth_03();
+result_type depth_02();
+result_type depth_01();
 
 [[gnu::noinline]]
-int depth_70()
+result_type depth_70()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_69();
+  auto result = depth_69();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_69()
+result_type depth_69()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_68();
+  auto result = depth_68();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_68()
+result_type depth_68()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_67();
+  auto result = depth_67();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_67()
+result_type depth_67()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_66();
+  auto result = depth_66();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_66()
+result_type depth_66()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_65();
+  auto result = depth_65();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_65()
+result_type depth_65()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_64();
+  auto result = depth_64();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_64()
+result_type depth_64()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_63();
+  auto result = depth_63();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_63()
+result_type depth_63()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_62();
+  auto result = depth_62();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_62()
+result_type depth_62()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_61();
+  auto result = depth_61();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_61()
+result_type depth_61()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_60();
+  auto result = depth_60();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_60()
+result_type depth_60()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_59();
+  auto result = depth_59();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_59()
+result_type depth_59()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_58();
+  auto result = depth_58();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_58()
+result_type depth_58()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_57();
+  auto result = depth_57();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_57()
+result_type depth_57()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_56();
+  auto result = depth_56();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_56()
+result_type depth_56()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_55();
+  auto result = depth_55();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_55()
+result_type depth_55()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_54();
+  auto result = depth_54();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_54()
+result_type depth_54()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_53();
+  auto result = depth_53();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_53()
+result_type depth_53()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_52();
+  auto result = depth_52();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_52()
+result_type depth_52()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_51();
+  auto result = depth_51();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_51()
+result_type depth_51()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_50();
+  auto result = depth_50();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_50()
+result_type depth_50()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_49();
+  auto result = depth_49();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_49()
+result_type depth_49()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_48();
+  auto result = depth_48();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_48()
+result_type depth_48()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_47();
+  auto result = depth_47();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_47()
+result_type depth_47()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_46();
+  auto result = depth_46();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_46()
+result_type depth_46()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_45();
+  auto result = depth_45();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_45()
+result_type depth_45()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_44();
+  auto result = depth_44();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_44()
+result_type depth_44()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_43();
+  auto result = depth_43();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_43()
+result_type depth_43()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_42();
+  auto result = depth_42();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_42()
+result_type depth_42()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_41();
+  auto result = depth_41();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_41()
+result_type depth_41()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_40();
+  auto result = depth_40();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_40()
+result_type depth_40()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_39();
+  auto result = depth_39();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_39()
+result_type depth_39()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_38();
+  auto result = depth_38();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_38()
+result_type depth_38()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_37();
+  auto result = depth_37();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_37()
+result_type depth_37()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_36();
+  auto result = depth_36();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_36()
+result_type depth_36()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_35();
+  auto result = depth_35();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_35()
+result_type depth_35()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_34();
+  auto result = depth_34();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_34()
+result_type depth_34()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_33();
+  auto result = depth_33();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_33()
+result_type depth_33()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_32();
+  auto result = depth_32();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_32()
+result_type depth_32()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_31();
+  auto result = depth_31();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_31()
+result_type depth_31()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_30();
+  auto result = depth_30();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_30()
+result_type depth_30()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_29();
+  auto result = depth_29();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_29()
+result_type depth_29()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_28();
+  auto result = depth_28();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_28()
+result_type depth_28()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_27();
+  auto result = depth_27();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_27()
+result_type depth_27()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_26();
+  auto result = depth_26();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_26()
+result_type depth_26()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_25();
+  auto result = depth_25();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_25()
+result_type depth_25()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_24();
+  auto result = depth_24();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_24()
+result_type depth_24()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_23();
+  auto result = depth_23();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_23()
+result_type depth_23()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_22();
+  auto result = depth_22();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_22()
+result_type depth_22()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_21();
+  auto result = depth_21();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_21()
+result_type depth_21()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_20();
+  auto result = depth_20();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_20()
+result_type depth_20()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_19();
+  auto result = depth_19();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_19()
+result_type depth_19()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_18();
+  auto result = depth_18();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_18()
+result_type depth_18()
 {
   simple_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_17();
+  auto result = depth_17();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_17()
+result_type depth_17()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_16();
+  auto result = depth_16();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_16()
+result_type depth_16()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_15();
+  auto result = depth_15();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_15()
+result_type depth_15()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_14();
+  auto result = depth_14();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_14()
+result_type depth_14()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_13();
+  auto result = depth_13();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_13()
+result_type depth_13()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_12();
+  auto result = depth_12();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_12()
+result_type depth_12()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_11();
+  auto result = depth_11();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_11()
+result_type depth_11()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_10();
+  auto result = depth_10();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_10()
+result_type depth_10()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_09();
+  auto result = depth_09();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_09()
+result_type depth_09()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_08();
+  auto result = depth_08();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_08()
+result_type depth_08()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_07();
+  auto result = depth_07();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_07()
+result_type depth_07()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_06();
+  auto result = depth_06();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_06()
+result_type depth_06()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_05();
+  auto result = depth_05();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_05()
+result_type depth_05()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_04();
+  auto result = depth_04();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_04()
+result_type depth_04()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_03();
+  auto result = depth_03();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_03()
+result_type depth_03()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_02();
+  auto result = depth_02();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_02()
+result_type depth_02()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  int result = depth_01();
+  auto result = depth_01();
+  if (!result) {
+    return result;  // Propagate error
+  }
 
   // Use the variable after the call
   if (preserve_frame < 0) {
     return -1;  // Never executed but prevents optimization
   }
-  return result + side_effect;
+
+  return result.value();
 }
 
 [[gnu::noinline]]
-int depth_01()
+result_type depth_01()
 {
-  simple_object obj(side_effect >> 8);
+  destructor_object obj(side_effect >> 8);
   obj.do_work();
 
   int volatile preserve_frame = side_effect;
-
-  // Use the variable after the call
-  if (preserve_frame < 0) {
-    return -1;  // Never executed but prevents optimization
-  }
 
-  // This is where the exception originates
+  // This is where the error originates
   if (side_effect > 0) {
     start();
-    throw test_error{ .data = { 0xDE, 0xAD, 0xBE, 0xEF } };
+    return std::unexpected(test_error{ .data = { 0xDE, 0xAD, 0xBE, 0xEF } });
+  }
+
+  // Use the variable after the call
+  if (preserve_frame < 0) {
+    return -1;  // Never executed but prevents optimization
   }
 
   return side_effect;
@@ -1325,46 +1535,39 @@ int depth_01()
 // Test runner
 void run_test()
 {
-  log_start("EXCEPT_0PCT_DEPTH70");
-  side_effect = 1;  // Ensure we will throw
+  log_start("RESULT-25%-DEPTH70");
+  side_effect = 1;  // Ensure we will return error
 
-  try {
-    depth_70();
-  } catch (test_error const& e) {
+  auto result_70 = depth_70();
+  if (!result_70) {
     end();
   }
 
   pause();
 
-  try {
-    depth_50();
-  } catch (test_error const& e) {
+  auto result_50 = depth_50();
+  if (!result_50) {
     end();
   }
 
   pause();
 
-  try {
-    depth_30();
-  } catch (test_error const& e) {
+  auto result_30 = depth_30();
+  if (!result_30) {
     end();
   }
 
   pause();
 
-  try {
-    depth_10();
-  } catch (test_error const& e) {
+  auto result_10 = depth_10();
+  if (!result_10) {
     end();
   }
 
   pause();
 
-  try {
-    depth_01();
-  } catch (test_error const& e) {
+  auto result_01 = depth_01();
+  if (!result_01) {
     end();
   }
-
-  pause();
 }
