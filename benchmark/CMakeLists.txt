@@ -85,7 +85,10 @@ foreach(test_path ${GENERATED_TEST})
     libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
   )
 
-  target_link_options(${elf} PRIVATE -fno-threadsafe-statics)
+  target_link_options(${elf} PRIVATE
+    -fno-threadsafe-statics
+    -Wl,-plugin=/Users/kammce/git/libhal/libhal-exceptions/nearpoint/build/Release/nearpoint.so
+  )
 
   if(prebuilt-picolibc_FOUND)
     target_link_libraries(${elf} PRIVATE picolibc)
