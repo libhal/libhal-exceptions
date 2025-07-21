@@ -60,6 +60,17 @@ if(prebuilt-picolibc_FOUND)
     message(STATUS "Found picolibc, linking it in!")
 endif()
 
+# Generate nearpoint linker command if the file exists
+set(nearpoint_so_relative_path
+    ${CMAKE_SOURCE_DIR}/../nearpoint/build/Release/nearpoint.so)
+set(near_point_plugin)
+if(EXISTS ${nearpoint_so_relative_path})
+  message(STATUS "Injecting 'nearpoint.so' shared library command")
+  set(near_point_plugin -Wl,-plugin=/${nearpoint_so_relative_path})
+else()
+  message(WARNING "'nearpoint.so' shared not found")
+endif()
+
 # Glob all the files in the directory 'generated_tests'
 file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/*.cpp")
 
@@ -87,7 +98,7 @@ foreach(test_path ${GENERATED_TEST})
 
   target_link_options(${elf} PRIVATE
     -fno-threadsafe-statics
-    -Wl,-plugin=/Users/kammce/git/libhal/libhal-exceptions/nearpoint/build/Release/nearpoint.so
+    ${near_point_plugin}
   )
 
   if(prebuilt-picolibc_FOUND)

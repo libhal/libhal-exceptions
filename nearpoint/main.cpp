@@ -1,6 +1,7 @@
-#include <cstdio>
 #include <cstring>
 
+#include <format>
+#include <string>
 #include <string_view>
 
 #include <plugin-api.h>
@@ -14,12 +15,22 @@ namespace {
 // Function to handle messages/logging
 ld_plugin_message message_handler = nullptr;
 
+template<class... Args>
+void println(ld_plugin_level p_level, std::string_view p_format, Args... p_args)
+{
+  if (not message_handler) {
+    return;
+  }
+
+  auto const log = std::vformat(p_format, std::make_format_args(p_args...));
+
+  message_handler(p_level, log.c_str());
+}
+
 // All symbols read handler - called when all symbols are available
 enum ld_plugin_status all_symbols_read_handler()
 {
-  if (message_handler) {
-    message_handler(LDPL_INFO, "All symbols have been read");
-  }
+  println(LDPL_INFO, "All symbols have been read");
 
   return LDPS_OK;
 }
@@ -27,10 +38,7 @@ enum ld_plugin_status all_symbols_read_handler()
 // Cleanup handler - called at the end of linking
 enum ld_plugin_status cleanup_handler()
 {
-  if (message_handler) {
-    message_handler(LDPL_INFO, "Plugin cleanup");
-  }
-
+  println(LDPL_INFO, "Plugin cleanup");
   return LDPS_OK;
 }
 }  // namespace
@@ -39,6 +47,7 @@ extern "C"
 {
 
   // Main plugin entry point
+  // NOLINTNEXTLINE(readability-identifier-naming)
   enum ld_plugin_status _onload(struct ld_plugin_tv* tv)
   {
     struct ld_plugin_tv* entry;
@@ -60,12 +69,12 @@ extern "C"
         case LDPT_API_VERSION:
           // Check API version compatibility
           if (entry->tv_u.tv_val != LD_PLUGIN_API_VERSION) {
-            if (message_handler) {
-              message_handler(LDPL_ERROR,
-                              "API version mismatch: expected %d, got %d",
-                              LD_PLUGIN_API_VERSION,
-                              entry->tv_u.tv_val);
-            }
+            // TODO(kammce): make formatters for each of these
+            println(LDPL_ERROR,
+                    "API version mismatch: expected {}, got {}",
+                    static_cast<int>(LD_PLUGIN_API_VERSION),
+                    static_cast<int>(entry->tv_u.tv_val));
+
             return LDPS_ERR;
           }
           break;
@@ -83,9 +92,7 @@ extern "C"
       register_cleanup(cleanup_handler);
     }
 
-    if (message_handler) {
-      message_handler(LDPL_INFO, "Simple linker plugin loaded successfully");
-    }
+    println(LDPL_INFO, "Simple linker plugin loaded successfully");
 
     return LDPS_OK;
   }
