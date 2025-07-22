@@ -29,12 +29,16 @@ ld_plugin_get_input_section_name get_input_section_name = nullptr;
 ld_plugin_get_input_section_contents get_input_section_contents = nullptr;
 ld_plugin_get_input_section_size get_input_section_size = nullptr;
 
+std::array<int, 1204> exception_index;
 template<class... Args>
 void println(ld_plugin_level p_level, std::string_view p_format, Args... p_args)
 {
   if (not message_handler) {
     return;
   }
+  uint32_t pc = 0;
+
+  auto const& entry = exception_index[pc >> 2];
 
   auto const log = std::vformat(p_format, std::make_format_args(p_args...));
 
@@ -49,10 +53,14 @@ struct function_info
   uint32_t size;
   bool has_exception_info;
 
-  // For sorting by size (smallest first for better nearpoint efficiency)
-  bool operator<(function_info const& other) const
+  constexpr bool operator<(function_info const& other) const
   {
     return size < other.size;
+  }
+
+  constexpr bool operator==(function_info const& other) const
+  {
+    return size == other.size;
   }
 };
 
@@ -60,88 +68,15 @@ std::vector<function_info> parse_exception_tables()
 {
   std::vector<function_info> functions;
 
-  // Get the number of claimed files (populated during claim_file_handler calls)
-  // For now, we'll return mock data but here's how you'd get section data:
+  bool const can_proceed = get_input_section_count && get_input_section_name &&
+                           get_input_section_contents;
 
-  /*
-  // Example of how to get section contents:
-  if (get_input_section_count && get_input_section_name &&
-  get_input_section_contents) {
-
-    // Iterate through input files and sections
-    for (claimed_file_index = 0; claimed_file_index < num_claimed_files;
-  ++claimed_file_index) {
-
-      uint64_t section_count = 0;
-      if (get_input_section_count(claimed_file_handle, &section_count) ==
-  LDPS_OK) {
-
-        for (uint64_t section_idx = 0; section_idx < section_count;
-  ++section_idx) { ld_plugin_section section = {claimed_file_handle,
-  section_idx};
-
-          char* section_name_ptr = nullptr;
-          if (get_input_section_name(section, &section_name_ptr) == LDPS_OK) {
-            std::string section_name(section_name_ptr);
-
-            // Look for ARM exception index sections
-            if (section_name == ".ARM.exidx" || section_name == ".eh_frame") {
-
-              const unsigned char* section_data = nullptr;
-              size_t section_size = 0;
-
-              if (get_input_section_contents(section, &section_data,
-  &section_size) == LDPS_OK) {
-
-                // Parse the section data
-                // For ARM.exidx: each entry is 8 bytes (2 x uint32_t)
-                // For eh_frame: more complex DWARF format
-
-                auto const* data_as_u32 = reinterpret_cast<const
-  uint32_t*>(section_data); size_t num_u32_words = section_size /
-  sizeof(uint32_t);
-
-                // TODO: Parse exception table format here
-                // Extract function addresses, sizes, and exception info
-                // Add to functions vector
-
-                println(LDPL_INFO, "Found exception section {} with {} words",
-                       section_name, num_u32_words);
-              }
-            }
-          }
-        }
-      }
-    }
+  if (not can_proceed) {
+    return functions;
   }
-  */
-
-  // Mock data for now - replace with actual parsing above
-  functions = {
-    { .name = "small_func",
-      .object_file = "main.o",
-      .address = 0x1000,
-      .size = 32,
-      .has_exception_info = true },
-    { .name = "medium_func",
-      .object_file = "main.o",
-      .address = 0x1020,
-      .size = 128,
-      .has_exception_info = true },
-    { .name = "large_func",
-      .object_file = "main.o",
-      .address = 0x10A0,
-      .size = 512,
-      .has_exception_info = true },
-    { .name = "huge_func",
-      .object_file = "main.o",
-      .address = 0x12A0,
-      .size = 1024,
-      .has_exception_info = true },
-  };
 
   // Sort by size for optimal nearpoint layout
-  std::sort(functions.begin(), functions.end());
+  std::ranges::sort(functions);
 
   return functions;
 }
@@ -208,7 +143,7 @@ void generate_nearpoint_tables(std::span<function_info> functions)
     return a.address < b.address;
   });
 
-  cpp_file << "const NearPointEntry nearpoint_table[] = {\n";
+  cpp_file << "[[gnu::used]] const NearPointEntry nearpoint_table[] = {\n";
 
   for (auto const& func : sorted_funcs) {
     if (func.has_exception_info) {
@@ -220,10 +155,10 @@ void generate_nearpoint_tables(std::span<function_info> functions)
   }
 
   cpp_file << "};\n\n";
-  cpp_file << std::format("const size_t nearpoint_table_size = {};\n",
-                          std::ranges::count_if(functions, [](auto const& f) {
-                            return f.has_exception_info;
-                          }));
+  cpp_file << std::format(
+    "[[gnu::used]] const size_t nearpoint_table_size = {};\n",
+    std::ranges::count_if(functions,
+                          [](auto const& f) { return f.has_exception_info; }));
   cpp_file << "}\n";
   cpp_file.close();
 

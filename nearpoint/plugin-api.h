@@ -1,3 +1,5 @@
+// NOLINTBEGIN
+// clang-format off
 /* plugin-api.h -- External linker plugin API.  */
 
 /* Copyright (C) 2009-2022 Free Software Foundation, Inc.
@@ -550,7 +552,7 @@ struct ld_plugin_tv
     ld_plugin_get_input_section_contents tv_get_input_section_contents;
     ld_plugin_update_section_order tv_update_section_order;
     ld_plugin_allow_section_ordering tv_allow_section_ordering;
-    ld_plugin_allow_unique_segment_for_sections tv_allow_unique_segment_for_sections; 
+    ld_plugin_allow_unique_segment_for_sections tv_allow_unique_segment_for_sections;
     ld_plugin_unique_segment_for_sections tv_unique_segment_for_sections;
     ld_plugin_get_input_section_alignment tv_get_input_section_alignment;
     ld_plugin_get_input_section_size tv_get_input_section_size;
@@ -570,3 +572,4 @@ enum ld_plugin_status
 #endif
 
 #endif /* !defined(PLUGIN_API_H) */
+// NOLINTEND
