@@ -1,8 +1,12 @@
+#include <algorithm>
 #include <cstring>
 
+#include <algorithm>
 #include <format>
-#include <string>
+#include <fstream>
+#include <span>
 #include <string_view>
+#include <vector>
 
 #include <plugin-api.h>
 
@@ -41,6 +45,97 @@ enum ld_plugin_status cleanup_handler()
   println(LDPL_INFO, "Plugin cleanup");
   return LDPS_OK;
 }
+
+struct function_info
+{
+  std::string name;
+  std::string object_file;
+  uint32_t address;
+  uint32_t size;
+  bool has_exception_info;
+
+  // For sorting by size (smallest first for better nearpoint efficiency)
+  bool operator<(function_info const& other) const
+  {
+    return size < other.size;
+  }
+};
+
+std::vector<function_info> parse_exception_tables()
+{
+  // For now, return mock data
+  // In reality, you'd use LDPT_GET_INPUT_SECTION_CONTENTS to parse
+  // .ARM.exidx (ARM) or .eh_frame (x86) sections
+
+  std::vector<function_info> functions = {
+    { .name = "small_func",
+      .object_file = "main.o",
+      .address = 0x1000,
+      .size = 32,
+      .has_exception_info = true },
+    { .name = "medium_func",
+      .object_file = "main.o",
+      .address = 0x1020,
+      .size = 128,
+      .has_exception_info = true },
+    { .name = "large_func",
+      .object_file = "main.o",
+      .address = 0x10A0,
+      .size = 512,
+      .has_exception_info = true },
+    { .name = "huge_func",
+      .object_file = "main.o",
+      .address = 0x12A0,
+      .size = 1024,
+      .has_exception_info = true },
+  };
+
+  // Sort by size for optimal nearpoint layout
+  std::ranges::sort(functions);
+
+  return functions;
+}
+
+bool check_if_sorted_by_size(std::span<function_info> p_functions)
+{
+  for (size_t i = 0; i < p_functions.size() - 1; ++i) {
+    if (p_functions[i].has_exception_info &&
+        p_functions[i + 1].has_exception_info) {
+      if (p_functions[i].size > p_functions[i + 1].size) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+void generate_extraction_and_reordering(std::span<function_info> functions)
+{
+  std::ofstream script("extract_and_order.ld");
+
+  auto sorted_funcs = functions;
+  std::ranges::sort(sorted_funcs);
+
+  script << "SECTIONS {\n";
+  script << "  .text.ordered : {\n";
+  script << "    /* Extract and reorder exception functions */\n";
+
+  for (auto const& func : sorted_funcs) {
+    if (func.has_exception_info) {
+      script << std::format("    *(.text.{})\n", func.name);
+    }
+  }
+
+  script << "  }\n";
+  script << "  \n";
+  script << "}\n";
+
+  // INSERT this right at the beginning of .text
+  script << "INSERT BEFORE .text;\n";
+
+  script.close();
+}
+
 }  // namespace
 
 extern "C"
@@ -74,7 +169,6 @@ extern "C"
                     "API version mismatch: expected {}, got {}",
                     static_cast<int>(LD_PLUGIN_API_VERSION),
                     static_cast<int>(entry->tv_u.tv_val));
-
             return LDPS_ERR;
           }
           break;
