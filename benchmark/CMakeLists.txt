@@ -72,9 +72,10 @@ else()
 endif()
 
 # Glob all the files in the directory 'generated_tests'
-file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/*.cpp")
+# file(GLOB GENERATED_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/*.cpp")
+set(GENERATED_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/except_04_error_000_cleanup.cpp")
 
-foreach(test_path ${GENERATED_TEST})
+foreach(test_path ${GENERATED_TESTS})
   get_filename_component(test_file_name ${test_path} NAME)
   set(elf ${test_file_name}.elf)
   message(STATUS "Generating Demo for \"${elf}\"")

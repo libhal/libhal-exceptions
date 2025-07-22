@@ -18,7 +18,7 @@ project(nearpoint LANGUAGES CXX)
 
 set(NEARPOINT_LIBRARY_NAME ${PROJECT_NAME}.so)
 
-add_executable(${NEARPOINT_LIBRARY_NAME} main.cpp)
+add_executable(${NEARPOINT_LIBRARY_NAME} main.vibe.cpp)
 target_include_directories(${NEARPOINT_LIBRARY_NAME} PRIVATE .
 /Users/kammce/.conan2/p/b/arm-g8425a3da75044/p/bin/lib/gcc/arm-none-eabi/12.3.1/plugin/include/
 )
