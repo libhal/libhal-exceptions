@@ -130,19 +130,23 @@ std::span<index_entry_t const> get_arm_exception_index()
 
 // NOLINTBEGIN(bugprone-reserved-identifier)
 // NOLINTBEGIN(readability-identifier-naming)
-namespace __except_abi {
-[[gnu::weak]] std::span<std::uint32_t> near_point_descriptor{};
+namespace __except_abi::inline v1 {
+struct nearpoint_descriptor
+{
+  std::uint32_t normal_block_size = 0;
+  std::uint32_t small_block_size = 0;
+};
+[[gnu::weak]] nearpoint_descriptor near_point_descriptor{};
 [[gnu::weak]] std::span<std::uint32_t> normal_table{};
 [[gnu::weak]] std::span<std::uint32_t> small_table{};
-}  // namespace __except_abi
+}  // namespace __except_abi::inline v1
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(bugprone-reserved-identifier)
 
 std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
 {
-  // TODO(kammce): do not hard code
-  constexpr auto program_offset = 0x0800'00c0;
-  auto const pc = p_program_counter - program_offset;
+  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
+  auto const pc = p_program_counter - progarm_offset;
   auto const block_power = ke::__except_abi::near_point_descriptor[0];
   auto const inter_block_mask = (1 << block_power) - 1;
   auto const inter_block_location = pc & inter_block_mask;
