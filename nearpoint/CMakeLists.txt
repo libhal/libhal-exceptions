@@ -18,7 +18,7 @@ project(nearpoint LANGUAGES CXX)
 
 set(NEARPOINT_LIBRARY_NAME ${PROJECT_NAME}.so)
 
-add_executable(${NEARPOINT_LIBRARY_NAME} main.vibe.cpp)
+add_executable(${NEARPOINT_LIBRARY_NAME} nearpoint.cpp)
 target_include_directories(${NEARPOINT_LIBRARY_NAME} PRIVATE .)
 target_compile_options(${NEARPOINT_LIBRARY_NAME} PRIVATE
   -g
