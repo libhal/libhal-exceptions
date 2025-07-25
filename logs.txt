@@ -1,0 +1,188 @@
+
+======== Input profiles ========
+Profile host:
+[settings]
+arch=cortex-m3
+build_type=MinSizeRel
+compiler=gcc
+compiler.cppstd=23
+compiler.libcxx=libstdc++11
+compiler.version=14.2
+libc=custom
+os=baremetal
+[options]
+*:platform=stm32f103c8
+[tool_requires]
+*: arm-gnu-toolchain/14.2
+
+Profile build:
+[settings]
+arch=armv8
+build_type=Release
+compiler=clang
+compiler.cppstd=23
+compiler.libcxx=libc++
+compiler.version=17
+os=Macos
+[conf]
+tools.build:compiler_executables={'c': '/opt/homebrew/opt/llvm@17/bin/clang', 'cpp': '/opt/homebrew/opt/llvm@17/bin/clang++'}
+
+
+======== Computing dependency graph ========
+conanfile.py: WARN: libhal-arm-mcu usable platform detected...
+Graph root
+    conanfile.py: /Users/kammce/git/libhal/libhal-exceptions/benchmark/conanfile.py
+Requirements
+    libhal/4.12.1#9d67ff5c708eaf62e8f96e1c842cfd8e - Cache
+    libhal-arm-mcu/1.13.0#8c65920376a78741da3511832db4864e - Cache
+    libhal-exceptions/1.3.2#75c914fb6f7b5c03fcd9a6bd4bb97220 - Cache
+    libhal-util/5.6.0#8e4ce1da96c9a825b70fac2b5e6497a3 - Cache
+    prebuilt-picolibc/14.2#197a708367ee7d3b9e9057bf9bd0eaa2 - Cache
+    ring-span-lite/0.7.0#73c13ef86652f52ad6b52048b15af784 - Cache
+    scope-lite/0.2.0#3d661c43163ac4ebc53ec5e3f9e77490 - Cache
+    tl-function-ref/1.0.0#8efcfa342c5169b3c260a290257d7eee - Cache
+Test requirements
+    boost-ext-ut/1.1.9#157151953c15446618e069064b6adae9 - Cache
+    boost-ext-ut/2.1.0#097da141f7780e769339b41829f521db - Cache
+    libhal-mock/4.0.0#e2a2cc593adc03806c6a8b80c5a89638 - Cache
+Build requirements
+    arm-gnu-toolchain/14.2#d2e6094d38b1736e6553453c5ef3e0f8 - Cache
+    cmake/3.27.1#7d5f14447c023feef9f59640be53619a - Cache
+    libhal-cmake-util/4.3.3#5ce59d550ca2dfc35a98c822280aa0ed - Cache
+    make/4.4.1#c47f1ee3241ca8bd56f97c6ca4d0a082 - Cache
+Python requires
+    libhal-bootstrap/4.5.0#3be6ef595aec847c099257ec1250b3ec - Cache
+Resolved version ranges
+    cmake/[>=3.21 <4]: cmake/3.27.1
+    cmake/[^3.10.0]: cmake/3.27.1
+    libhal/[^4.10.0]: libhal/4.12.1
+    libhal-arm-mcu/[^1.0.0]: libhal-arm-mcu/1.13.0
+    libhal-bootstrap/[>=4.3.0 <5]: libhal-bootstrap/4.5.0
+    libhal-cmake-util/[^4.0.3]: libhal-cmake-util/4.3.3
+    libhal-cmake-util/[^4.0.5]: libhal-cmake-util/4.3.3
+    libhal-cmake-util/[^4.1.0]: libhal-cmake-util/4.3.3
+    libhal-cmake-util/[^4.3.3]: libhal-cmake-util/4.3.3
+    libhal-mock/[^4.0.0]: libhal-mock/4.0.0
+    libhal-util/[>=5.4.2 <6-]: libhal-util/5.6.0
+    ring-span-lite/[^0.7.0]: ring-span-lite/0.7.0
+
+======== Computing necessary packages ========
+Requirements
+    libhal-arm-mcu/1.13.0#8c65920376a78741da3511832db4864e:4affa251c38ebecf2f2f2cb36cfa8946c202b16f#5a7b7beaa6f039601a546d31f4d56f8c - Cache
+    libhal-exceptions/1.3.2#75c914fb6f7b5c03fcd9a6bd4bb97220:bc865df3fa00af9bd55e9407f65864e739f554d4#b1fa39d41bc86b5eb44b0f504e0d0420 - Cache
+    libhal-util/5.6.0#8e4ce1da96c9a825b70fac2b5e6497a3:2cc20d7946cbdfd99762bd547bc46eba3a16f23f#f8fe8c8feb9be94a8f4271b627ee4660 - Cache
+    libhal/4.12.1#9d67ff5c708eaf62e8f96e1c842cfd8e:da39a3ee5e6b4b0d3255bfef95601890afd80709#a87062b148bbbc9bcaaa17fe14b800e7 - Cache
+    prebuilt-picolibc/14.2#197a708367ee7d3b9e9057bf9bd0eaa2:da39a3ee5e6b4b0d3255bfef95601890afd80709#fad5e35bddeb16ecd845cde0b7781f1b - Cache
+    ring-span-lite/0.7.0#73c13ef86652f52ad6b52048b15af784:da39a3ee5e6b4b0d3255bfef95601890afd80709#f7e59e800caa14479c3c0f7c6d7cd27b - Cache
+    scope-lite/0.2.0#3d661c43163ac4ebc53ec5e3f9e77490:da39a3ee5e6b4b0d3255bfef95601890afd80709#833c1a12d5f96e9d1704c9d2639ec713 - Cache
+    tl-function-ref/1.0.0#8efcfa342c5169b3c260a290257d7eee:da39a3ee5e6b4b0d3255bfef95601890afd80709#a5d3cf5d58a86e7abe6588550e40464b - Cache
+Test requirements
+    libhal-mock/4.0.0#e2a2cc593adc03806c6a8b80c5a89638:da39a3ee5e6b4b0d3255bfef95601890afd80709#1203ea7373d9b646341c240d1992bc6d - Cache
+Build requirements
+    arm-gnu-toolchain/14.2#d2e6094d38b1736e6553453c5ef3e0f8:f0a5d1b276b88e85a70b70b21ff71bc5e03c9d06#718d00d355963382db27b8289da0dd51 - Cache
+    cmake/3.27.1#7d5f14447c023feef9f59640be53619a:9e5323c65b94ae38c3c733fe12637776db0119a5#0fa6cff5d3490c9f1cee52193762dde4 - Cache
+    libhal-cmake-util/4.3.3#5ce59d550ca2dfc35a98c822280aa0ed:da39a3ee5e6b4b0d3255bfef95601890afd80709#2ea1329e91938b96d3c8d742ca63f8fa - Cache
+    make/4.4.1#c47f1ee3241ca8bd56f97c6ca4d0a082:617cae191537b47386c088e07b1822d8606b7e67#eb9d685802556d00ece34d2234253d60 - Cache
+Skipped binaries
+    boost-ext-ut/1.1.9, boost-ext-ut/2.1.0
+
+======== Installing packages ========
+arm-gnu-toolchain/14.2: Already installed! (1 of 13)
+arm-gnu-toolchain/14.2: Using remote downloaded binaries
+arm-gnu-toolchain/14.2: self.cpp_info.bindirs = ['/Users/kammce/.conan2/p/b/arm-g2450801a29ea4/p/bin/bin']
+arm-gnu-toolchain/14.2: c_flags: ['-flto', '-ffat-lto-objects', '-ffunction-sections', '-fdata-sections', '-mcpu=cortex-m3', '-mfloat-abi=soft']
+arm-gnu-toolchain/14.2: cxx_flags: ['-flto', '-ffat-lto-objects', '-ffunction-sections', '-fdata-sections', '-mcpu=cortex-m3', '-mfloat-abi=soft']
+arm-gnu-toolchain/14.2: exelinkflags: ['-flto', '-Wl,--gc-sections', '-mcpu=cortex-m3', '-mfloat-abi=soft']
+cmake/3.27.1: Already installed! (2 of 13)
+cmake/3.27.1: Appending PATH environment variable: /Users/kammce/.conan2/p/cmake253f38c8fbec3/p/CMake.app/Contents/bin
+make/4.4.1: Already installed! (3 of 13)
+libhal-cmake-util/4.3.3: Already installed! (4 of 13)
+libhal-cmake-util/4.3.3: clang_tidy_config_path: /Users/kammce/.conan2/p/libha4f6b736019b23/p/cmake/clang-tidy.conf
+libhal-cmake-util/4.3.3: add_build_outputs: True
+libhal-cmake-util/4.3.3: optimize_debug_build: True
+prebuilt-picolibc/14.2: Already installed! (5 of 13)
+prebuilt-picolibc/14.2: link flags: ['-specs=/Users/kammce/.conan2/p/b/prebu5a3aeff61d0ca/p/lib/gcc/arm-none-eabi/14.2.1/picolibcpp.specs', '--picolibc-prefix=/Users/kammce/.conan2/p/b/prebu5a3aeff61d0ca/p/arm-none-eabi', '-oslib=semihost']
+prebuilt-picolibc/14.2: crt0: semihost
+ring-span-lite/0.7.0: Already installed! (6 of 13)
+scope-lite/0.2.0: Already installed! (7 of 13)
+tl-function-ref/1.0.0: Already installed! (8 of 13)
+libhal/4.12.1: Already installed! (9 of 13)
+libhal-util/5.6.0: Already installed! (10 of 13)
+libhal-exceptions/1.3.2: Already installed! (11 of 13)
+libhal-mock/4.0.0: Already installed! (12 of 13)
+libhal-arm-mcu/1.13.0: Already installed! (13 of 13)
+WARN: deprecated: Usage of deprecated Conan 1.X features that will be removed in Conan 2.X:
+WARN: deprecated:     'env_info' used in: cmake/3.27.1, make/4.4.1
+WARN: deprecated:     'user_info' used in: make/4.4.1
+WARN: deprecated:     'cpp_info.filenames' used in: ring-span-lite/0.7.0, tl-function-ref/1.0.0, scope-lite/0.2.0
+WARN: deprecated:     'cpp_info.names' used in: ring-span-lite/0.7.0, tl-function-ref/1.0.0, scope-lite/0.2.0
+
+======== Finalizing install (deploy, generators) ========
+conanfile.py: Calling generate()
+conanfile.py: Generators folder: /Users/kammce/git/libhal/libhal-exceptions/benchmark/build/stm32f103c8/builtin/MinSizeRel/generators
+conanfile.py: CMakeDeps necessary find_package() and targets for your CMakeLists.txt
+    find_package(libhal-arm-mcu)
+    find_package(libhal-exceptions)
+    find_package(libhal-util)
+    target_link_libraries(... libhal::arm-mcu libhal::exceptions libhal::util)
+conanfile.py: CMakeToolchain generated: conan_toolchain.cmake
+conanfile.py: CMakeToolchain: Preset 'conan-minsizerel' added to CMakePresets.json.
+    (cmake>=3.23) cmake --preset conan-minsizerel
+    (cmake<3.23) cmake <path> -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=generators/conan_toolchain.cmake  -DCMAKE_MAKE_PROGRAM=/Users/kammce/.conan2/p/maked9688cd22d1a2/p/bin/make -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_BUILD_TYPE=MinSizeRel
+conanfile.py: CMakeToolchain generated: /Users/kammce/git/libhal/libhal-exceptions/benchmark/build/stm32f103c8/builtin/MinSizeRel/generators/CMakePresets.json
+conanfile.py: CMakeToolchain generated: /Users/kammce/git/libhal/libhal-exceptions/benchmark/CMakeUserPresets.json
+conanfile.py: Generating aggregated env files
+conanfile.py: Generated aggregated env files: ['conanbuild.sh', 'conanrun.sh']
+
+======== Calling build() ========
+conanfile.py: Calling build()
+conanfile.py: Running CMake.configure()
+conanfile.py: RUN: cmake -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE="generators/conan_toolchain.cmake" -DCMAKE_INSTALL_PREFIX="/Users/kammce/git/libhal/libhal-exceptions/benchmark" -DCMAKE_MAKE_PROGRAM="/Users/kammce/.conan2/p/maked9688cd22d1a2/p/bin/make" -DCMAKE_POLICY_DEFAULT_CMP0091="NEW" -DCMAKE_BUILD_TYPE="MinSizeRel" "/Users/kammce/git/libhal/libhal-exceptions/benchmark"
+-- Using Conan toolchain: /Users/kammce/git/libhal/libhal-exceptions/benchmark/build/stm32f103c8/builtin/MinSizeRel/generators/conan_toolchain.cmake
+-- Conan toolchain: Including user_toolchain: /Users/kammce/.conan2/p/b/arm-g2450801a29ea4/p/res/toolchain.cmake
+-- Conan toolchain: Including user_toolchain: /Users/kammce/.conan2/p/libha4f6b736019b23/p/cmake/build_outputs.cmake
+-- Conan toolchain: Including user_toolchain: /Users/kammce/.conan2/p/libha4f6b736019b23/p/cmake/optimize_debug_build.cmake
+-- Conan toolchain: Including user_toolchain: /Users/kammce/.conan2/p/libha4f6b736019b23/p/cmake/colors.cmake
+-- Conan toolchain: Including user_toolchain: /Users/kammce/.conan2/p/libha4f6b736019b23/p/cmake/build.cmake
+-- Conan toolchain: C++ Standard 23 with extensions OFF
+-- The CXX compiler identification is GNU 14.2.1
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /Users/kammce/.conan2/p/b/arm-g2450801a29ea4/p/bin/bin/arm-none-eabi-g++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Conan: Target declared 'libhal::arm-mcu'
+-- Conan: Component target declared 'nonstd::ring-span-lite'
+-- Conan: Component target declared 'nonstd::scope-lite'
+-- Conan: Target declared 'picolibc'
+-- Conan: Target declared 'libhal::exceptions'
+-- Conan: Target declared 'libhal::util'
+-- Conan: Target declared 'libhal::libhal'
+-- Conan: Component target declared 'tl::function-ref'
+-- Found picolibc, linking it in!
+-- Injecting 'nearpoint.so' shared library command
+-- Generating Demo for "except_04_error_000_cleanup.cpp.elf"
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/kammce/git/libhal/libhal-exceptions/benchmark/build/stm32f103c8/builtin/MinSizeRel
+
+conanfile.py: Running CMake.build()
+conanfile.py: RUN: cmake --build "/Users/kammce/git/libhal/libhal-exceptions/benchmark/build/stm32f103c8/builtin/MinSizeRel" -- -j10
+[ 50%] Building CXX object CMakeFiles/startup_code.dir/platforms/stm32f103c8.cpp.obj
+[ 50%] Building CXX object CMakeFiles/startup_code.dir/filler.cpp.obj
+[ 50%] Building CXX object CMakeFiles/startup_code.dir/main.cpp.obj
+[ 50%] Built target copy_compile_commands
+[ 66%] Linking CXX static library libstartup_code.a
+[ 66%] Built target startup_code
+[ 83%] Building CXX object CMakeFiles/except_04_error_000_cleanup.cpp.elf.dir/generated_tests/except_04_error_000_cleanup.cpp.obj
+[100%] Linking CXX executable except_04_error_000_cleanup.cpp.elf
+collect2: fatal error: ld terminated with signal 11 [Segmentation fault: 11]
+compilation terminated.
+make[2]: *** [CMakeFiles/except_04_error_000_cleanup.cpp.elf.dir/build.make:101: except_04_error_000_cleanup.cpp.elf] Error 1
+make[2]: *** Deleting file 'except_04_error_000_cleanup.cpp.elf'
+make[1]: *** [CMakeFiles/Makefile2:139: CMakeFiles/except_04_error_000_cleanup.cpp.elf.dir/all] Error 2
+make: *** [Makefile:91: all] Error 2
+
+ERROR: conanfile.py: Error in build() method, line 62
+	cmake.build()
+	ConanException: Error 2 while executing
