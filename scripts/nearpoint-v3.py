@@ -2,12 +2,7 @@
 import subprocess
 import re
 import argparse
-import csv
 from typing import NamedTuple, List, Tuple, Optional
-import pandas as pd
-from sklearn.linear_model import LinearRegression
-import numpy as np
-import math
 import logging
 import struct
 from pathlib import Path
@@ -333,6 +328,8 @@ def main():
     for group in sorted_unwind_groups_list:
         # SECTIONS {
         #     .text : {
+
+        order_string += f"    /* Unwind info 0x{group.unwind_info:08x} */\n"
         order_string += group.generate_order_list()
         #     }
         # }

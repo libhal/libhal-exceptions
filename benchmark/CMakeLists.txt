@@ -64,29 +64,45 @@ endif()
 # file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/*.cpp")
 file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/except_04_error_000_cleanup.cpp")
 
-foreach(test_path ${GENERATED_TEST})
-  get_filename_component(test_file_name ${test_path} NAME)
-  set(elf ${test_file_name}.elf)
-  message(STATUS "Generating Demo for \"${elf}\"")
-  add_executable(${elf} ${test_path})
-
-  target_include_directories(${elf} PRIVATE .)
-  target_compile_options(${elf} PRIVATE
+set(BENCHMARK_COMPILE_OPTIONS
     -g
     -Werror
     -Wall
     -Wextra
     -Wshadow
     -fno-threadsafe-statics
-    $<$<COMPILE_LANGUAGE:CXX>:-fexceptions -fno-rtti>
-  )
+    $<$<COMPILE_LANGUAGE:CXX>:-fexceptions -fno-rtti>)
+
+foreach(test_path ${GENERATED_TEST})
+  get_filename_component(test_file_name ${test_path} NAME)
+  set(elf ${test_file_name}.elf)
+  set(nearpoint_elf ${test_file_name}.nearpoint.elf)
+
+  message(STATUS "Generating Demo for \"${elf}\"")
+  add_executable(${elf} ${test_path})
+  add_executable(${nearpoint_elf} ${test_path})
+
+  target_include_directories(${elf} PRIVATE .)
+  target_include_directories(${nearpoint_elf} PRIVATE .)
+
+  target_compile_options(${elf} PRIVATE ${BENCHMARK_COMPILE_OPTIONS})
+  target_compile_options(${nearpoint_elf} PRIVATE ${BENCHMARK_COMPILE_OPTIONS})
 
   target_link_libraries(${elf} PRIVATE
     startup_code
     libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
   )
+  target_link_libraries(${nearpoint_elf} PRIVATE
+    startup_code
+    libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
+  )
 
   target_link_options(${elf} PRIVATE -fno-threadsafe-statics
+    -L${CMAKE_SOURCE_DIR}/
+    -Wl,-Map=${CMAKE_BINARY_DIR}/${elf}.map
+  )
+
+  target_link_options(${nearpoint_elf} PRIVATE -fno-threadsafe-statics
     -L${CMAKE_SOURCE_DIR}/
     -T${CMAKE_SOURCE_DIR}/order.ld
     -Wl,-Map=${CMAKE_BINARY_DIR}/${elf}.map
@@ -94,6 +110,7 @@ foreach(test_path ${GENERATED_TEST})
 
   if(prebuilt-picolibc_FOUND)
     target_link_libraries(${elf} PRIVATE picolibc)
+    target_link_libraries(${nearpoint_elf} PRIVATE picolibc)
   endif()
 
   if(${CMAKE_CROSSCOMPILING})
@@ -101,5 +118,7 @@ foreach(test_path ${GENERATED_TEST})
     # devices.
     libhal_post_build(${elf})
     libhal_disassemble(${elf})
+    libhal_post_build(${nearpoint_elf})
+    libhal_disassemble(${nearpoint_elf})
   endif()
 endforeach()
