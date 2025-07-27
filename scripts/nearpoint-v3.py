@@ -15,10 +15,11 @@ from collections import defaultdict
 
 
 class FunctionInfo:
-    def __init__(self, symbol_name: str, address: int, size: int = 0):
-        self.name = symbol_name
+    def __init__(self, name: str, address: int):
+        self.name = name
         self.address = address
-        self.size = size
+        self.size = 0
+        self.unwind_info = 0xFFFFFFFF
 
     def __repr__(self):
         return f"FunctionInfo(name='{self.name}', address=0x{self.address:08x}, size={self.size})\n"
@@ -73,7 +74,7 @@ def main():
 
     tool_prefix = args.tool_prefix
 
-    objdump_cmd = f"{tool_prefix}objdump"
+    objdump_cmd = f"{tool_prefix}/arm-none-eabi-objdump"
 
     # ==========================================================================
     # Step 0: Disassemble elf file with all sections
@@ -117,7 +118,8 @@ def main():
         if matches:
             for address_text, function in matches:
                 address = int(address_text, 16)
-                actualized_functions.append(FunctionInfo(function, address))
+                actualized_functions.append(
+                    FunctionInfo(name=function, address=address))
         else:
             logging.error("INVALID function string!!")
             raise ValueError
@@ -196,10 +198,10 @@ def main():
                 if len(part) == 8:  # 4-byte hex values
                     hex_bytes.append(part)
 
-        results = []
+        results: List[FunctionInfo] = []
 
         # Process in pairs (skip first two, then take pairs)
-        for i in range(2, len(hex_bytes), 2):
+        for i in range(0, len(hex_bytes), 2):
             if i + 1 >= len(hex_bytes):
                 break
 
@@ -218,8 +220,9 @@ def main():
             offset_prel31 = offset_raw
 
             # TODO(kammce): THIS IS WRONG!!!
-            entry_offset = (i * 8) + 4
-            absolute_address = (0x800835c - entry_offset) + addr_prel31
+            entry_offset = (i + 1) * 4
+            absolute_address = (0x800835c + entry_offset) + addr_prel31
+
             results.append((absolute_address, offset_prel31))
 
         return results
@@ -231,16 +234,9 @@ def main():
     logging.debug(hex_values)
 
     # ==========================================================================
-    # Step X: Expand exception index to include ALL functions
+    # Step X: Set the unwind info for each function in the finalized_functions
     # ==========================================================================
-
-    # Here, we need to determine if any of the exceptions entries have been
-    # merged by checking if there are functions between one entry and the next
-
-    unwind_groups_map = defaultdict(list)
-    exception_groups: List[FunctionGroup] = []
     function_index = 0
-    last_unwind_info = 0
 
     for i in range(1, len(EXCEPTION_ENTRIES)):
         entry_function, unwind_info = EXCEPTION_ENTRIES[i - 1]
@@ -255,28 +251,62 @@ def main():
                 f"entry_function({i}): {entry_function:08x} != addr: {FINALIZED_FUNCTIONS[function_index].address:08x}")
             raise ValueError
 
-        unwind_groups_map[unwind_info].append(
-            FINALIZED_FUNCTIONS[function_index])
+        FINALIZED_FUNCTIONS[function_index].unwind_info = unwind_info
         function_index = function_index + 1
-        last_unwind_info = unwind_info
 
         while (FINALIZED_FUNCTIONS[function_index].address < next_entry_function):
-            logging.debug(f"Adding {FINALIZED_FUNCTIONS[function_index]}")
-            unwind_groups_map[unwind_info].append(
-                FINALIZED_FUNCTIONS[function_index])
+            if unwind_info & 1 << 31:
+                logging.debug(f"Set [{function_index}] = {unwind_info}")
+                FINALIZED_FUNCTIONS[function_index].unwind_info = unwind_info
+            else:
+                logging.debug(
+                    f"Transparent [{function_index}] = 0xFFFFFFFF")
+                FINALIZED_FUNCTIONS[function_index].unwind_info = 0xFFFFFFFF
+
             function_index = function_index + 1
 
     # Append the last of the functions
+    last_unwind_info = EXCEPTION_ENTRIES[-1][1]
+    if not (last_unwind_info & 1 << 31):
+        last_unwind_info = 0xFFFFFFFF
     for i in range(function_index, len(FINALIZED_FUNCTIONS)):
-        unwind_groups_map[last_unwind_info].append(FINALIZED_FUNCTIONS[i])
+        FINALIZED_FUNCTIONS[function_index].unwind_info = last_unwind_info
 
-    logging.debug("unwind_groups_map")
-    for unwind, value in unwind_groups_map.items():
-        logging.debug(f"unwind: {unwind:08x}")
-        logging.debug(f"        {value}\n\n")
     # ==========================================================================
     # Step 4: Collect functions into groups with common unwind info
     # ==========================================================================
+    unwind_groups_map: defaultdict[int,
+                                   FunctionGroup] = {}
+    logging.debug("unwind_groups_map")
+    for function in FINALIZED_FUNCTIONS:
+        if function.unwind_info in unwind_groups_map:
+            unwind_groups_map[function.unwind_info].add(function)
+        else:
+            new_group = FunctionGroup(function.unwind_info)
+            new_group.add(function)
+            unwind_groups_map[function.unwind_info] = new_group
+
+    for unwind, value in unwind_groups_map.items():
+        logging.debug(f"unwind:  {unwind:08x}: >>> {value} <<<\n")
+
+    # ==========================================================================
+    # Step 5: Sort Function groups
+    # ==========================================================================
+    # Make a copy of the leaf functions because we are going to delete them
+    # from the unwind groups as they don't have unwind information.
+    leaf_functions = unwind_groups_map[0xFFFFFFFF]
+    unwind_groups_map.pop(0xFFFFFFFF)
+    sorted_unwind_groups_list = list(unwind_groups_map.values())
+    sorted_unwind_groups_list.sort(key=FunctionGroup.size, reverse=True)
+    logging.debug(f"Size sorted unwind groups\n")
+    for group in sorted_unwind_groups_list:
+        logging.debug(
+            f"group-[{group.unwind_info:08x}]: >>> {group.functions} <<<\n")
+
+    # ==========================================================================
+    # Step 6: Generate text ordering
+    # ==========================================================================
+
     """
     function_map = defaultdict(list)
 
