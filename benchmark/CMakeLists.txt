@@ -38,9 +38,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/platforms/$ENV{LIBHAL_PLATFORM}.cpp")
     list(APPEND startup_source_files platforms/$ENV{LIBHAL_PLATFORM}.cpp)
 endif()
 
-add_library(startup_code ${startup_source_files}
-# except0_depth70.nm.np.cpp
-)
+add_library(startup_code ${startup_source_files})
 
 target_include_directories(startup_code PUBLIC .)
 target_compile_options(startup_code PRIVATE
@@ -63,7 +61,8 @@ if(prebuilt-picolibc_FOUND)
 endif()
 
 # Glob all the files in the directory 'generated_tests'
-file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/*.cpp")
+# file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/*.cpp")
+file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/except_04_error_000_cleanup.cpp")
 
 foreach(test_path ${GENERATED_TEST})
   get_filename_component(test_file_name ${test_path} NAME)
@@ -89,7 +88,7 @@ foreach(test_path ${GENERATED_TEST})
 
   target_link_options(${elf} PRIVATE -fno-threadsafe-statics
     -L${CMAKE_SOURCE_DIR}/
-    # -Tstm32f103.ld
+    -Tordering.partial.ld
   )
 
   if(prebuilt-picolibc_FOUND)

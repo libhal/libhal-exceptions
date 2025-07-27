@@ -46,6 +46,12 @@ class FunctionGroup:
             sum += function.size
         return sum
 
+    def generate_order_list(self):
+        order = ""
+        for function in self.functions:
+            order += f"    *(.text.{function.name})\n"
+        return order
+
 
 def main():
     logging.getLogger().setLevel(logging.DEBUG)
@@ -68,6 +74,9 @@ def main():
                         help='Automatically find optimal block sizes')
     parser.add_argument('--tool-prefix', type=str, default="",
                         help='Toolchain prefix for objdump/nm (e.g., "arm-none-eabi-" or full path)')
+    parser.add_argument('-r', '--ordering_file', type=str,
+                        default="ordering.partial.ld",
+                        help='Path to where to store the ordering file.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Enable verbose logging')
     args = parser.parse_args()
@@ -306,28 +315,23 @@ def main():
     # ==========================================================================
     # Step 6: Generate text ordering
     # ==========================================================================
-
-    """
-    function_map = defaultdict(list)
-
-    for function_info in FINALIZED_FUNCTIONS:
-        function_map[function_info.address] = function_info
-    logging.debug(f"function_map={function_map}")
-
-    logging.debug("\nLogging exception groups:\n")
-    exception_groups: List[FunctionGroup] = []
-    for unwind_info, function_list in unwind_groups_map.items():
-        group = FunctionGroup(unwind_info=unwind_info)
-        for function_address in function_list:
-            function_info = function_map[function_address]
-            logging.debug(f"Found {function_address:08x} == {function_info}")
-            group.add(function_map[function_address])
-        exception_groups.append(group)
-
-    logging.debug("\nLogging exception groups:\n")
-    for group in exception_groups:
-        logging.debug(group)
-    """
+    order_string = ""
+    order_string += "SECTIONS {\n"
+    order_string += "  .text : {\n"
+    for group in sorted_unwind_groups_list:
+        # SECTIONS {
+        #     .text : {
+        order_string += group.generate_order_list()
+        #     }
+        # }
+        # INSERT BEFORE .text;
+    order_string += "    /* LEAF functions below */\n"
+    order_string += leaf_functions.generate_order_list()
+    order_string += "  }\n"
+    order_string += "}\n"
+    order_string += "INSERT BEFORE .text;\n"
+    Path(args.ordering_file).write_text(order_string)
+    logging.info(f"ordering = \n{order_string}")
     return 0
 
 
