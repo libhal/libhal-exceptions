@@ -49,7 +49,7 @@ class FunctionGroup:
     def generate_order_list(self):
         order = ""
         for function in self.functions:
-            order += f"    *(.text.{function.name})\n"
+            order += f"    *(.text.*{function.name})\n"
         return order
 
 
@@ -74,8 +74,8 @@ def main():
                         help='Automatically find optimal block sizes')
     parser.add_argument('--tool-prefix', type=str, default="",
                         help='Toolchain prefix for objdump/nm (e.g., "arm-none-eabi-" or full path)')
-    parser.add_argument('-r', '--ordering_file', type=str,
-                        default="ordering.partial.ld",
+    parser.add_argument('-r', '--order_file', type=str,
+                        default="order.ld",
                         help='Path to where to store the ordering file.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Enable verbose logging')
@@ -164,7 +164,7 @@ def main():
         actualized_functions[-1].address + 4
     """
 
-    logging.debug(FINALIZED_FUNCTIONS)
+    logging.debug(f"\n{FINALIZED_FUNCTIONS}")
 
     # ==========================================================================
     # Step 2: Parse the exception index
@@ -181,7 +181,7 @@ def main():
 
     exception_index_text = exception_index.removeprefix(
         EXCEPTION_INDEX_SECTION_NAME)
-    logging.info(exception_index_text)
+    logging.info(f"\n{exception_index_text}")
 
     def parse_prel31(value):
         """Convert PREL31 value to signed 32-bit integer"""
@@ -200,13 +200,20 @@ def main():
         initial_address_text = bytes.fromhex(first_line)
         initial_address = struct.unpack('>I', initial_address_text)[0]
         logging.debug(f'initial address = {initial_address:08x}')
+        # format:  800835c 00000000 e07cff7f 10ffff7f ec7cff7f  .....|.......|..
+
+        # For some reason there is a set of 0s at the start which puts
+        # everything off by 1. We need to handle this line outside of the loop
         for line in hex_lines:
             # Extract hex values after the address
-            parts = line.split()[1:]  # Skip address
-            for part in parts:
-                if len(part) == 8:  # 4-byte hex values
-                    hex_bytes.append(part)
+            address_and_values = (line.split("  ")[0]).strip()
+            logging.debug(f'address_and_values = {address_and_values}')
+            parts = address_and_values.split(" ")[1:]
+            logging.debug(f'parts = {parts}')
+            hex_bytes.extend(parts)
 
+        # Skip the first 0s in the index
+        hex_bytes = hex_bytes[1:]
         results: List[FunctionInfo] = []
 
         # Process in pairs (skip first two, then take pairs)
@@ -214,8 +221,10 @@ def main():
             if i + 1 >= len(hex_bytes):
                 break
 
-            offset_hex = hex_bytes[i]
-            addr_hex = hex_bytes[i + 1]
+            addr_hex = hex_bytes[i]
+            offset_hex = hex_bytes[i + 1]
+            logging.debug(f"  addr_hex = {addr_hex}")
+            logging.debug(f"offset_hex = {offset_hex}")
 
             addr_bytes = bytes.fromhex(addr_hex)
             offset_bytes = bytes.fromhex(offset_hex)
@@ -225,12 +234,12 @@ def main():
 
             # Apply PREL31 conversion
             addr_prel31 = parse_prel31(addr_raw)
-            logging.debug(f"addr_prel31 = {addr_prel31}")
             offset_prel31 = offset_raw
 
-            # TODO(kammce): THIS IS WRONG!!!
             entry_offset = (i + 1) * 4
-            absolute_address = (0x800835c + entry_offset) + addr_prel31
+            absolute_address = (initial_address + entry_offset) + addr_prel31
+            logging.debug(
+                f"addr_prel31 = {addr_prel31} -> {absolute_address:08x}\n")
 
             results.append((absolute_address, offset_prel31))
 
@@ -252,20 +261,20 @@ def main():
         next_entry_function, _ = EXCEPTION_ENTRIES[i]
 
         logging.debug(
-            f"entry_function: {entry_function:08x}, next_entry_function: {next_entry_function:08x}")
+            f"entry_function: {entry_function:08x}, unwind: {unwind_info}, next_entry_function: {next_entry_function:08x}")
 
         if FINALIZED_FUNCTIONS[function_index].address != entry_function:
             # TODO(kammce): figure out better exception
             logging.error(
                 f"entry_function({i}): {entry_function:08x} != addr: {FINALIZED_FUNCTIONS[function_index].address:08x}")
-            raise ValueError
+            exit(1)
 
         FINALIZED_FUNCTIONS[function_index].unwind_info = unwind_info
         function_index = function_index + 1
 
         while (FINALIZED_FUNCTIONS[function_index].address < next_entry_function):
-            if unwind_info & 1 << 31:
-                logging.debug(f"Set [{function_index}] = {unwind_info}")
+            if unwind_info & 1 << 31 or unwind_info == 1:
+                logging.debug(f"Set [{function_index}] = {unwind_info:08x}")
                 FINALIZED_FUNCTIONS[function_index].unwind_info = unwind_info
             else:
                 logging.debug(
@@ -305,6 +314,9 @@ def main():
     # from the unwind groups as they don't have unwind information.
     leaf_functions = unwind_groups_map[0xFFFFFFFF]
     unwind_groups_map.pop(0xFFFFFFFF)
+    # Add all of the leaf functions to the NOEXCEPT terminate group
+    for funct in leaf_functions.functions:
+        unwind_groups_map[1].add(funct)
     sorted_unwind_groups_list = list(unwind_groups_map.values())
     sorted_unwind_groups_list.sort(key=FunctionGroup.size, reverse=True)
     logging.debug(f"Size sorted unwind groups\n")
@@ -330,7 +342,7 @@ def main():
     order_string += "  }\n"
     order_string += "}\n"
     order_string += "INSERT BEFORE .text;\n"
-    Path(args.ordering_file).write_text(order_string)
+    Path(args.order_file).write_text(order_string)
     logging.info(f"ordering = \n{order_string}")
     return 0
 

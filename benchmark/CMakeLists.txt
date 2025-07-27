@@ -88,7 +88,8 @@ foreach(test_path ${GENERATED_TEST})
 
   target_link_options(${elf} PRIVATE -fno-threadsafe-statics
     -L${CMAKE_SOURCE_DIR}/
-    -Tordering.partial.ld
+    -T${CMAKE_SOURCE_DIR}/order.ld
+    -Wl,-Map=${CMAKE_BINARY_DIR}/${elf}.map
   )
 
   if(prebuilt-picolibc_FOUND)
