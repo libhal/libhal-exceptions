@@ -42,6 +42,7 @@ extern "C"
   void __wrap___cxa_throw(ke::exception_ptr p_thrown_exception,
                           std::type_info* p_type_info,
                           ke::destructor_t p_destructor) noexcept(false);
+  extern std::uint32_t __text_start;
 }  // extern "C"
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(bugprone-reserved-identifier)
@@ -137,33 +138,31 @@ struct nearpoint_descriptor
   std::uint32_t normal_block_size = 0;
   std::uint32_t small_block_size = 0;
 };
-[[gnu::weak]] std::span<std::uint32_t> near_point_descriptor{};
-[[gnu::weak]] std::span<std::uint32_t> normal_table{};
-[[gnu::weak]] std::span<std::uint32_t> small_table{};
+[[gnu::weak]] std::span<std::uint32_t const> near_point_descriptor{};
+[[gnu::weak]] std::span<std::uint32_t const> normal_table{};
+[[gnu::weak]] std::span<std::uint32_t const> small_table{};
 }  // namespace __except_abi::inline v1
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(bugprone-reserved-identifier)
 
-std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
+std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
 {
-  auto const progarm_offset =
-    ke::__except_abi::near_point_descriptor.text_starting_address;
+  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
   auto const pc = p_program_counter - progarm_offset;
-  auto const block_power =
-    ke::__except_abi::near_point_descriptor.normal_block_size;
+  auto const block_power = ke::__except_abi::near_point_descriptor[0];
   auto const inter_block_mask = (1 << block_power) - 1;
   auto const inter_block_location = pc & inter_block_mask;
   auto const block_index = pc >> block_power;
   auto const linear_info = ke::__except_abi::normal_table[block_index];
-  auto const entry_start = linear_info >> 9;
-  auto const average_function_size_bits = linear_info & 0x1FF;
-  if (average_function_size_bits == 0) {
+
+  auto const entry_start = linear_info >> block_power;
+  auto const average_function_size = linear_info & inter_block_mask;
+  if (average_function_size == 0) {
     return entry_start;
   }
-  auto const average_function_size = average_function_size_bits << 2;
   auto const guess_offset = inter_block_location / average_function_size;
   auto const location = entry_start + guess_offset;
-  return static_cast<std::uint32_t>(location);
+  return location;
 }
 
 index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)

@@ -278,7 +278,8 @@ def break_into_blocks(exception_index: List[FunctionGroup],
 
 def generate_cpp_table_file(filename: str,
                             block_power: int,
-                            blocks: List[Block]):
+                            blocks: List[Block],
+                            program_start: int):
     # TODO(kammce): Add support for small table
     code = """#include <cstdint>
 
@@ -290,19 +291,20 @@ namespace ke::__except_abi::inline v1 {
 namespace {
 """
 
-    code += "std::array<std::uint32_t, 1> _near_point_descriptor_data = {\n"
+    code += "std::array<std::uint32_t, 2> const _near_point_descriptor_data = {\n"
     code += f"  0x{block_power:08x},\n"
+    code += f"  0x{program_start:08x},\n"
     code += "};\n\n"
 
-    code += f"std::array<std::uint32_t, {len(blocks)}> _normal_table_data = {{\n"
+    code += f"std::array<std::uint32_t, {len(blocks)}> const _normal_table_data = {{\n"
     for block in blocks:
         code += f"  {block.as_c_bit_mask(block_power)}, // entry={block.start}, avg_size={block.average_size}\n"
     code += "};\n\n"
     code += "}  // namespace\n\n"
 
-    code += "std::span<std::uint32_t> near_point_descriptor = _near_point_descriptor_data;\n"
-    code += "std::span<std::uint32_t> normal_table = _normal_table_data;\n"
-    code += "}  // namespace ke::__except_abi\n"
+    code += "std::span<std::uint32_t const> near_point_descriptor = _near_point_descriptor_data;\n"
+    code += "std::span<std::uint32_t const> normal_table = _normal_table_data;\n"
+    code += "}  // namespace ke::__except_abi::inline v1\n"
 
     with open(filename, "w") as f:
         f.write(code)
@@ -557,7 +559,8 @@ def main():
     logging.debug(f"blocks={blocks}")
     generate_cpp_table_file(blocks=blocks,
                             block_power=10,
-                            filename=args.nearpoint_file)
+                            filename=args.nearpoint_file,
+                            program_start=FINALIZED_FUNCTIONS[0].address)
 
     return 0
 

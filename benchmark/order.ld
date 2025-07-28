@@ -2,6 +2,7 @@ SECTIONS {
   .text.sorted : {
     /* LEAF & unsortable functions below */
     /* Unwind info 0x00000001 */
+    *(.text.unlikely._Z3endv)
     *(.text.unlikely._exit)
     *(.text.unlikely._ZSt9terminatev)
     *(.text.unlikely.abort)
@@ -14,29 +15,23 @@ SECTIONS {
     *(.text.register_tm_clones)
     *(.text.__do_global_dtors_aux)
     *(.text.frame_dummy)
-    *(.text._ZN2ke19to_absolute_addressEPKv)
-    *(.text._ZN2ke15get_index_entryEm)
-    *(.text._ZN2ke14action_decoder19get_next_catch_typeEv)
     *(.text._ZN10__cxxabiv119__terminate_handlerMUlvE_4_FUNEv)
     *(.text._ZN3hal26single_exception_allocator11do_allocateEjj)
     *(.text._ZNK3hal26single_exception_allocator11do_is_equalERKNSt3pmr15memory_resourceE)
     *(.text._ZZ19initialize_platformvENUlvE_4_FUNEv)
+    *(.text._ZN3hal7stm32f14uart12driver_writeESt4spanIKhLj4294967295EE)
     *(.text._ZN3hal7stm32f112gpio_manager6outputD2Ev)
     *(.text._ZN3hal8cortex_m11dwt_counterD2Ev)
-    *(.text._Z5startv)
-    *(.text._Z3endv)
     *(.text._ZNK28single_block_memory_resourceILj256EE11do_is_equalERKNSt3pmr15memory_resourceE)
     *(.text._ZN3hal8cortex_m11dwt_counter13driver_uptimeEv)
     *(.text._ZN3hal8cortex_m11dwt_counter16driver_frequencyEv)
-    *(.text._ZN3hal7stm32f14uart12driver_writeESt4spanIKhLj4294967295EE)
     *(.text._ZN3hal7stm32f14uart11driver_readESt4spanIhLj4294967295EE)
     *(.text._ZN3hal7stm32f14uart12driver_flushEv)
     *(.text._Z5pausev)
-    *(.text._ZN13simple_object7do_workEv.isra.0)
     *(.text._ZN2ke12unwind_frameERKNS_14instructions_tERNS_12cortex_m_cpuE)
     *(.text._ZN3hal26single_exception_allocator13do_deallocateEPvjj)
     *(.text._ZN28single_block_memory_resourceILj256EE11do_allocateEjj)
-    *(.text.__tls_init)
+    *(.text.__tls_init.part.0)
     *(.text._ZN3hal26single_exception_allocatorD2Ev)
     *(.text._ZN28single_block_memory_resourceILj256EED2Ev)
     *(.text._ZN3hal26single_exception_allocatorD0Ev)
@@ -44,12 +39,12 @@ SECTIONS {
     *(.text._ZN3hal8cortex_m11dwt_counterD0Ev)
     *(.text._ZN28single_block_memory_resourceILj256EED0Ev)
     *(.text._ZN28single_block_memory_resourceILj256EE13do_deallocateEPvjj)
-    *(.text._ZN3hal7stm32f14uartD0Ev)
     *(.text._ZN3hal7stm32f14uart16driver_configureERKNS_6serial8settingsE)
     *(.text._ZN2ke16capture_cpu_coreERNS_12cortex_m_cpuE)
     *(.text._ZN2ke16restore_cpu_coreERNS_12cortex_m_cpuE)
     *(.text._ZN2ke15raise_exceptionERNS_23exception_control_blockE)
     *(.text.__wrap___cxa_free_exception)
+    *(.text.__wrap___cxa_end_catch)
     *(.text.__wrap___cxa_begin_catch)
     *(.text.__wrap___cxa_end_cleanup)
     *(.text.__wrap__Unwind_Resume)
@@ -243,75 +238,74 @@ SECTIONS {
     *(.text._Z8depth_68v.isra.0)
     *(.text._Z8depth_69v.isra.0)
     *(.text._Z8depth_70v.isra.0)
-    *(.text._ZN3hal7stm32f127throw_if_pin_is_unavailableENS0_10pin_selectE)
-    *(.text._ZN3hal7stm32f19reset_pinENS0_10pin_selectE)
+    /* Unwind info 0x7ffffe68 */
+    *(.text.startup.main)
     /* Unwind info 0x8012afb0 */
     *(.text._ZNK10__cxxabiv121__vmi_class_type_info12__do_dyncastEiNS_17__class_type_info10__sub_kindEPKS1_PKvS4_S6_RNS1_16__dyncast_resultE)
-    /* Unwind info 0x7ffffe7c */
-    *(.text.startup.main)
-    /* Unwind info 0x8002afb0 */
-    *(.text.__wrap___cxa_throw)
-    *(.text._ZNK10__cxxabiv121__vmi_class_type_info20__do_find_public_srcEiPKvPKNS_17__class_type_infoES2_)
+    /* Unwind info 0x8002a9b0 */
+    *(.text._ZN3hal7stm32f113configure_pinENS0_10pin_selectENS0_12pin_config_tE)
     /* Unwind info 0x80acb0b0 */
     *(.text._ZN3hal5delayERNS_12steady_clockENSt6chrono8durationIxSt5ratioILx1ELx1000000000EEEE.constprop.0)
     *(.text._ZNK10__cxxabiv120__si_class_type_info11__do_upcastEPKNS_17__class_type_infoEPKvRNS1_15__upcast_resultE)
     *(.text._ZN9__gnu_cxx15__snprintf_liteEPcjPKcSt9__va_list)
+    /* Unwind info 0x80b108af */
+    *(.text.__wrap___cxa_throw)
     /* Unwind info 0x8008afb0 */
     *(.text._ZNK10__cxxabiv121__vmi_class_type_info11__do_upcastEPKNS_17__class_type_infoEPKvRNS1_15__upcast_resultE)
-    /* Unwind info 0x8001aab0 */
-    *(.text._ZN3hal7stm32f113configure_pinENS0_10pin_selectENS0_12pin_config_tE)
-    *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE7reserveEj)
-    /* Unwind info 0x80b108a9 */
-    *(.text._ZN3hal7stm32f112gpio_manager6output16driver_configureERKNS_10output_pin8settingsE)
-    *(.text.__wrap___cxa_rethrow)
-    *(.text.__wrap___cxa_allocate_exception)
-    *(.text._ZnwjSt11align_val_t)
     /* Unwind info 0x80a8b0b0 */
-    *(.text._ZN3hal7stm32f112gpio_manager6output12driver_levelEb)
-    *(.text._ZN3hal7stm32f112gpio_manager6output12driver_levelEv)
+    *(.text.unlikely._ZN3hal7stm32f127throw_if_pin_is_unavailableENS0_10pin_selectE.part.0)
+    *(.text.unlikely._ZN3hal7stm32f112_GLOBAL__N_124get_enable_register_infoENS0_10peripheralE.part.0)
     *(.text._ZNSt12length_errorC2EPKc)
     *(.text._ZNSt12out_of_rangeC2EPKc)
     *(.text._ZNSs4_Rep9_S_createEjjRKSaIcE)
     *(.text._Znwj)
-    /* Unwind info 0x7ffffdfc */
-    *(.text._ZN3hal7stm32f18gpio_regEh)
+    /* Unwind info 0x80aab0b0 */
+    *(.text._ZN3hal7stm32f112gpio_manager6output16driver_configureERKNS_10output_pin8settingsE)
+    *(.text.__wrap___cxa_allocate_exception)
+    /* Unwind info 0x80b108a9 */
+    *(.text.__wrap___cxa_rethrow)
+    *(.text._ZnwjSt11align_val_t)
+    /* Unwind info 0x7ffffdf4 */
+    *(.text._ZN3hal7stm32f14uartD0Ev)
+    /* Unwind info 0x7ffffe1c */
     *(.text._ZNK12_GLOBAL__N_122generic_error_category7messageB5cxx11Ei)
-    /* Unwind info 0x80028400 */
-    *(.text._ZN3hal7stm32f112_GLOBAL__N_124get_enable_register_infoENS0_10peripheralE)
-    *(.text._Z8depth_01v.isra.0)
-    /* Unwind info 0x7ffffe20 */
+    /* Unwind info 0x7ffffdf0 */
+    *(.text._ZN3hal7stm32f14uartD2Ev)
+    /* Unwind info 0x8002afb0 */
+    *(.text._ZNK10__cxxabiv121__vmi_class_type_info20__do_find_public_srcEiPKvPKNS_17__class_type_infoES2_)
+    /* Unwind info 0x7ffffe40 */
     *(.text._ZNSt11logic_errorC2EPKc)
     /* Unwind info 0x8002abb0 */
     *(.text._ZNSt12__cow_stringC2EPKcj)
-    /* Unwind info 0x7fffff58 */
+    /* Unwind info 0x7fffff48 */
     *(.text.unlikely._ZSt24__throw_out_of_range_fmtPKcz)
-    /* Unwind info 0x8003a8b0 */
-    *(.text._ZN3hal7stm32f18power_onENS0_10peripheralE)
-    /* Unwind info 0x7ffffe10 */
+    /* Unwind info 0x80028400 */
+    *(.text._Z8depth_01v.isra.0)
+    /* Unwind info 0x8001aab0 */
+    *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE7reserveEj)
+    /* Unwind info 0x7ffffe30 */
     *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_createERjj)
     /* Unwind info 0x80971cab */
     *(.text.unlikely._ZN9__gnu_cxx26__throw_insufficient_spaceEPKcS1_)
-    /* Unwind info 0x7ffffddc */
-    *(.text._ZN3hal7stm32f14uartD2Ev)
+    /* Unwind info 0x7ffffe0c */
+    *(.text._ZN3hal7stm32f18power_onENS0_10peripheralE)
+    /* Unwind info 0x7ffffdf8 */
+    *(.text._ZN3hal7stm32f112gpio_manager6output12driver_levelEb)
     /* Unwind info 0x8003aab0 */
     *(.text._ZNK10__cxxabiv117__class_type_info11__do_upcastEPKS0_PPv)
-    /* Unwind info 0x7ffffe08 */
+    /* Unwind info 0x7ffffe28 */
     *(.text._ZNKSt3_V214error_category10_M_messageB5cxx11Ei)
-    /* Unwind info 0x7fffff40 */
+    /* Unwind info 0x7fffff30 */
     *(.text.unlikely._ZSt19__throw_logic_errorPKc)
-    /* Unwind info 0x7fffff4c */
-    *(.text.unlikely._ZSt20__throw_length_errorPKc)
-    /* Unwind info 0x80048400 */
-    *(.text._ZN3hal7stm32f15is_onENS0_10peripheralE)
-    /* Unwind info 0x7ffffdb8 */
-    *(.text.__wrap___cxa_end_catch)
     /* Unwind info 0x7fffff3c */
+    *(.text.unlikely._ZSt20__throw_length_errorPKc)
+    /* Unwind info 0x7ffffdfc */
+    *(.text._ZN3hal7stm32f112gpio_manager6output12driver_levelEv)
+    /* Unwind info 0x7fffff2c */
     *(.text.unlikely._ZSt17__throw_bad_allocv)
-    /* Unwind info 0x7ffffdf8 */
-    *(.text._ZN3hal7stm32f112_GLOBAL__N_115config_registerERKNS0_10pin_selectE.isra.0)
-    /* Unwind info 0x7ffffe18 */
+    /* Unwind info 0x7ffffe38 */
     *(.text._ZN10__cxxabiv111__terminateEPFvvE)
-    /* Unwind info 0x7ffffe34 */
+    /* Unwind info 0x7ffffe54 */
     *(.text._ZNSt3pmr12_GLOBAL__N_110null_res_t11do_allocateEjj)
   }
 }
