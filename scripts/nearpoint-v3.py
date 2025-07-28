@@ -13,7 +13,7 @@ class FunctionInfo:
     def __init__(self, name: str, address: int, size: int = 0):
         self.name = name
         self.address = address
-        self.size = 0
+        self.size = size
         self.unwind_info = 0xFFFFFFFF
 
     def __repr__(self):
@@ -45,7 +45,7 @@ class FunctionGroup:
         order = ""
         for function in self.functions:
             name = function.name
-            order += f"    *(.text*.{name})\n"
+            order += f"    *({name})\n"
             """
             # Handle C++ constructor/destructor variants
             if re.search(r'[CD][012]Ev$', name):
@@ -103,23 +103,8 @@ def read_disassembly_get_function(text_section_asm: str) -> List[FunctionInfo]:
 
 
 def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
-    # text_address_pattern = r"^\.text[ ]+([0-9x]+)"
-    # text_starting_address = re.findall(text_address_pattern, map_file_text)[0]
-
     actualized_functions: List[FunctionInfo] = []
-
-    # Format:
-    #  .text.__dtoa_engine
-    #             0x080058d4      0x47
-    # This pattern pulls out the:
-    #
-    # - [0] symbol name
-    # - [1] address (as hex string)
-    # - [2] size (as hex string)
-    # Define the regex pattern
-    pattern = r"^ (\.text\.[^ ]+)\n\s+([x0-9a-fA-F]+)\s+([x0-9a-fA-F]+)"
     lines = map_file_text.split('\n')
-    capturing = False
     text_only_lines: List[str] = []
 
     for start in range(len(lines)):
@@ -138,21 +123,20 @@ def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
         line = text_only_lines[index]
         # Start of a sectioned function
         if line.startswith(' .text.'):
-            logging.debug(f"'{line}'")
             sections = line.strip().split(maxsplit=3)
             symbol_name = sections[0]
 
             if len(sections) == 1:
                 address_and_size = text_only_lines[index + 1].strip()
-                logging.debug(f"'{address_and_size}'")
                 address_and_size_array = address_and_size.split(maxsplit=2)
                 address = int(address_and_size_array[0], 16)
                 size = int(address_and_size_array[1], 16)
-            elif len(sections) == 3:
+            elif len(sections) >= 3:
                 address = int(sections[1], 16)
                 size = int(sections[2], 16)
             else:
                 logging.error(f"Invalid map section found: {sections}")
+                exit(1)
         # Start of a function group
         elif line.startswith(' .text '):
             # if this is the case there is always another line right below it
@@ -167,20 +151,6 @@ def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
             f"symbol_name = {symbol_name}, address={address}, size={size}")
         actualized_functions.append(FunctionInfo(
             name=symbol_name, address=address, size=size))
-
-    # # Compile the regex pattern
-    # compiled_pattern = re.compile(pattern, re.MULTILINE)
-    # text_symbols = compiled_pattern.findall(text_only_map_section)
-
-    # for symbol in text_symbols:
-    #     logging.debug(symbol)
-    #     symbol_name = symbol[0]
-    #     address = int(symbol[1], 16)
-    #     size = int(symbol[2], 16)
-    #     logging.debug(
-    #         f"symbol_name = {symbol_name}, address={address}, size={size}")
-    #     actualized_functions.append(FunctionInfo(
-    #         name=symbol_name, address=address, size=size))
 
     return actualized_functions
 
@@ -360,10 +330,10 @@ def main():
         if FINALIZED_FUNCTIONS[function_index].address != entry_function:
             # TODO(kammce): figure out better exception
             logging.error(
-                f"entry_function({i}): {entry_function:08x} !=  {FINALIZED_FUNCTIONS[function_index].address:08x}:{FINALIZED_FUNCTIONS[function_index].name}")
+                f"entry_function({i}): {entry_function:08x} != {FINALIZED_FUNCTIONS[function_index].address:08x}:{FINALIZED_FUNCTIONS[function_index].name}")
 
             # Print the last of functions
-            for i in range(function_index - 2, len(FINALIZED_FUNCTIONS)):
+            for i in range(function_index, len(FINALIZED_FUNCTIONS)):
                 function_symbol = FINALIZED_FUNCTIONS[i]
                 logging.error(f"[{i}] = {function_symbol}")
 
