@@ -80,7 +80,9 @@ foreach(test_path ${GENERATED_TEST})
 
   message(STATUS "Generating Demo for \"${elf}\"")
   add_executable(${elf} ${test_path})
-  add_executable(${nearpoint_elf} ${test_path})
+  add_executable(${nearpoint_elf}
+    ${test_path}
+    ${CMAKE_SOURCE_DIR}/nearpoint.cpp)
 
   target_include_directories(${elf} PRIVATE .)
   target_include_directories(${nearpoint_elf} PRIVATE .)

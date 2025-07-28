@@ -7,6 +7,7 @@ import logging
 import struct
 from pathlib import Path
 from collections import defaultdict
+import statistics
 
 
 class FunctionInfo:
@@ -190,77 +191,123 @@ class Block:
     def __repr__(self):
         return f"Block(start='{self.start}', avg_size={self.average_size})"
 
-    def as_c_bitmask(self):
-        return f"({self.average_size} << 24 | {self.start})"
+    def as_c_bit_mask(self, block_power: int):
+        return f"({self.start} << {block_power}) | {self.average_size}"
 
 
 def break_into_blocks(exception_index: List[FunctionGroup],
-                      block_power: int = 10):
+                      block_power: int = 10) -> List[Block]:
+    # TODO(kammce): Add support for small table
     if block_power < 3:
         raise Exception("Block size power must be greater than 2")
 
+    logging.debug(f"len(exception_index) = {len(exception_index)}")
+
+    index_cursor = 0
+    start_index = 0
+    group_addresses: List[int] = []
+    address_space_sum = 0
+
+    for i, entry in enumerate(exception_index):
+        group_addresses.append(address_space_sum)
+        address_space_sum += entry.size()
+
+    logging.debug(f"Exception index covers {address_space_sum}B of code")
+
     BLOCK_SIZE = (1 << block_power) - 1
-
-    text_size = 0
-    for entry in exception_index:
-        text_size += entry.size()
-        logging.debug(f"entry size = {entry.size()}")
-
-    NUMBER_OF_BLOCKS = (text_size >> block_power) + 1
+    LAST_FUNCTION = group_addresses[-1]
+    FIRST_FUNCTION = group_addresses[0]
+    PROGRAM_LENGTH = LAST_FUNCTION - FIRST_FUNCTION
+    NUMBER_OF_BLOCKS = (PROGRAM_LENGTH >> block_power) + 1
 
     block_list = [Block(0, 0)] * NUMBER_OF_BLOCKS
     logging.debug(f"Created {len(block_list)} blocks")
 
-    exception_iter = 0
-    address_index = exception_index[exception_iter].size()
-    start_index = 0
+    # Lookup Table Region
+    while index_cursor < len(group_addresses) - 1:
+        addr1 = group_addresses[index_cursor] - FIRST_FUNCTION
+        addr2 = group_addresses[index_cursor + 1] - FIRST_FUNCTION
+        function_size = addr2 - addr1
 
-    for block_iter in range(len(block_list)):
-        BLOCK_ADDRESS = block_iter * BLOCK_SIZE
-        delta = BLOCK_ADDRESS - address_index
+        if function_size < BLOCK_SIZE:
+            break
 
-        if delta < -BLOCK_SIZE:
-            logging.debug(
-                f"[{block_iter}] immediate D:{delta}, A_IDX: {address_index}, E_IDX: {exception_iter}")
-            # If we are more than a block size away from the end of this
-            # exception index, then this is an immediate table entry:
-            block_iter = Block(exception_iter, 0)
-            continue
+        starting_block = addr1 >> block_power
+        ending_block = addr2 >> block_power
 
-        # Distance is negative but not a whole block size meaning
-        # additional functions can be added to the address space until we
-        # reach beyond the block's address space.
-        start_index = exception_iter
-        starting_address = address_index
-        while delta > -BLOCK_SIZE:
-            exception_iter += 1
-            if (exception_iter == len(exception_index) - 1):
-                logging.debug(
-                    f"[{block_iter}] exception_iter = {exception_iter}")
-                break
-            address_index += exception_index[exception_iter].size()
-            delta = (BLOCK_ADDRESS - address_index)
-            logging.debug(
-                f"next_size: {exception_index[exception_iter].size()} : address_index: {address_index} : delta: {delta}")
+        for i in range(starting_block, ending_block):
+            if i < len(block_list):
+                block_list[i] = Block(index_cursor, 0)
 
-        if (exception_iter - start_index) < 4:
-            logging.debug(
-                f"[{block_iter}] proximity immediate D:{delta}, A_IDX: {address_index}, E_IDX: {exception_iter}")
-            # If we are more than a block size away from the end of this
-            # exception index, then this is an immediate table entry:
-            block_iter = Block(start_index, 0)
-            continue
+        index_cursor += 1
 
-        block_total_size = 0
-        for i in range(start_index, exception_iter):
-            block_total_size += exception_index[i].size()
-        AVERAGE_SIZE = round(block_total_size / (exception_iter - start_index))
+    logging.debug(f"Lookup Region Ends @ {index_cursor}")
 
-        logging.debug(
-            f"[{block_iter}] group D:{delta}, A_IDX: {address_index}, E_IDX: {exception_iter}")
-        block_list[block_iter] = Block(start_index, AVERAGE_SIZE)
+    # Grouped Function Region
+    start_index = index_cursor
+    # Iterate through the address space, setting blocks as necessary. We skip
+    # the last block
+    while index_cursor < len(group_addresses) - 1:
+        index_cursor += 1
+        BLOCK_START_ADDRESS = group_addresses[start_index] - \
+            FIRST_FUNCTION
+        BLOCK_NUMBER_START = (BLOCK_START_ADDRESS >> block_power)
+        BLOCK_END_ADDRESS = group_addresses[index_cursor] - FIRST_FUNCTION
+        BLOCK_NUMBER_END = (BLOCK_END_ADDRESS >> block_power)
+        BLOCK_INDEX_DELTA = (BLOCK_NUMBER_END - BLOCK_NUMBER_START)
+
+        if BLOCK_INDEX_DELTA == 1:
+            if BLOCK_NUMBER_START < len(block_list):
+                EXCEPTION_SLICE = exception_index[start_index:index_cursor]
+                AVERAGE_SIZE = round(statistics.fmean(
+                    entry.size() for entry in EXCEPTION_SLICE))
+                block_list[BLOCK_NUMBER_START] = Block(
+                    start_index, AVERAGE_SIZE)
+            start_index = index_cursor
+        elif BLOCK_INDEX_DELTA > 1:
+            logging.warning("Block delta > 1, adjusting...")
+
+    # Setting final block
+    EXCEPTION_SLICE = exception_index[start_index:index_cursor]
+    AVERAGE_SIZE = round(statistics.fmean(
+        entry.size() for entry in exception_index[start_index:index_cursor]))
+    block_list[-1] = Block(start_index, AVERAGE_SIZE)
 
     return block_list
+
+
+def generate_cpp_table_file(filename: str,
+                            block_power: int,
+                            blocks: List[Block]):
+    # TODO(kammce): Add support for small table
+    code = """#include <cstdint>
+
+#include <array>
+#include <span>
+
+namespace ke::__except_abi::inline v1 {
+
+namespace {
+"""
+
+    code += "std::array<std::uint32_t, 1> _near_point_descriptor_data = {\n"
+    code += f"  0x{block_power:08x},\n"
+    code += "};\n\n"
+
+    code += f"std::array<std::uint32_t, {len(blocks)}> _normal_table_data = {{\n"
+    for block in blocks:
+        code += f"  {block.as_c_bit_mask(block_power)}, // entry={block.start}, avg_size={block.average_size}\n"
+    code += "};\n\n"
+    code += "}  // namespace\n\n"
+
+    code += "std::span<std::uint32_t> near_point_descriptor = _near_point_descriptor_data;\n"
+    code += "std::span<std::uint32_t> normal_table = _normal_table_data;\n"
+    code += "}  // namespace ke::__except_abi\n"
+
+    with open(filename, "w") as f:
+        f.write(code)
+
+    logging.info(f"C++ nearpoint tables written to: {filename}")
 
 
 def main():
@@ -289,6 +336,9 @@ def main():
     parser.add_argument('-r', '--order_file', type=str,
                         default="order.ld",
                         help='Path to where to store the ordering file.')
+    parser.add_argument('-n', '--nearpoint_file', type=str,
+                        default="nearpoint.cpp",
+                        help='Path to where to store the nearpoint table.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Enable verbose logging')
     args = parser.parse_args()
@@ -503,27 +553,11 @@ def main():
     # ==========================================================================
     # Step 7: Generate nearpoint table
     # ==========================================================================
-    blocks = break_into_blocks(sorted_unwind_groups_list)
-
+    blocks = break_into_blocks(sorted_unwind_groups_list, block_power=10)
     logging.debug(f"blocks={blocks}")
-
-    """
-    .nearpoint_info : {
-        _nearpoint_table_start = .;
-
-        /* Function count */
-        LONG((_ordered_functions_end - _ordered_functions_start) / 4)
-
-        /* Address ranges */
-        LONG(_ordered_functions_start)
-        LONG(_ordered_functions_end)
-
-        /* Magic signature */
-        LONG(0xDEADBEEF)
-
-        _nearpoint_table_end = .;
-    }
-    """
+    generate_cpp_table_file(blocks=blocks,
+                            block_power=10,
+                            filename=args.nearpoint_file)
 
     return 0
 
