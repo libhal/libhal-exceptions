@@ -45,17 +45,10 @@ class FunctionGroup:
         order = ""
         for function in self.functions:
             name = function.name
-            order += f"    *({name})\n"
-            """
-            # Handle C++ constructor/destructor variants
-            if re.search(r'[CD][012]Ev$', name):
-                # Replace D1Ev with D* or C1Ev with C*
-                base_name = re.sub(r'[CD][012]Ev$', '', name)
-                order += f"    *(.text.*{base_name}*)\n"
+            if name.startswith(".text."):
+                order += f"    *({name})\n"
             else:
-                order += f"    *(.text.*{name})\n"
-            """
-
+                order += f"    {name}\n"
         return order
 
 
@@ -102,6 +95,33 @@ def read_disassembly_get_function(text_section_asm: str) -> List[FunctionInfo]:
     return FINALIZED_FUNCTIONS
 
 
+def parse_object_map_line(line):
+    # Split by whitespace to get the main components
+    parts = line.split()
+
+    # parts[0] = '.text'
+    # parts[1] = '0x0800391c'
+    # parts[2] = '0x378'
+    # parts[3] = '/Users/kammce/.conan2/p/.../libgcc.a(_arm_addsubdf3.o)'
+
+    address = int(parts[1], 16)  # Convert hex to int
+    size = int(parts[2], 16)     # Convert hex to int
+
+    # Extract the object file name from the path
+    full_path = parts[3]
+
+    # Find the part in parentheses (the object file)
+    if '(' in full_path and ')' in full_path:
+        start = full_path.rfind('(')  # Find last '('
+        end = full_path.rfind(')')    # Find last ')'
+        obj_file = full_path[start+1:end]  # Extract '_arm_addsubdf3.o'
+    else:
+        # If no parentheses, take the last part of the path
+        obj_file = full_path.split('/')[-1]
+
+    return address, size, obj_file
+
+
 def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
     actualized_functions: List[FunctionInfo] = []
     lines = map_file_text.split('\n')
@@ -140,10 +160,9 @@ def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
         # Start of a function group
         elif line.startswith(' .text '):
             # if this is the case there is always another line right below it
-            symbol_name = text_only_lines[index + 1].split(maxsplit=2)[1]
-            glob_start = line.strip().split(maxsplit=3)
-            address = int(glob_start[1], 16)
-            size = int(glob_start[2], 16)
+            address, size, object_file = parse_object_map_line(line)
+            # *_arm_addsubdf3.o(.text*)
+            symbol_name = "*" + object_file + "(.text*)"
         else:
             continue
 
