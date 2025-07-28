@@ -51,10 +51,10 @@ def main():
     args = parser.parse_args()
 
     logging.info(
-        f"Address: 0x{args.address:08x}, PREL31: 0x{args.prel31_offset:08x}")
+        f"Address: {args.address:08x}, PREL31: {args.prel31_offset:08x}")
     absolute_address = parse_prel31(
         args.address, args.prel31_offset, args.endian)
-    logging.info(f"Result 0x{absolute_address:08x}")
+    logging.info(f"Result {absolute_address:08x}")
 
     return 0
 

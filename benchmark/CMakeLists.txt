@@ -105,8 +105,12 @@ foreach(test_path ${GENERATED_TEST})
   target_link_options(${nearpoint_elf} PRIVATE -fno-threadsafe-statics
     -L${CMAKE_SOURCE_DIR}/
     -T${CMAKE_SOURCE_DIR}/order.ld
-    -Wl,-Map=${CMAKE_BINARY_DIR}/${elf}.map
+    -Wl,-Map=${CMAKE_BINARY_DIR}/${nearpoint_elf}.map
   )
+
+  set_property(TARGET ${nearpoint_elf}
+               PROPERTY LINK_DEPENDS
+              ${CMAKE_SOURCE_DIR}/order.ld)
 
   if(prebuilt-picolibc_FOUND)
     target_link_libraries(${elf} PRIVATE picolibc)

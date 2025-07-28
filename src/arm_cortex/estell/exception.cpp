@@ -133,6 +133,7 @@ std::span<index_entry_t const> get_arm_exception_index()
 namespace __except_abi::inline v1 {
 struct nearpoint_descriptor
 {
+  std::uint32_t text_starting_address = 0;
   std::uint32_t normal_block_size = 0;
   std::uint32_t small_block_size = 0;
 };
@@ -145,9 +146,11 @@ struct nearpoint_descriptor
 
 std::uint32_t near_point_guess_index(std::uint32_t p_program_counter)
 {
-  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
+  auto const progarm_offset =
+    ke::__except_abi::near_point_descriptor.text_starting_address;
   auto const pc = p_program_counter - progarm_offset;
-  auto const block_power = ke::__except_abi::near_point_descriptor[0];
+  auto const block_power =
+    ke::__except_abi::near_point_descriptor.normal_block_size;
   auto const inter_block_mask = (1 << block_power) - 1;
   auto const inter_block_location = pc & inter_block_mask;
   auto const block_index = pc >> block_power;
@@ -1817,7 +1820,7 @@ void raise_exception(exception_control_block& p_exception_object)
       }
       case runtime_state::get_next_frame: {
         auto const& index_entry = [&p_exception_object]() -> decltype(auto) {
-          if (__except_abi::near_point_descriptor.empty()) {
+          if (__except_abi::normal_table.empty()) {
             return get_index_entry(p_exception_object.cpu.pc);
           } else {
             return get_index_entry_near_point(p_exception_object.cpu.pc);

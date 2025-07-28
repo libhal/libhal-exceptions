@@ -10,7 +10,7 @@ from collections import defaultdict
 
 
 class FunctionInfo:
-    def __init__(self, name: str, address: int):
+    def __init__(self, name: str, address: int, size: int = 0):
         self.name = name
         self.address = address
         self.size = 0
@@ -44,70 +44,22 @@ class FunctionGroup:
     def generate_order_list(self):
         order = ""
         for function in self.functions:
-            order += f"    *(.text.*{function.name})\n"
+            name = function.name
+            order += f"    *(.text*.{name})\n"
+            """
+            # Handle C++ constructor/destructor variants
+            if re.search(r'[CD][012]Ev$', name):
+                # Replace D1Ev with D* or C1Ev with C*
+                base_name = re.sub(r'[CD][012]Ev$', '', name)
+                order += f"    *(.text.*{base_name}*)\n"
+            else:
+                order += f"    *(.text.*{name})\n"
+            """
+
         return order
 
 
-def main():
-    logging.getLogger().setLevel(logging.DEBUG)
-    parser = argparse.ArgumentParser(
-        description='Generate nearpoint exception tables and linker script from ELF file'
-    )
-    parser.add_argument('elf_file', help='Path to the ELF binary')
-    parser.add_argument('-o', '--output',
-                        help='Output name (default: elf_file.nearpoint.cpp)',
-                        default=None)
-    parser.add_argument('-b', '--block-power', type=int, default=0,
-                        help='Normal block size power of 2 (0 = auto-optimize)')
-    parser.add_argument('-s', '--small-block-power', type=int, default=0,
-                        help='Small block size power of 2 (0 = auto-optimize)')
-    parser.add_argument('-e', '--error-threshold', type=int, default=8,
-                        help='Error threshold for small table generation (default: 8, min: 4)')
-    parser.add_argument('-i', '--interactive', action='store_true',
-                        help='Enter interactive testing mode after generation')
-    parser.add_argument('--auto-optimize', action='store_true',
-                        help='Automatically find optimal block sizes')
-    parser.add_argument('--tool-prefix', type=str, default="",
-                        help='Toolchain prefix for objdump/nm (e.g., "arm-none-eabi-" or full path)')
-    parser.add_argument('-r', '--order_file', type=str,
-                        default="order.ld",
-                        help='Path to where to store the ordering file.')
-    parser.add_argument('-v', '--verbose', action='store_true',
-                        help='Enable verbose logging')
-    args = parser.parse_args()
-
-    tool_prefix = args.tool_prefix
-
-    objdump_cmd = f"{tool_prefix}/arm-none-eabi-objdump"
-
-    # ==========================================================================
-    # Step 0: Disassemble elf file with all sections
-    # ==========================================================================
-    disassembly_cmd = [objdump_cmd, '-d', '-s', args.elf_file]
-    disassembly = subprocess.check_output(
-        disassembly_cmd, universal_newlines=True, stderr=subprocess.PIPE)
-
-    # ==========================================================================
-    # Step 1: Extract the list of ACTUAL functions from the `.text` section.
-    # ==========================================================================
-
-    def get_substring_after(main_string, delimiter):
-        index = main_string.rfind(delimiter)
-        if index == -1:
-            raise ValueError
-        else:
-            return main_string[index + len(delimiter):]
-
-    def get_substring_after(main_string, delimiter):
-        index = main_string.rfind(delimiter)
-        if index == -1:
-            raise ValueError
-        else:
-            return main_string[index + len(delimiter):]
-
-    text_section_asm = get_substring_after(
-        disassembly, 'Disassembly of section .text:\n\n')
-
+def read_disassembly_get_function(text_section_asm: str) -> List[FunctionInfo]:
     actualized_functions: List[FunctionInfo] = []
     lines = text_section_asm.splitlines()
     for line in lines:
@@ -147,6 +99,152 @@ def main():
     # a list of ALL functions within the final binary
     FINALIZED_FUNCTIONS = actualized_functions[:-1]
 
+    return FINALIZED_FUNCTIONS
+
+
+def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
+    # text_address_pattern = r"^\.text[ ]+([0-9x]+)"
+    # text_starting_address = re.findall(text_address_pattern, map_file_text)[0]
+
+    actualized_functions: List[FunctionInfo] = []
+
+    # Format:
+    #  .text.__dtoa_engine
+    #             0x080058d4      0x47
+    # This pattern pulls out the:
+    #
+    # - [0] symbol name
+    # - [1] address (as hex string)
+    # - [2] size (as hex string)
+    # Define the regex pattern
+    pattern = r"^ (\.text\.[^ ]+)\n\s+([x0-9a-fA-F]+)\s+([x0-9a-fA-F]+)"
+    lines = map_file_text.split('\n')
+    capturing = False
+    text_only_lines: List[str] = []
+
+    for start in range(len(lines)):
+        if lines[start].startswith('.text'):
+            # Trim all lines before this line
+            lines = lines[start:]
+            break
+
+    for line in lines:
+        text_only_lines.append(line)
+        # Trim everything after the text section
+        if '__fini_array_end = .' in line:
+            break
+
+    for index in range(len(text_only_lines)):
+        line = text_only_lines[index]
+        # Start of a sectioned function
+        if line.startswith(' .text.'):
+            logging.debug(f"'{line}'")
+            sections = line.strip().split(maxsplit=3)
+            symbol_name = sections[0]
+
+            if len(sections) == 1:
+                address_and_size = text_only_lines[index + 1].strip()
+                logging.debug(f"'{address_and_size}'")
+                address_and_size_array = address_and_size.split(maxsplit=2)
+                address = int(address_and_size_array[0], 16)
+                size = int(address_and_size_array[1], 16)
+            elif len(sections) == 3:
+                address = int(sections[1], 16)
+                size = int(sections[2], 16)
+            else:
+                logging.error(f"Invalid map section found: {sections}")
+        # Start of a function group
+        elif line.startswith(' .text '):
+            # if this is the case there is always another line right below it
+            symbol_name = text_only_lines[index + 1].split(maxsplit=2)[1]
+            glob_start = line.strip().split(maxsplit=3)
+            address = int(glob_start[1], 16)
+            size = int(glob_start[2], 16)
+        else:
+            continue
+
+        logging.debug(
+            f"symbol_name = {symbol_name}, address={address}, size={size}")
+        actualized_functions.append(FunctionInfo(
+            name=symbol_name, address=address, size=size))
+
+    # # Compile the regex pattern
+    # compiled_pattern = re.compile(pattern, re.MULTILINE)
+    # text_symbols = compiled_pattern.findall(text_only_map_section)
+
+    # for symbol in text_symbols:
+    #     logging.debug(symbol)
+    #     symbol_name = symbol[0]
+    #     address = int(symbol[1], 16)
+    #     size = int(symbol[2], 16)
+    #     logging.debug(
+    #         f"symbol_name = {symbol_name}, address={address}, size={size}")
+    #     actualized_functions.append(FunctionInfo(
+    #         name=symbol_name, address=address, size=size))
+
+    return actualized_functions
+
+
+def get_substring_after(main_string, delimiter):
+    index = main_string.rfind(delimiter)
+    if index == -1:
+        raise ValueError
+    else:
+        return main_string[index + len(delimiter):]
+
+
+def main():
+    logging.getLogger().setLevel(logging.DEBUG)
+    parser = argparse.ArgumentParser(
+        description='Generate nearpoint exception tables and linker script from ELF file'
+    )
+    parser.add_argument('elf_file', help='Path to the ELF binary')
+    parser.add_argument('-o', '--output',
+                        help='Output name (default: elf_file.nearpoint.cpp)',
+                        default=None)
+    parser.add_argument('-b', '--block-power', type=int, default=0,
+                        help='Normal block size power of 2 (0 = auto-optimize)')
+    parser.add_argument('-s', '--small-block-power', type=int, default=0,
+                        help='Small block size power of 2 (0 = auto-optimize)')
+    parser.add_argument('-e', '--error-threshold', type=int, default=8,
+                        help='Error threshold for small table generation (default: 8, min: 4)')
+    parser.add_argument('-i', '--interactive', action='store_true',
+                        help='Enter interactive testing mode after generation')
+    parser.add_argument('--auto-optimize', action='store_true',
+                        help='Automatically find optimal block sizes')
+    parser.add_argument('--tool-prefix', type=str, default="",
+                        help='Toolchain prefix for objdump/nm (e.g., "arm-none-eabi-" or full path)')
+    parser.add_argument('-m', '--map', type=Path, required=True,
+                        help='Path to map file for executable')
+    parser.add_argument('-r', '--order_file', type=str,
+                        default="order.ld",
+                        help='Path to where to store the ordering file.')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Enable verbose logging')
+    args = parser.parse_args()
+
+    tool_prefix = args.tool_prefix
+
+    objdump_cmd = f"{tool_prefix}/arm-none-eabi-objdump"
+
+    # ==========================================================================
+    # Step 0: Disassemble elf file with all sections
+    # ==========================================================================
+    disassembly_cmd = [objdump_cmd, '-d', '-s', args.elf_file]
+    disassembly = subprocess.check_output(
+        disassembly_cmd, universal_newlines=True, stderr=subprocess.PIPE)
+
+    # ==========================================================================
+    # Step 1: Extract the list of ACTUAL functions from the `.text` section.
+    # ==========================================================================
+
+    # actualized_functions: List[FunctionInfo] = read_disassembly_get_function(
+    #     get_substring_after(disassembly, 'Disassembly of section .text:\n\n'))
+
+    map_file = Path(args.map).read_text()
+    FINALIZED_FUNCTIONS = read_map_get_function(
+        map_file)
+
     # TODO(kammce): Consider what happens if __text_end is not in the linker
     """
     # Handle last function by using the address in the address in the final line
@@ -159,7 +257,7 @@ def main():
         actualized_functions[-1].address + 4
     """
 
-    logging.debug(f"\n{FINALIZED_FUNCTIONS}")
+    logging.debug(f"FINALIZED_FUNCTIONS = \n{FINALIZED_FUNCTIONS}")
 
     # ==========================================================================
     # Step 2: Parse the exception index
@@ -207,8 +305,9 @@ def main():
             logging.debug(f'parts = {parts}')
             hex_bytes.extend(parts)
 
-        # Skip the first 0s in the index
-        hex_bytes = hex_bytes[1:]
+        # Skip the first 0s in the index if it exists
+        if hex_bytes[0] == "00000000":
+            hex_bytes = hex_bytes[1:]
         results: List[FunctionInfo] = []
 
         # Process in pairs (skip first two, then take pairs)
@@ -231,7 +330,7 @@ def main():
             addr_prel31 = parse_prel31(addr_raw)
             offset_prel31 = offset_raw
 
-            entry_offset = (i + 1) * 4
+            entry_offset = i * 4
             absolute_address = (initial_address + entry_offset) + addr_prel31
             logging.debug(
                 f"addr_prel31 = {addr_prel31} -> {absolute_address:08x}\n")
@@ -253,7 +352,7 @@ def main():
 
     for i in range(1, len(EXCEPTION_ENTRIES)):
         entry_function, unwind_info = EXCEPTION_ENTRIES[i - 1]
-        next_entry_function, _ = EXCEPTION_ENTRIES[i]
+        next_entry_function, next_unwind_info = EXCEPTION_ENTRIES[i]
 
         logging.debug(
             f"entry_function: {entry_function:08x}, unwind: {unwind_info}, next_entry_function: {next_entry_function:08x}")
@@ -261,7 +360,13 @@ def main():
         if FINALIZED_FUNCTIONS[function_index].address != entry_function:
             # TODO(kammce): figure out better exception
             logging.error(
-                f"entry_function({i}): {entry_function:08x} != addr: {FINALIZED_FUNCTIONS[function_index].address:08x}")
+                f"entry_function({i}): {entry_function:08x} !=  {FINALIZED_FUNCTIONS[function_index].address:08x}:{FINALIZED_FUNCTIONS[function_index].name}")
+
+            # Print the last of functions
+            for i in range(function_index - 2, len(FINALIZED_FUNCTIONS)):
+                function_symbol = FINALIZED_FUNCTIONS[i]
+                logging.error(f"[{i}] = {function_symbol}")
+
             exit(1)
 
         FINALIZED_FUNCTIONS[function_index].unwind_info = unwind_info
@@ -269,7 +374,8 @@ def main():
 
         while (FINALIZED_FUNCTIONS[function_index].address < next_entry_function):
             if unwind_info & 1 << 31 or unwind_info == 1:
-                logging.debug(f"Set [{function_index}] = {unwind_info:08x}")
+                logging.debug(
+                    f"Set [{function_index}] = {FINALIZED_FUNCTIONS[function_index].address:08x}:{FINALIZED_FUNCTIONS[function_index].name} = {unwind_info:08x}")
                 FINALIZED_FUNCTIONS[function_index].unwind_info = unwind_info
             else:
                 logging.debug(
@@ -283,7 +389,7 @@ def main():
     if not (last_unwind_info & 1 << 31):
         last_unwind_info = 0xFFFFFFFF
     for i in range(function_index, len(FINALIZED_FUNCTIONS)):
-        FINALIZED_FUNCTIONS[function_index].unwind_info = last_unwind_info
+        FINALIZED_FUNCTIONS[i].unwind_info = last_unwind_info
 
     # ==========================================================================
     # Step 4: Collect functions into groups with common unwind info
@@ -324,18 +430,17 @@ def main():
     # ==========================================================================
     order_string = ""
     order_string += "SECTIONS {\n"
-    order_string += "  .text : {\n"
+    order_string += "  .text.sorted : {\n"
+    order_string += "    /* LEAF & unsortable functions below */\n"
+    order_string += leaf_functions.generate_order_list()
     for group in sorted_unwind_groups_list:
         # SECTIONS {
         #     .text : {
-
         order_string += f"    /* Unwind info 0x{group.unwind_info:08x} */\n"
         order_string += group.generate_order_list()
         #     }
         # }
         # INSERT BEFORE .text;
-    order_string += "    /* LEAF functions below */\n"
-    order_string += leaf_functions.generate_order_list()
     order_string += "  }\n"
     order_string += "}\n"
     order_string += "INSERT BEFORE .text;\n"

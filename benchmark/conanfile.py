@@ -65,4 +65,4 @@ class demos(ConanFile):
         bootstrap = self.python_requires["libhal-bootstrap"]
         bootstrap.module.add_demo_requirements(self)
         if self.options.platform != "mac":
-            self.requires("libhal-exceptions/1.3.2")
+            self.requires("libhal-exceptions/1.3.3")
