@@ -182,6 +182,87 @@ def get_substring_after(main_string, delimiter):
         return main_string[index + len(delimiter):]
 
 
+class Block:
+    def __init__(self, start_entry: int, average_size: int):
+        self.start = start_entry
+        self.average_size = average_size
+
+    def __repr__(self):
+        return f"Block(start='{self.start}', avg_size={self.average_size})"
+
+    def as_c_bitmask(self):
+        return f"({self.average_size} << 24 | {self.start})"
+
+
+def break_into_blocks(exception_index: List[FunctionGroup],
+                      block_power: int = 10):
+    if block_power < 3:
+        raise Exception("Block size power must be greater than 2")
+
+    BLOCK_SIZE = (1 << block_power) - 1
+
+    text_size = 0
+    for entry in exception_index:
+        text_size += entry.size()
+        logging.debug(f"entry size = {entry.size()}")
+
+    NUMBER_OF_BLOCKS = (text_size >> block_power) + 1
+
+    block_list = [Block(0, 0)] * NUMBER_OF_BLOCKS
+    logging.debug(f"Created {len(block_list)} blocks")
+
+    exception_iter = 0
+    address_index = exception_index[exception_iter].size()
+    start_index = 0
+
+    for block_iter in range(len(block_list)):
+        BLOCK_ADDRESS = block_iter * BLOCK_SIZE
+        delta = BLOCK_ADDRESS - address_index
+
+        if delta < -BLOCK_SIZE:
+            logging.debug(
+                f"[{block_iter}] immediate D:{delta}, A_IDX: {address_index}, E_IDX: {exception_iter}")
+            # If we are more than a block size away from the end of this
+            # exception index, then this is an immediate table entry:
+            block_iter = Block(exception_iter, 0)
+            continue
+
+        # Distance is negative but not a whole block size meaning
+        # additional functions can be added to the address space until we
+        # reach beyond the block's address space.
+        start_index = exception_iter
+        starting_address = address_index
+        while delta > -BLOCK_SIZE:
+            exception_iter += 1
+            if (exception_iter == len(exception_index) - 1):
+                logging.debug(
+                    f"[{block_iter}] exception_iter = {exception_iter}")
+                break
+            address_index += exception_index[exception_iter].size()
+            delta = (BLOCK_ADDRESS - address_index)
+            logging.debug(
+                f"next_size: {exception_index[exception_iter].size()} : address_index: {address_index} : delta: {delta}")
+
+        if (exception_iter - start_index) < 4:
+            logging.debug(
+                f"[{block_iter}] proximity immediate D:{delta}, A_IDX: {address_index}, E_IDX: {exception_iter}")
+            # If we are more than a block size away from the end of this
+            # exception index, then this is an immediate table entry:
+            block_iter = Block(start_index, 0)
+            continue
+
+        block_total_size = 0
+        for i in range(start_index, exception_iter):
+            block_total_size += exception_index[i].size()
+        AVERAGE_SIZE = round(block_total_size / (exception_iter - start_index))
+
+        logging.debug(
+            f"[{block_iter}] group D:{delta}, A_IDX: {address_index}, E_IDX: {exception_iter}")
+        block_list[block_iter] = Block(start_index, AVERAGE_SIZE)
+
+    return block_list
+
+
 def main():
     logging.getLogger().setLevel(logging.DEBUG)
     parser = argparse.ArgumentParser(
@@ -227,25 +308,9 @@ def main():
     # Step 1: Extract the list of ACTUAL functions from the `.text` section.
     # ==========================================================================
 
-    # actualized_functions: List[FunctionInfo] = read_disassembly_get_function(
-    #     get_substring_after(disassembly, 'Disassembly of section .text:\n\n'))
-
     map_file = Path(args.map).read_text()
     FINALIZED_FUNCTIONS = read_map_get_function(
         map_file)
-
-    # TODO(kammce): Consider what happens if __text_end is not in the linker
-    """
-    # Handle last function by using the address in the address in the final line
-    # format:  "8006f8c:	5119 0800                                   .Q.."
-    final_line = lines[-1]
-    logging.debug(f'final_line = "{final_line}"')
-    last_instruction_address = r"^ ([0-9a-fA-F]+):"
-    last_address = int(re.findall(last_instruction_address, final_line)[0], 16)
-    actualized_functions[-1].size = last_address - \
-        actualized_functions[-1].address + 4
-    """
-
     logging.debug(f"FINALIZED_FUNCTIONS = \n{FINALIZED_FUNCTIONS}")
 
     # ==========================================================================
@@ -421,7 +486,6 @@ def main():
     order_string += "SECTIONS {\n"
     order_string += "  .text.sorted : {\n"
     order_string += "    /* LEAF & unsortable functions below */\n"
-    order_string += leaf_functions.generate_order_list()
     for group in sorted_unwind_groups_list:
         # SECTIONS {
         #     .text : {
@@ -435,6 +499,32 @@ def main():
     order_string += "INSERT BEFORE .text;\n"
     Path(args.order_file).write_text(order_string)
     logging.info(f"ordering = \n{order_string}")
+
+    # ==========================================================================
+    # Step 7: Generate nearpoint table
+    # ==========================================================================
+    blocks = break_into_blocks(sorted_unwind_groups_list)
+
+    logging.debug(f"blocks={blocks}")
+
+    """
+    .nearpoint_info : {
+        _nearpoint_table_start = .;
+
+        /* Function count */
+        LONG((_ordered_functions_end - _ordered_functions_start) / 4)
+
+        /* Address ranges */
+        LONG(_ordered_functions_start)
+        LONG(_ordered_functions_end)
+
+        /* Magic signature */
+        LONG(0xDEADBEEF)
+
+        _nearpoint_table_end = .;
+    }
+    """
+
     return 0
 
 
