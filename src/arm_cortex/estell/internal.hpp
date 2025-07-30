@@ -352,6 +352,11 @@ struct flattened_hierarchy
     }
     bases[size++] = p_info;
   }
+
+  void reset()
+  {
+    size = 0;
+  }
 };
 
 template<typename T = std::byte>

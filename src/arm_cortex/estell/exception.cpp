@@ -60,7 +60,7 @@ struct instructions_t
   };
 };
 
-thread_local exception_control_block control_block{};
+exception_control_block control_block{};
 
 su16_t* get_su16(void* p_ptr)
 {
@@ -2187,6 +2187,7 @@ extern "C"
   {
     auto& control_block = ke::control_block;
 
+    control_block.type_info.reset();
     control_block.thrown_object = p_thrown_exception;
     control_block.destructor = p_destructor;
     ke::capture_cpu_core(control_block.cpu);

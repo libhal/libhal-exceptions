@@ -61,8 +61,7 @@ if(prebuilt-picolibc_FOUND)
 endif()
 
 # Glob all the files in the directory 'generated_tests'
-# file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/*.cpp")
-file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/except_04_error_000_cleanup.cpp")
+file(GLOB GENERATED_TEST "${CMAKE_CURRENT_SOURCE_DIR}/generated_tests/*.cpp")
 
 set(BENCHMARK_COMPILE_OPTIONS
     -g
