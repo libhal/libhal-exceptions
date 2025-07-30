@@ -15,6 +15,8 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+from typing import List
+import random
 
 MAX_DEPTH = 70
 
@@ -44,11 +46,11 @@ struct test_error {{
 class simple_object {{
 public:
   explicit simple_object(std::int32_t value) : m_value(value) {{
-    side_effect = side_effect + 1;
+  side_effect = side_effect + 1;
   }}
 
   void do_work() {{
-    side_effect = side_effect + m_value;
+  side_effect = side_effect + m_value;
   }}
 
 private:
@@ -59,15 +61,15 @@ private:
 class destructor_object {{
 public:
   explicit destructor_object(std::int32_t value) : m_value(value) {{
-    side_effect = side_effect + 1;
+  side_effect = side_effect + 1;
   }}
 
   ~destructor_object() {{
-    side_effect = side_effect + 1;
+  side_effect = side_effect + 1;
   }}
 
   void do_work() {{
-    side_effect = side_effect + m_value;
+  side_effect = side_effect + m_value;
   }}
 
 private:
@@ -115,13 +117,13 @@ int depth_{i:02d}() {{
             content += f'''
   // Use the variable after the call
   if (preserve_frame < 0) {{
-    return -1; // Never executed but prevents optimization
+  return -1; // Never executed but prevents optimization
   }}
 
   // This is where the exception originates
   if (side_effect > 0) {{
-    start();
-    throw test_error{{.data = {{0xDE, 0xAD, 0xBE, 0xEF}}}};
+  start();
+  throw test_error{{.data = {{0xDE, 0xAD, 0xBE, 0xEF}}}};
   }}
 
   return side_effect;
@@ -130,11 +132,11 @@ int depth_{i:02d}() {{
 '''
         else:  # Call next function in chain
             content += f'''
-            int result = depth_{i-1:02d}();
+      int result = depth_{i-1:02d}();
 
   // Use the variable after the call
   if (preserve_frame < 0) {{
-    return -1; // Never executed but prevents optimization
+  return -1; // Never executed but prevents optimization
   }}
   return result + side_effect;
 }}
@@ -148,41 +150,41 @@ void run_test() {{
   side_effect = 1; // Ensure we will throw
 
   try {{
-    depth_70();
+  depth_70();
   }} catch (test_error const& e) {{
-    end();
+  end();
   }}
 
   pause();
 
   try {{
-    depth_50();
+  depth_50();
   }} catch (test_error const& e) {{
-    end();
+  end();
   }}
 
   pause();
 
   try {{
-    depth_30();
+  depth_30();
   }} catch (test_error const& e) {{
-    end();
+  end();
   }}
 
   pause();
 
   try {{
-    depth_10();
+  depth_10();
   }} catch (test_error const& e) {{
-    end();
+  end();
   }}
 
   pause();
 
   try {{
-    depth_01();
+  depth_01();
   }} catch (test_error const& e) {{
-    end();
+  end();
   }}
 
   pause();
@@ -221,11 +223,11 @@ using result_type = std::expected<int, test_error>;
 class simple_object {{
 public:
   explicit simple_object(std::int32_t value) : m_value(value) {{
-    side_effect = side_effect + 1;
+  side_effect = side_effect + 1;
   }}
 
   void do_work() {{
-    side_effect = side_effect + m_value;
+  side_effect = side_effect + m_value;
   }}
 
 private:
@@ -236,15 +238,15 @@ private:
 class destructor_object {{
 public:
   explicit destructor_object(std::int32_t value) : m_value(value) {{
-    side_effect = side_effect + 1;
+  side_effect = side_effect + 1;
   }}
 
   ~destructor_object() {{
-    side_effect = side_effect + 1;
+  side_effect = side_effect + 1;
   }}
 
   void do_work() {{
-    side_effect = side_effect + m_value;
+  side_effect = side_effect + m_value;
   }}
 
 private:
@@ -277,13 +279,13 @@ result_type depth_{i:02d}() {{
             content += f'''
   // This is where the error originates
   if (side_effect > 0) {{
-    start();
-    return std::unexpected(test_error{{.data = {{0xDE, 0xAD, 0xBE, 0xEF}}}});
+  start();
+  return std::unexpected(test_error{{.data = {{0xDE, 0xAD, 0xBE, 0xEF}}}});
   }}
 
   // Use the variable after the call
   if (preserve_frame < 0) {{
-    return -1; // Never executed but prevents optimization
+  return -1; // Never executed but prevents optimization
   }}
 
   return side_effect;
@@ -293,12 +295,12 @@ result_type depth_{i:02d}() {{
         else:  # Call next function in chain and propagate error
             content += f'''  auto result = depth_{i-1:02d}();
   if (!result) {{
-    return result; // Propagate error
+  return result; // Propagate error
   }}
 
   // Use the variable after the call
   if (preserve_frame < 0) {{
-    return -1; // Never executed but prevents optimization
+  return -1; // Never executed but prevents optimization
   }}
 
   return result.value();
@@ -314,35 +316,35 @@ void run_test() {{
 
   auto result_70 = depth_70();
   if (!result_70) {{
-    end();
+  end();
   }}
 
   pause();
 
   auto result_50 = depth_50();
   if (!result_50) {{
-    end();
+  end();
   }}
 
   pause();
 
   auto result_30 = depth_30();
   if (!result_30) {{
-    end();
+  end();
   }}
 
   pause();
 
   auto result_10 = depth_10();
   if (!result_10) {{
-    end();
+  end();
   }}
 
   pause();
 
   auto result_01 = depth_01();
   if (!result_01) {{
-    end();
+  end();
   }}
 }}
 '''
@@ -379,6 +381,233 @@ def generate_test_files(destructor_percent: int,
     print(f"Generated: {result_path}")
 
 
+def generate_depth_info(destructor_percent: int,
+                        random_generator: random.Random):
+    content = ""
+
+    # Generate forward declarations
+    for i in range(MAX_DEPTH, 0, -1):
+        content += f"int depth_{i:02d}_percent_{destructor_percent}();\n"
+
+    # Generate function implementations
+    for i in range(MAX_DEPTH, 0, -1):
+        # Calculate which functions should have destructors - evenly distributed
+        function_index = MAX_DEPTH - i  # 0-based index for this function
+
+        # Calculate total destructor count and distribute evenly
+        destructor_count = int((destructor_percent / 100.0) * MAX_DEPTH)
+
+        if destructor_count == 0:
+            has_destructor = False
+        elif destructor_count >= MAX_DEPTH:
+            has_destructor = True
+        else:
+            # Even distribution using integer arithmetic
+            current_position = function_index * destructor_count // MAX_DEPTH
+            next_position = (function_index + 1) * \
+                destructor_count // MAX_DEPTH
+            has_destructor = next_position > current_position
+
+        obj_type = "destructor_object" if has_destructor else "simple_object"
+        content += f'''[[gnu::noinline]]
+int depth_{i:02d}_percent_{destructor_percent}() {{
+  {obj_type} obj(side_effect >> 8);
+  obj.do_work();
+
+  volatile std::array<int, {random_generator.randint(1, 32)}> preserve_frame =
+  {{
+  side_effect,
+  }};
+'''
+
+        if i == 1:  # Last function - this is where we throw
+            content += f'''
+  // Use the variable after the call
+  if (preserve_frame[0] < 0) {{
+  return -1; // Never executed but prevents optimization
+  }}
+
+  // This is where the exception originates
+  if (side_effect > 0) {{
+  start();
+  throw test_error{{.data = {{0xDE, 0xAD, 0xBE, 0xEF}}}};
+  }}
+
+  return side_effect;
+}}
+
+'''
+        else:  # Call next function in chain
+            content += f'''
+      int result = depth_{i-1:02d}_percent_{destructor_percent}();
+
+  // Use the variable after the call
+  if (preserve_frame[0] < 0) {{
+  return -1; // Never executed but prevents optimization
+  }}
+  return result + side_effect;
+}}
+
+'''
+    return content
+
+
+def generate_multi_exception_file(destructor_percentages: List[int],
+                                  error_object_size: List[int]) -> str:
+    """Generate C++ file for exception-based error propagation test."""
+
+    content = f'''#include <array>
+#include <cstdint>
+#include <string_view>
+
+#include <platform.hpp>
+
+// Global side effect to prevent optimization
+std::int32_t volatile side_effect = 0;
+
+// Simple class without destructor
+class simple_object {{
+public:
+  explicit simple_object(std::int32_t value) : m_value(value) {{
+  side_effect = side_effect + 1;
+  }}
+
+  void do_work() {{
+  side_effect = side_effect + m_value;
+  }}
+
+private:
+  std::int32_t m_value;
+}};
+
+// Class with destructor for testing destructor impact
+class destructor_object {{
+public:
+  explicit destructor_object(std::int32_t value) : m_value(value) {{
+  side_effect = side_effect + 1;
+  }}
+
+  ~destructor_object() {{
+  side_effect = side_effect + 1;
+  }}
+
+  void do_work() {{
+  side_effect = side_effect + m_value;
+  }}
+
+private:
+  std::int32_t m_value;
+}};
+
+volatile auto error_size_select = 0U;
+'''
+
+    for error_size in error_object_size:
+        content += f'''
+// Error type for testing
+struct test_error_{error_size} {{
+  std::array<std::uint8_t, {error_size}> data;
+}};'''
+
+    content += "\n"
+
+    # Create a custom random generator object
+    custom_random = random.Random()
+    custom_random.seed(0)
+
+    for percent in destructor_percentages:
+        content += generate_depth_info(destructor_percent=percent,
+                                       custom_random=custom_random)
+
+    # Generate test runner
+    content += f'''// Test runner
+void run_test() {{
+side_effect = 1; // Ensure we will throw
+
+'''
+
+    for percent in destructor_percentages:
+
+        content += f'''
+try {{
+    depth_70_percent_{percent}();
+}} catch (test_error const& e) {{
+    end();
+}}
+
+pause();
+
+try {{
+    depth_50_percent_{percent}();
+}} catch (test_error const& e) {{
+    end();
+}}
+
+pause();
+
+try {{
+    depth_30_percent_{percent}();
+}} catch (test_error const& e) {{
+    end();
+}}
+
+pause();
+
+try {{
+    depth_10_percent_{percent}();
+}} catch (test_error const& e) {{
+    end();
+}}
+
+pause();
+
+try {{
+    depth_01_percent_{percent}();
+}} catch (test_error const& e) {{
+    end();
+}}
+
+pause();
+}}
+
+'''
+
+    content += '''
+}}
+'''
+
+    return content
+
+
+def generate_full_test_files(destructor_percent: List[int],
+                             error_object_size: List[int],
+                             output_dir: Path):
+    """Generate both exception and result test files."""
+
+    # Create output directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate exception file
+    exception_content = generate_multi_exception_file(
+        destructor_percent, error_object_size)
+    exception_filename = f"except.cpp"
+    exception_path = output_dir / exception_filename
+
+    with open(exception_path, 'w') as f:
+        f.write(exception_content)
+    print(f"Generated: {exception_path}")
+
+    # # Generate result file
+    # result_content = generate_multi_result_file(
+    #     destructor_percent, error_object_size)
+    # result_filename = f"result.cpp"
+    # result_path = output_dir / result_filename
+
+    # with open(result_path, 'w') as f:
+    #     f.write(result_content)
+    # print(f"Generated: {result_path}")
+
+
 def main():
     """Generate test files for all combinations."""
 
@@ -386,9 +615,10 @@ def main():
     error_sizes = [4, 32, 64, 96]
     output_dir = Path("generated_tests")
 
-    for destructor_pct in destructor_percentages:
-        for error_size in error_sizes:
-            generate_test_files(destructor_pct, output_dir, error_size)
+    generate_full_test_files(
+        destructor_percent=destructor_percentages,
+        output_dir=output_dir,
+        error_object_size=error_sizes)
 
     print(
         f"\nGenerated {len(error_sizes) * len(destructor_percentages) * 2} test files in {output_dir}/")
