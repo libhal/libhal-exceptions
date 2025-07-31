@@ -32,6 +32,9 @@ extern "C"
   void __wrap___gxx_personality_v0()
   {
   }
+  void __wrap___gcc_personality_v0()
+  {
+  }
   void __wrap_deregister_tm_clones()
   {
   }

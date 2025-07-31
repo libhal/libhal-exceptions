@@ -245,13 +245,13 @@ def main():
     )
     parser.add_argument(
         '--sample-rate', '-s',
-        default='16m',
+        default='24m',
         help='Sample rate (default: 16m for 16MHz)'
     )
     parser.add_argument(
         '--samples', '-n',
         type=int,
-        default=1000000,
+        default=1_000_000,
         help='Number of samples to capture (default: 1000000)'
     )
     parser.add_argument(
