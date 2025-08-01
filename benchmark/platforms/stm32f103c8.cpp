@@ -87,6 +87,12 @@ void initialize_platform()
   static auto signal_pin = gpio_a.acquire_output_pin(0);
   time_signal = &signal_pin;
 
+  static hal::cortex_m::dwt_counter dwt_steady_clock(
+    hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
+  counter = &dwt_steady_clock;
+
+  hal::delay(dwt_steady_clock, 1ms);
+
   start();
   end();
   start();
@@ -98,12 +104,6 @@ void initialize_platform()
   start();
   end();
   pause();
-
-  static hal::cortex_m::dwt_counter dwt_steady_clock(
-    hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
-  counter = &dwt_steady_clock;
-
-  hal::delay(dwt_steady_clock, 1ms);
 
   static hal::stm32f1::uart serial(hal::port<1>, hal::buffer<128>);
   analyzer_serial = &serial;

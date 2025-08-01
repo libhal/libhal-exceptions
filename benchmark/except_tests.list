@@ -1,4 +1,3 @@
-build/stm32f103c8/builtin/Release/except_4_32.cpp.elf.bin
-build/stm32f103c8/builtin/Release/except_64_96.cpp.elf.bin
-build/stm32f103c8/estell/Release/except_4_32.cpp.elf.bin
-build/stm32f103c8/estell/Release/except_64_96.cpp.elf.bin
+build/stm32f103c8/builtin/Release/except.cpp.elf.bin
+build/stm32f103c8/estell/Release/except.cpp.elf.bin
+build/stm32f103c8/estell/Release/nearpoint.cpp.elf.bin

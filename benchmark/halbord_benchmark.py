@@ -142,10 +142,10 @@ class HALbORDController:
             # When the delta between the previous pulse and the next is more
             # than 2 microseconds, we return the list from this point on
             if (previous_pulse - pulse) < -1:
-                trim_point = i-1
-                logging.info(f"  trimmed pulses: {pulses[:trim_point]}")
-                logging.info(f"remaining pulses: {pulses[trim_point:]}")
-                return pulses[i:]
+                trim_point = i - 1
+                logger.debug(f"  trimmed pulses: {pulses[:trim_point]}")
+                logger.debug(f"remaining pulses: {pulses[trim_point:]}")
+                return pulses[trim_point:]
             previous_pulse = pulse
 
     def _analyze_hex_data(self, hex_file_path: str) -> List[float]:
@@ -242,6 +242,11 @@ def main():
         help='Program files to flash and test'
     )
     parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose output'
+    )
+    parser.add_argument(
         '--file', '-f',
         type=Path,
         help='File containing list of programs (one per line)'
@@ -289,6 +294,10 @@ def main():
         programs = [Path(p) for p in args.programs]
     else:
         parser.error("Must specify either program files or --file")
+
+    if args.verbose:
+        logger.setLevel(level=logging.DEBUG)
+        logger.info("Debug logging enabled!")
 
     if not programs:
         logger.error("No valid programs found")
