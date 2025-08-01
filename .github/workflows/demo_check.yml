@@ -1,0 +1,202 @@
+name: 👨🏻‍💻 QEMU
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        type: string
+        default: ${{ github.repository }}
+      version:
+        type: string
+        default: ""
+      conan_version:
+        type: string
+        default: ""
+      compiler_profile_url:
+        type: string
+        required: true
+      compiler_profile:
+        type: string
+        required: true
+      compiler_profile_branch:
+        type: string
+        default: "main"
+      platform_profile_url:
+        type: string
+        required: true
+      platform_profile:
+        type: string
+        required: true
+      platform_profile_branch:
+        type: string
+        default: "main"
+jobs:
+  build_release: # b/c building the debug does not guarantee that normal build works
+    uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
+    with:
+      compiler_profile_url: ${{ inputs.compiler_profile_url }}
+      compiler_profile: ${{ inputs.compiler_profile }}
+      platform_profile_url: ${{ inputs.platform_profile_url }}
+      platform_profile: ${{ inputs.platform_profile }}
+    secrets: inherit 
+
+  build_debug: # STOLEN from libhal/ci
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.1
+        if: ${{ inputs.version != '' }}
+        with:
+          submodules: true
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.version }}
+
+      - uses: actions/checkout@v4.1.1
+        if: ${{ inputs.version == '' }}
+        with:
+          submodules: true
+          repository: ${{ inputs.repo }}
+
+      - name: 📥 Install Conan ${{ inputs.conan_version }}
+        if: ${{ inputs.conan_version != '' }}
+        run: pipx install conan==${{ inputs.conan_version }}
+      
+      - name: 📥 Install Conan Latest
+        if: ${{ inputs.conan_version == '' }}
+        run: pipx install conan
+
+      - name: 📡 Add `libhal` repo to conan remotes
+        run: conan remote add libhal
+          https://libhal.jfrog.io/artifactory/api/conan/trunk-conan
+
+      - name: 📡 Create and setup default profile
+        run: conan profile detect --force
+
+      - name: 👁️‍🗨️ Show conan profile
+        run: conan profile show
+
+      - name: Install libhal settings_user.yml
+        run: conan config install -sf profiles/baremetal/v2 https://github.com/libhal/conan-config.git
+
+      - name: Install compiler profiles
+        run: conan config install -tf profiles -sf conan/profiles --args "-b ${{ inputs.compiler_profile_branch }} --single-branch" ${{ inputs.compiler_profile_url }}
+
+      - name: Install platform profiles
+        run: conan config install -tf profiles -sf conan/profiles --args "-b ${{ inputs.platform_profile_branch }} --single-branch" ${{ inputs.platform_profile_url }}
+
+      - name: 🏗️ Build debug demos for ${{ inputs.platform_profile }}
+        run: conan build demos -pr ${{ inputs.compiler_profile }} -pr ${{ inputs.platform_profile }} -s build_type=Debug
+
+      - name: Trim profile version
+        id: trim
+        run: |
+          profile="${{ inputs.platform_profile }}"
+          echo "trimmed=${profile##*/}" >> $GITHUB_OUTPUT
+
+      - name: 🚀 Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ steps.trim.outputs.trimmed }}
+          path: demos/build/
+
+  check_single_level:
+    runs-on: ubuntu-24.04
+    needs: build_debug
+    steps:
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install qemu-system-arm gdb-multiarch
+          
+      - name: Trim profile version
+        id: trim
+        run: |
+          profile="${{ inputs.platform_profile }}"
+          echo "trimmed=${profile##*/}" >> $GITHUB_OUTPUT
+      
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ steps.trim.outputs.trimmed }}
+
+      - name: Run Single Level Demo
+        run: |
+          nohup qemu-system-arm                                                                               \
+            -M olimex-stm32-h405                                                                              \
+            -kernel ${{ github.workspace }}/${{ steps.trim.outputs.trimmed }}/Debug/single_level.elf          \
+            -S -s -nographic                                                                                  \
+            &
+
+          timeout 5s gdb-multiarch --batch                                                                    \
+            -ex "set output-radix 16"                                                                         \
+            -ex "target remote :1234"                                                                         \
+            -ex "watch global"                                                                                \
+            -ex "continue"                                                                                    \
+            -ex "monitor quit"                                                                                \
+            ${{ github.workspace }}/${{ steps.trim.outputs.trimmed }}/Debug/single_level.elf                  \
+            > gdb.log || {
+              # Make timeouts more explicit  
+              code=$?
+              if [ "$code" -eq 124 ]; then
+                echo "❌ GDB timeout after 5 seconds" >&2
+              else
+                echo "❌ GDB failed with code $code" >&2
+              fi
+              exit $code
+            }
+
+      - name: Check Single Level Result
+        run: |
+          cat gdb.log
+          grep -q "New value = 0x5" gdb.log
+
+  check_multiple_inheritance:
+    runs-on: ubuntu-24.04
+    needs: build_debug
+    steps:
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install qemu-system-arm gdb-multiarch
+          
+      - name: Trim profile version
+        id: trim
+        run: |
+          profile="${{ inputs.platform_profile }}"
+          echo "trimmed=${profile##*/}" >> $GITHUB_OUTPUT
+      
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ steps.trim.outputs.trimmed }}
+
+      - name: Run Multiple Inheritance Demo
+        run: |
+          nohup qemu-system-arm                                                                                 \
+            -M olimex-stm32-h405                                                                                \
+            -kernel ${{ github.workspace }}/${{ steps.trim.outputs.trimmed }}/Debug/multiple_inheritance.elf    \
+            -S -s -nographic                                                                                    \
+            &
+
+          timeout 5s gdb-multiarch --batch                                                                      \
+            -ex "set output-radix 16"                                                                           \
+            -ex "target remote :1234"                                                                           \
+            -ex "watch global"                                                                                  \
+            -ex "continue"                                                                                      \
+            -ex "monitor quit"                                                                                  \
+            ${{ github.workspace }}/${{ steps.trim.outputs.trimmed }}/Debug/multiple_inheritance.elf            \
+            > gdb.log || {
+              # Make timeouts more explicit  
+              code=$?
+              if [ "$code" -eq 124 ]; then
+                echo "❌ GDB timeout after 5 seconds" >&2
+              else
+                echo "❌ GDB failed with code $code" >&2
+              fi
+              exit $code
+            }
+
+      - name: Check Multiple Inheritance Result
+        run: |
+          cat gdb.log
+          grep -q "New value = 0x6666" gdb.log
+        
