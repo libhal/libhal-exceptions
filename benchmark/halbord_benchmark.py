@@ -136,6 +136,18 @@ class HALbORDController:
             logger.error(f"Failed to flash and capture {program_path}: {e}")
             return False, []
 
+    def _post_process(self, pulses: List[float]):
+        previous_pulse: float = pulses[0]
+        for i, pulse in enumerate(pulses, 1):
+            # When the delta between the previous pulse and the next is more
+            # than 2 microseconds, we return the list from this point on
+            if (previous_pulse - pulse) < -1:
+                trim_point = i-1
+                logging.info(f"  trimmed pulses: {pulses[:trim_point]}")
+                logging.info(f"remaining pulses: {pulses[trim_point:]}")
+                return pulses[i:]
+            previous_pulse = pulse
+
     def _analyze_hex_data(self, hex_file_path: str) -> List[float]:
         """Analyze hex dump data to extract low pulse durations in microseconds"""
         pulse_durations = []
@@ -196,7 +208,8 @@ class HALbORDController:
         except Exception as e:
             logger.error(f"Failed to analyze hex data: {e}")
 
-        return pulse_durations
+        POST_PROCESSED_PULSES = self._post_process(pulse_durations)
+        return POST_PROCESSED_PULSES
 
 
 def load_programs_from_file(file_path: Path) -> List[Path]:

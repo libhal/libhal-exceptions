@@ -97,6 +97,7 @@ void initialize_platform()
   end();
   start();
   end();
+  pause();
 
   static hal::cortex_m::dwt_counter dwt_steady_clock(
     hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
