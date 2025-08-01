@@ -122,10 +122,9 @@ class libhal_exceptions_conan(ConanFile):
             # If the platform matches the linker script, just use that linker
             # script
             self.cpp_info.exelinkflags.extend([
-                "-Wl,-L" + os.path.join(self.package_folder, "linker_scripts"),
-                '-Wl,-Tarm-none-eabi-gcc-14.2_discard.ld'])
-            self.cpp_info.exelinkflags.extend([
                 "-fexceptions",
+                "-L" + os.path.join(self.package_folder, "linker_scripts"),
+                '-Wl,-Tarm-none-eabi-gcc-14.2_discard.ld',
                 "-Wl,--wrap=__cxa_throw",
                 "-Wl,--wrap=__cxa_rethrow",
                 "-Wl,--wrap=__cxa_end_catch",

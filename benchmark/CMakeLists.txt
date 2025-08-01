@@ -69,8 +69,7 @@ set(BENCHMARK_COMPILE_OPTIONS
     -Wall
     -Wextra
     -Wshadow
-    -fno-threadsafe-statics
-    $<$<COMPILE_LANGUAGE:CXX>:-fexceptions -fno-rtti>)
+    -fno-threadsafe-statics)
 
 foreach(test_path ${GENERATED_TEST})
   get_filename_component(test_file_name ${test_path} NAME)
@@ -80,6 +79,17 @@ foreach(test_path ${GENERATED_TEST})
   add_executable(${elf} ${test_path})
   target_include_directories(${elf} PRIVATE .)
   target_compile_options(${elf} PRIVATE ${BENCHMARK_COMPILE_OPTIONS})
+
+  # Check if the test file name starts with "result_"
+  string(REGEX MATCH "^result_" is_result_file ${test_file_name})
+  if(is_result_file)
+    target_compile_options(${elf} PRIVATE
+      $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>)
+  else()
+    target_compile_options(${elf} PRIVATE
+      $<$<COMPILE_LANGUAGE:CXX>:-fexceptions>)
+  endif()
+
   target_link_libraries(${elf} PRIVATE
     startup_code
     libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
@@ -87,7 +97,6 @@ foreach(test_path ${GENERATED_TEST})
   target_link_options(${elf} PRIVATE -fno-threadsafe-statics
     -L${CMAKE_SOURCE_DIR}/
     -Wl,-Map=${CMAKE_BINARY_DIR}/${elf}.map
-    # -Tdiscard.ld
   )
   if(prebuilt-picolibc_FOUND)
     target_link_libraries(${elf} PRIVATE picolibc)

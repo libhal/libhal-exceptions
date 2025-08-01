@@ -19,7 +19,12 @@ from typing import List
 from random import Random
 
 MAX_DEPTH = 70
-PRESERVE_ARRAY_MAX_SIZE = 1
+PRESERVE_ARRAY_MAX_SIZE = 16
+DEEPEST_DEPTH = 50
+LOW_DEPTH = 35
+MID_DEPTH = 15
+SHALLOW_DEPTH = 5
+IMMEDIATE_DEPTH = 1
 
 
 def generate_result_function_sequence(destructor_percent: int,
@@ -28,13 +33,13 @@ def generate_result_function_sequence(destructor_percent: int,
     content = ""
 
     # Generate forward declarations
-    for i in range(MAX_DEPTH, 0, -1):
-        content += f"std::expected<int, test_error_{error_size}> depth_{i:02d}_error{error_size}_percent_{destructor_percent}();\n"
+    for depth in range(MAX_DEPTH, 0, -1):
+        content += f"std::expected<int, test_error_{error_size:02d}> depth_{depth:02d}_error_{error_size:02d}_percent_{destructor_percent:03d}();\n"
 
     # Generate function implementations
-    for i in range(MAX_DEPTH, 0, -1):
+    for depth in range(MAX_DEPTH, 0, -1):
         # Calculate which functions should have destructors - evenly distributed
-        function_index = MAX_DEPTH - i  # 0-based index for this function
+        function_index = MAX_DEPTH - depth  # 0-based index for this function
 
         # Calculate total destructor count and distribute evenly
         destructor_count = int((destructor_percent / 100.0) * MAX_DEPTH)
@@ -52,41 +57,41 @@ def generate_result_function_sequence(destructor_percent: int,
 
         obj_type = "destructor_object" if has_destructor else "simple_object"
         content += f'''[[gnu::noinline]]
-std::expected<int, test_error_{error_size}> depth_{i:02d}_error{error_size}_percent_{destructor_percent}() {{
+std::expected<int, test_error_{error_size:02d}> depth_{depth:02d}_error_{error_size:02d}_percent_{destructor_percent:03d}() {{
   {obj_type} obj(side_effect >> 8);
   obj.do_work();
 
-  int volatile preserve_frame = side_effect;
-  // Use the variable after the call
-  if (preserve_frame < 0) {{
-    // Never executed but prevents tail-call optimization
-    return -1;
-  }}
+  std::array<std::int8_t volatile, {
+      random_generator.randint(1, PRESERVE_ARRAY_MAX_SIZE)
+      }> preserve_frame = {{ 8 }};
 '''
 
-        if i == 1:  # Last function - this is where we return the error
+        if depth == 1:  # Last function - this is where we return the error
             content += f'''
+  // This is where the error originates
+  if (side_effect > 0) {{
+    start();
+    return std::unexpected(test_error_{error_size:02d}
+                           {{ .data = {{ 0xDE, 0xAD, 0xBE, 0xEF }} }});
+  }}
+
   // Use the variable after the call
-  if (preserve_frame < 0) {{
+  if (preserve_frame[0] < 0) {{
     // Never executed but prevents tail-call optimization
     return -1;
   }}
 
-  // This is where the error originates
-  start();
-  return std::unexpected(test_error_{error_size}
-                        {{
-                            .data = {{ 0xDE, 0xAD, 0xBE, 0xEF }}
-                        }});
+  return side_effect + 1;
 }}
 
 '''
         else:  # Call next function in chain
             content += f'''
-  auto result = depth_{i-1:02d}_error{error_size}_percent_{destructor_percent}();
+  auto const result
+    = depth_{depth-1:02d}_error_{error_size:02d}_percent_{destructor_percent:03d}();
 
   // Use the variable after the call
-  if (preserve_frame < 0) {{
+  if (preserve_frame[0] < 0) {{
     // Never executed but prevents tail-call optimization
     return std::unexpected(result.error());
   }}
@@ -151,9 +156,8 @@ private:
 
     for error_size in error_object_sizes:
         content += f'''
-// Error type for testing
-struct test_error_{error_size} {{
-  std::array<std::uint8_t, {error_size}> data;
+struct test_error_{error_size:02d} {{
+  std::array<std::uint8_t, {error_size:02d}> data;
 }};'''
 
     content += "\n"
@@ -175,14 +179,15 @@ struct test_error_{error_size} {{
     for error_size in error_object_sizes:
         for percent in destructor_percentages:
             tests_function.append(
-                f'run_test_error{error_size}_cleanup_{percent}();\n')
+                f'run_test_error_{error_size:02d}_cleanup_{percent:03d}();\n')
             # Generate test runner function
             content += f'''// Test runner
 [[gnu::noinline]]
-void run_test_depth60_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{DEEPEST_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will return error
 
-    auto result = depth_60_error{error_size}_percent_{percent}();
+    auto const result
+        = depth_{DEEPEST_DEPTH:02d}_error_{error_size:02d}_percent_{percent:03d}();
     if (!result) {{
         end();
     }} else {{
@@ -191,10 +196,11 @@ void run_test_depth60_error{error_size}_cleanup_{percent}() {{
 }}
 
 [[gnu::noinline]]
-void run_test_depth40_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{LOW_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will return error
 
-    auto result = depth_40_error{error_size}_percent_{percent}();
+    auto const result
+        = depth_{LOW_DEPTH:02d}_error_{error_size:02d}_percent_{percent:03d}();
     if (!result) {{
         end();
     }} else {{
@@ -203,10 +209,11 @@ void run_test_depth40_error{error_size}_cleanup_{percent}() {{
 }}
 
 [[gnu::noinline]]
-void run_test_depth20_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{MID_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will return error
 
-    auto result = depth_20_error{error_size}_percent_{percent}();
+    auto const result
+        = depth_{MID_DEPTH:02d}_error_{error_size:02d}_percent_{percent:03d}();
     if (!result) {{
         end();
     }} else {{
@@ -215,10 +222,11 @@ void run_test_depth20_error{error_size}_cleanup_{percent}() {{
 }}
 
 [[gnu::noinline]]
-void run_test_depth10_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{SHALLOW_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will return error
 
-    auto result = depth_10_error{error_size}_percent_{percent}();
+    auto const result
+        = depth_{SHALLOW_DEPTH:02d}_error_{error_size:02d}_percent_{percent:03d}();
     if (!result) {{
         end();
     }} else {{
@@ -227,10 +235,11 @@ void run_test_depth10_error{error_size}_cleanup_{percent}() {{
 }}
 
 [[gnu::noinline]]
-void run_test_depth01_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{IMMEDIATE_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will return error
 
-    auto result = depth_01_error{error_size}_percent_{percent}();
+    auto const result
+        = depth_{IMMEDIATE_DEPTH:02d}_error_{error_size:02d}_percent_{percent:03d}();
     if (!result) {{
         end();
     }} else {{
@@ -238,12 +247,12 @@ void run_test_depth01_error{error_size}_cleanup_{percent}() {{
     }}
 }}
 
-void run_test_error{error_size}_cleanup_{percent}() {{
-    run_test_depth60_error{error_size}_cleanup_{percent}();
-    run_test_depth40_error{error_size}_cleanup_{percent}();
-    run_test_depth20_error{error_size}_cleanup_{percent}();
-    run_test_depth10_error{error_size}_cleanup_{percent}();
-    run_test_depth01_error{error_size}_cleanup_{percent}();
+void run_test_error_{error_size:02d}_cleanup_{percent:03d}() {{
+    run_test_depth_{DEEPEST_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
+    run_test_depth_{LOW_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
+    run_test_depth_{MID_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
+    run_test_depth_{SHALLOW_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
+    run_test_depth_{IMMEDIATE_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
 }}
 '''
 
@@ -263,13 +272,13 @@ def generate_except_function_sequence(destructor_percent: int,
     content = ""
 
     # Generate forward declarations
-    for i in range(MAX_DEPTH, 0, -1):
-        content += f"int depth_{i:02d}_percent_{destructor_percent}();\n"
+    for depth in range(MAX_DEPTH, 0, -1):
+        content += f"int depth_{depth:02d}_percent_{destructor_percent:03d}();\n"
 
     # Generate function implementations
-    for i in range(MAX_DEPTH, 0, -1):
+    for depth in range(MAX_DEPTH, 0, -1):
         # Calculate which functions should have destructors - evenly distributed
-        function_index = MAX_DEPTH - i  # 0-based index for this function
+        function_index = MAX_DEPTH - depth  # 0-based index for this function
 
         # Calculate total destructor count and distribute evenly
         destructor_count = int((destructor_percent / 100.0) * MAX_DEPTH)
@@ -287,17 +296,19 @@ def generate_except_function_sequence(destructor_percent: int,
 
         obj_type = "destructor_object" if has_destructor else "simple_object"
         content += f'''[[gnu::noinline]]
-int depth_{i:02d}_percent_{destructor_percent}() {{
+int depth_{depth:02d}_percent_{destructor_percent:03d}() {{
   {obj_type} obj(side_effect >> 8);
   obj.do_work();
 
-    int volatile preserve_frame = side_effect;
+  std::array<std::int8_t volatile, {
+    random_generator.randint(1, PRESERVE_ARRAY_MAX_SIZE)
+  }> preserve_frame = {{ 8 }};
 '''
 
-        if i == 1:  # Last function - this is where we throw
+        if depth == 1:  # Last function - this is where we throw
             content += f'''
   // Use the variable after the call
-  if (preserve_frame < 0) {{
+  if (preserve_frame[0] < 0) {{
     // Never executed but prevents tail-call optimization
     return -1;
   }}
@@ -305,11 +316,11 @@ int depth_{i:02d}_percent_{destructor_percent}() {{
   // This is where the exception originates
   '''
 
-            for size in error_object_sizes:
+            for error_size in error_object_sizes:
                 content += f'''
-  if (error_size_select == {size}) {{
+  if (error_size_select == {error_size}) {{
     start();
-    throw test_error_{size}{{.data = {{0xDE, 0xAD, 0xBE, 0xEF}}}};
+    throw test_error_{error_size:02d}{{.data = {{0xDE, 0xAD, 0xBE, 0xEF}}}};
   }}
 '''
             content += f'''
@@ -319,10 +330,10 @@ int depth_{i:02d}_percent_{destructor_percent}() {{
 '''
         else:  # Call next function in chain
             content += f'''
-  int result = depth_{i-1:02d}_percent_{destructor_percent}();
+  int const result = depth_{depth-1:02d}_percent_{destructor_percent:03d}();
 
   // Use the variable after the call
-  if (preserve_frame < 0) {{
+  if (preserve_frame[0] < 0) {{
     // Never executed but prevents tail-call optimization
     return -1;
   }}
@@ -385,9 +396,8 @@ volatile auto error_size_select = 0U;
 
     for error_size in error_object_sizes:
         content += f'''
-// Error type for testing
-struct test_error_{error_size} {{
-  std::array<std::uint8_t, {error_size}> data;
+struct test_error_{error_size:02d} {{
+  std::array<std::uint8_t, {error_size:02d}> data;
 }};'''
 
     content += "\n"
@@ -407,17 +417,17 @@ struct test_error_{error_size} {{
     for error_size in error_object_sizes:
         for percent in destructor_percentages:
             tests_function.append(
-                f'run_test_error{error_size}_cleanup_{percent}();\n')
+                f'run_test_error_{error_size:02d}_cleanup_{percent:03d}();\n')
             # Generate test runner function
             content += f'''// Test runner
 [[gnu::noinline]]
-void run_test_depth60_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{DEEPEST_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will throw
     error_size_select = {error_size};
 
     try {{
-        depth_60_percent_{percent}();
-    }} catch (test_error_{error_size} const& e) {{
+        depth_{DEEPEST_DEPTH:02d}_percent_{percent:03d}();
+    }} catch (test_error_{error_size:02d} const& e) {{
         end();
     }}
 
@@ -425,13 +435,13 @@ void run_test_depth60_error{error_size}_cleanup_{percent}() {{
 }}
 
 [[gnu::noinline]]
-void run_test_depth40_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{LOW_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will throw
     error_size_select = {error_size};
 
     try {{
-        depth_40_percent_{percent}();
-    }} catch (test_error_{error_size} const& e) {{
+        depth_{LOW_DEPTH:02d}_percent_{percent:03d}();
+    }} catch (test_error_{error_size:02d} const& e) {{
         end();
     }}
 
@@ -439,13 +449,13 @@ void run_test_depth40_error{error_size}_cleanup_{percent}() {{
 }}
 
 [[gnu::noinline]]
-void run_test_depth20_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{MID_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will throw
     error_size_select = {error_size};
 
     try {{
-        depth_20_percent_{percent}();
-    }} catch (test_error_{error_size} const& e) {{
+        depth_{MID_DEPTH:02d}_percent_{percent:03d}();
+    }} catch (test_error_{error_size:02d} const& e) {{
         end();
     }}
 
@@ -453,13 +463,13 @@ void run_test_depth20_error{error_size}_cleanup_{percent}() {{
 }}
 
 [[gnu::noinline]]
-void run_test_depth10_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{SHALLOW_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will throw
     error_size_select = {error_size};
 
     try {{
-        depth_10_percent_{percent}();
-    }} catch (test_error_{error_size} const& e) {{
+        depth_{SHALLOW_DEPTH:02d}_percent_{percent:03d}();
+    }} catch (test_error_{error_size:02d} const& e) {{
         end();
     }}
 
@@ -467,25 +477,25 @@ void run_test_depth10_error{error_size}_cleanup_{percent}() {{
 }}
 
 [[gnu::noinline]]
-void run_test_depth01_error{error_size}_cleanup_{percent}() {{
+void run_test_depth_{IMMEDIATE_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}() {{
     side_effect = 1; // Ensure we will throw
     error_size_select = {error_size};
 
     try {{
-        depth_01_percent_{percent}();
-    }} catch (test_error_{error_size} const& e) {{
+        depth_{IMMEDIATE_DEPTH:02d}_percent_{percent:03d}();
+    }} catch (test_error_{error_size:02d} const& e) {{
         end();
     }}
 
     pause();
 }}
 
-void run_test_error{error_size}_cleanup_{percent}() {{
-    run_test_depth60_error{error_size}_cleanup_{percent}();
-    run_test_depth40_error{error_size}_cleanup_{percent}();
-    run_test_depth20_error{error_size}_cleanup_{percent}();
-    run_test_depth10_error{error_size}_cleanup_{percent}();
-    run_test_depth01_error{error_size}_cleanup_{percent}();
+void run_test_error_{error_size:02d}_cleanup_{percent:03d}() {{
+    run_test_depth_{DEEPEST_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
+    run_test_depth_{LOW_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
+    run_test_depth_{MID_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
+    run_test_depth_{SHALLOW_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
+    run_test_depth_{IMMEDIATE_DEPTH:02d}_error_{error_size:02d}_cleanup_{percent:03d}();
 }}
 '''
 
@@ -522,7 +532,8 @@ def generate_full_test_files(destructor_percentages: List[int],
         result_content = generate_multi_result_file(
             destructor_percentages=destructor_percentages,
             error_object_sizes=[error_size])
-        result_filename = f"result_error{error_size:02d}.cpp"
+        result_filename = \
+            f"result_error{error_size:02d}.cpp"
         result_path = output_dir / result_filename
 
         with open(result_path, 'w') as f:
