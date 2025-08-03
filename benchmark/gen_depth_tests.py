@@ -15,7 +15,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 from random import Random
 
 MAX_DEPTH = 70
@@ -25,6 +25,24 @@ LOW_DEPTH = 35
 MID_DEPTH = 15
 SHALLOW_DEPTH = 5
 IMMEDIATE_DEPTH = 1
+
+
+class TestInfo:
+    def __init__(self, depth: int, error_size: int, destructor_percentage):
+        self.depth = depth
+        self.error_size = error_size
+        self.destructor_percentage = destructor_percentage
+
+    def __str__(self):
+        return f"{self.depth},{self.error_size},{self.destructor_percentage}"
+
+    def header() -> str:
+        return "depth,error_size,destructor_percentage\n"
+
+    def to_csv(pulse_order: List['TestInfo']):
+        csv = TestInfo.header()
+        csv += "\n".join([str(pulse) for pulse in pulse_order])
+        return csv
 
 
 def generate_result_function_sequence(destructor_percent: int,
@@ -107,8 +125,9 @@ std::expected<int, test_error_{error_size:02d}> depth_{depth:02d}_error_{error_s
     return content
 
 
-def generate_multi_result_file(destructor_percentages: List[int],
-                               error_object_sizes: List[int]) -> str:
+def generate_multi_result_file(
+    destructor_percentages: List[int],
+        error_object_sizes: List[int]) -> Tuple[str, List[TestInfo]]:
     """Generate C++ file for expected-based error propagation test."""
 
     content = f'''#include <cstdint>
@@ -174,10 +193,23 @@ struct test_error_{error_size:02d} {{
                 random_generator=custom_random,
                 error_size=error_size)
 
+    pulse_order: List[TestInfo] = []
     tests_function: List[str] = []
 
     for error_size in error_object_sizes:
         for percent in destructor_percentages:
+            pulse_order.extend([
+                TestInfo(
+                    depth=DEEPEST_DEPTH, error_size=error_size, destructor_percentage=percent),
+                TestInfo(
+                    depth=LOW_DEPTH, error_size=error_size, destructor_percentage=percent),
+                TestInfo(
+                    depth=MID_DEPTH, error_size=error_size, destructor_percentage=percent),
+                TestInfo(
+                    depth=SHALLOW_DEPTH, error_size=error_size, destructor_percentage=percent),
+                TestInfo(
+                    depth=IMMEDIATE_DEPTH, error_size=error_size, destructor_percentage=percent),
+            ])
             tests_function.append(
                 f'run_test_error_{error_size:02d}_cleanup_{percent:03d}();\n')
             # Generate test runner function
@@ -263,12 +295,13 @@ void run_test() {{
 
 '''
 
-    return content
+    return (content, pulse_order)
 
 
-def generate_except_function_sequence(destructor_percent: int,
-                                      random_generator: Random,
-                                      error_object_sizes: List[int]):
+def generate_except_function_sequence(
+        destructor_percent: int,
+        random_generator: Random,
+        error_object_sizes: List[int]) -> str:
     content = ""
 
     # Generate forward declarations
@@ -344,8 +377,9 @@ int depth_{depth:02d}_percent_{destructor_percent:03d}() {{
     return content
 
 
-def generate_multi_exception_file(destructor_percentages: List[int],
-                                  error_object_sizes: List[int]) -> str:
+def generate_multi_exception_file(
+    destructor_percentages: List[int],
+        error_object_sizes: List[int]) -> Tuple[str, List[TestInfo]]:
     """Generate C++ file for exception-based error propagation test."""
 
     content = f'''#include <cstdint>
@@ -405,6 +439,7 @@ struct test_error_{error_size:02d} {{
     # Create a custom random generator object
     custom_random = Random()
     custom_random.seed(0)
+    pulse_order: List[TestInfo] = []
 
     for percent in destructor_percentages:
         content += generate_except_function_sequence(
@@ -416,6 +451,18 @@ struct test_error_{error_size:02d} {{
 
     for error_size in error_object_sizes:
         for percent in destructor_percentages:
+            pulse_order.extend([
+                TestInfo(
+                    depth=DEEPEST_DEPTH, error_size=error_size, destructor_percentage=percent),
+                TestInfo(
+                    depth=LOW_DEPTH, error_size=error_size, destructor_percentage=percent),
+                TestInfo(
+                    depth=MID_DEPTH, error_size=error_size, destructor_percentage=percent),
+                TestInfo(
+                    depth=SHALLOW_DEPTH, error_size=error_size, destructor_percentage=percent),
+                TestInfo(
+                    depth=IMMEDIATE_DEPTH, error_size=error_size, destructor_percentage=percent),
+            ])
             tests_function.append(
                 f'run_test_error_{error_size:02d}_cleanup_{percent:03d}();\n')
             # Generate test runner function
@@ -506,7 +553,13 @@ void run_test() {{
 
 '''
 
-    return content
+    return (content, pulse_order)
+
+
+def test_info_to_csv(pulse_order: List[TestInfo]):
+    csv = TestInfo.header()
+    csv += "\n".join([str(pulse) for pulse in pulse_order])
+    return csv
 
 
 def generate_full_test_files(destructor_percentages: List[int],
@@ -518,26 +571,30 @@ def generate_full_test_files(destructor_percentages: List[int],
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate exception file
-    exception_content = generate_multi_exception_file(
+    exception_content, pulse_order = generate_multi_exception_file(
         destructor_percentages, error_object_sizes)
     exception_filename = "except.cpp"
+    except_pulse_order = f"{exception_filename}.csv"
     exception_path = output_dir / exception_filename
+    except_pulse_order_path = output_dir / except_pulse_order
 
-    with open(exception_path, 'w') as f:
-        f.write(exception_content)
+    Path(exception_path).write_text(exception_content)
+    Path(except_pulse_order_path).write_text(
+        TestInfo.to_csv(pulse_order=pulse_order))
     print(f"Generated: {exception_path}")
 
     # Generate result file
     for error_size in error_object_sizes:
-        result_content = generate_multi_result_file(
+        result_content, pulse_order = generate_multi_result_file(
             destructor_percentages=destructor_percentages,
             error_object_sizes=[error_size])
-        result_filename = \
-            f"result_error{error_size:02d}.cpp"
+        result_filename = f"result_error{error_size:02d}.cpp"
+        result_pulse_order = f"{result_filename}.csv"
         result_path = output_dir / result_filename
-
-        with open(result_path, 'w') as f:
-            f.write(result_content)
+        result_pulse_order_path = output_dir / result_pulse_order
+        Path(result_path).write_text(result_content)
+        Path(result_pulse_order_path).write_text(
+            TestInfo.to_csv(pulse_order=pulse_order))
         print(f"Generated: {result_path}")
 
 
