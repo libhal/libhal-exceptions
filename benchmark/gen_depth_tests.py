@@ -575,11 +575,19 @@ def generate_full_test_files(destructor_percentages: List[int],
         destructor_percentages, error_object_sizes)
     exception_filename = "except.cpp"
     except_pulse_order = f"{exception_filename}.csv"
+    nearpoint_pulse_order = "nearpoint.cpp.csv"
+    estell_except_filename = "estell_except.cpp.csv"
     exception_path = output_dir / exception_filename
     except_pulse_order_path = output_dir / except_pulse_order
+    nearpoint_pulse_order_path = output_dir / nearpoint_pulse_order
+    estell_except_filename_path = output_dir / estell_except_filename
 
     Path(exception_path).write_text(exception_content)
     Path(except_pulse_order_path).write_text(
+        TestInfo.to_csv(pulse_order=pulse_order))
+    Path(nearpoint_pulse_order_path).write_text(
+        TestInfo.to_csv(pulse_order=pulse_order))
+    Path(estell_except_filename_path).write_text(
         TestInfo.to_csv(pulse_order=pulse_order))
     print(f"Generated: {exception_path}")
 

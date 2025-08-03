@@ -43,15 +43,15 @@ std::array<std::uint32_t, 41> const _normal_table_data = {
   (17 << 10) | 185, // entry=17, avg_size=185
   (22 << 10) | 153, // entry=22, avg_size=153
   (29 << 10) | 145, // entry=29, avg_size=145
-  (36 << 10) | 96, // entry=36, avg_size=96
-  (46 << 10) | 80, // entry=46, avg_size=80
+  (36 << 10) | 94, // entry=36, avg_size=94
+  (47 << 10) | 80, // entry=47, avg_size=80
   (59 << 10) | 77, // entry=59, avg_size=77
-  (72 << 10) | 76, // entry=72, avg_size=76
+  (73 << 10) | 76, // entry=73, avg_size=76
   (86 << 10) | 75, // entry=86, avg_size=75
   (100 << 10) | 69, // entry=100, avg_size=69
-  (114 << 10) | 68, // entry=114, avg_size=68
-  (129 << 10) | 68, // entry=129, avg_size=68
-  (144 << 10) | 66, // entry=144, avg_size=66
+  (115 << 10) | 68, // entry=115, avg_size=68
+  (130 << 10) | 68, // entry=130, avg_size=68
+  (145 << 10) | 66, // entry=145, avg_size=66
   (160 << 10) | 47, // entry=160, avg_size=47
 };
 
