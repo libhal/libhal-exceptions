@@ -39,7 +39,7 @@ jobs:
     secrets: inherit
 
   demo_check_lpc4078:
-    uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
+    uses: ./.github/workflows/demo_check.yml
     with:
       compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
       compiler_profile: v1/arm-gcc-12.3
@@ -48,7 +48,7 @@ jobs:
     secrets: inherit
 
   demo_check_stm32f103c8:
-    uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
+    uses: ./.github/workflows/demo_check.yml
     with:
       compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
       compiler_profile: v1/arm-gcc-12.3

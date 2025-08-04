@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from conan import ConanFile
+from conan.tools.cmake import CMakeToolchain, CMakeDeps
 
 
 class demos(ConanFile):
@@ -23,3 +24,12 @@ class demos(ConanFile):
         bootstrap = self.python_requires["libhal-bootstrap"]
         bootstrap.module.add_demo_requirements(self)
         self.requires("libhal-exceptions/1.2.0")
+
+    # To eliminate clocks for ci 
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.preprocessor_definitions.debug["DEBUG"] = "1"
+        tc.generate()
+
+        deps = CMakeDeps(self)
+        deps.generate()
