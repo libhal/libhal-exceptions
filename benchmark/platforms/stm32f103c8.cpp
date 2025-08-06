@@ -87,22 +87,23 @@ void initialize_platform()
   static auto signal_pin = gpio_a.acquire_output_pin(0);
   time_signal = &signal_pin;
 
-  start();
-  end();
-  start();
-  end();
-  start();
-  end();
-  start();
-  end();
-  start();
-  end();
-
   static hal::cortex_m::dwt_counter dwt_steady_clock(
     hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
   counter = &dwt_steady_clock;
 
   hal::delay(dwt_steady_clock, 1ms);
+
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
+  pause();
 
   static hal::stm32f1::uart serial(hal::port<1>, hal::buffer<128>);
   analyzer_serial = &serial;
@@ -113,9 +114,18 @@ void log_start(std::string_view p_message)
   hal::print<64>(*analyzer_serial, "%.*s", p_message.size(), p_message.data());
 }
 
+std::array<hal::u64, 100> cycles{};
+auto cycle_index = 0Uz;
+constexpr auto use_cycle_counter = true;
+
 void start()
 {
-  time_signal->level(false);
+  if constexpr (use_cycle_counter) {
+    // Set time stamp at this index to the current uptime
+    cycles[cycle_index] = counter->uptime();
+  } else {
+    time_signal->level(false);
+  }
 }
 
 void pause()
@@ -126,7 +136,13 @@ void pause()
 
 void end()
 {
-  time_signal->level(true);
+  if constexpr (use_cycle_counter) {
+    // Subtract the current uptime from the previous to get the time
+    cycles[cycle_index] = counter->uptime() - cycles[cycle_index];
+    cycle_index++;
+  } else {
+    time_signal->level(true);
+  }
 }
 
 void end_benchmark()
@@ -134,4 +150,57 @@ void end_benchmark()
   while (true) {
     continue;
   }
+}
+
+// libhal-arm-mcu specific APIs defined to reduce code size
+extern "C"
+{
+  // This gets rid of an issue with libhal-exceptions in Debug mode.
+  void __assert_func()  // NOLINT
+  {
+  }
+}
+
+// Override global new operator
+void* operator new(std::size_t)
+{
+  std::terminate();
+}
+
+// Override global new[] operator
+void* operator new[](std::size_t)
+{
+  std::terminate();
+}
+
+void* operator new(unsigned int, std::align_val_t)
+{
+  std::terminate();
+}
+
+// Override global delete operator
+void operator delete(void*) noexcept
+{
+}
+
+// Override global delete[] operator
+void operator delete[](void*) noexcept
+{
+}
+
+// Optional: Override sized delete operators (C++14 and later)
+void operator delete(void*, std::size_t) noexcept
+{
+}
+
+void operator delete[](void*, std::size_t) noexcept
+{
+}
+
+void operator delete[](void*, std::align_val_t) noexcept
+{
+}
+
+void operator delete(void*, std::align_val_t) noexcept
+{
 }

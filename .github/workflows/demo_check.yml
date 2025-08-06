@@ -38,7 +38,7 @@ jobs:
       compiler_profile: ${{ inputs.compiler_profile }}
       platform_profile_url: ${{ inputs.platform_profile_url }}
       platform_profile: ${{ inputs.platform_profile }}
-    secrets: inherit 
+    secrets: inherit
 
   build_debug: # STOLEN from libhal/ci
     runs-on: ubuntu-22.04
@@ -59,7 +59,7 @@ jobs:
       - name: 📥 Install Conan ${{ inputs.conan_version }}
         if: ${{ inputs.conan_version != '' }}
         run: pipx install conan==${{ inputs.conan_version }}
-      
+
       - name: 📥 Install Conan Latest
         if: ${{ inputs.conan_version == '' }}
         run: pipx install conan
@@ -106,13 +106,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install qemu-system-arm gdb-multiarch
-          
+
       - name: Trim profile version
         id: trim
         run: |
           profile="${{ inputs.platform_profile }}"
           echo "trimmed=${profile##*/}" >> $GITHUB_OUTPUT
-      
+
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -134,7 +134,7 @@ jobs:
             -ex "monitor quit"                                                                                \
             ${{ github.workspace }}/${{ steps.trim.outputs.trimmed }}/Debug/single_level.elf                  \
             > gdb.log || {
-              # Make timeouts more explicit  
+              # Make timeouts more explicit
               code=$?
               if [ "$code" -eq 124 ]; then
                 echo "❌ GDB timeout after 5 seconds" >&2
@@ -157,13 +157,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install qemu-system-arm gdb-multiarch
-          
+
       - name: Trim profile version
         id: trim
         run: |
           profile="${{ inputs.platform_profile }}"
           echo "trimmed=${profile##*/}" >> $GITHUB_OUTPUT
-      
+
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -185,7 +185,7 @@ jobs:
             -ex "monitor quit"                                                                                  \
             ${{ github.workspace }}/${{ steps.trim.outputs.trimmed }}/Debug/multiple_inheritance.elf            \
             > gdb.log || {
-              # Make timeouts more explicit  
+              # Make timeouts more explicit
               code=$?
               if [ "$code" -eq 124 ]; then
                 echo "❌ GDB timeout after 5 seconds" >&2
@@ -199,4 +199,3 @@ jobs:
         run: |
           cat gdb.log
           grep -q "New value = 0x6666" gdb.log
-        

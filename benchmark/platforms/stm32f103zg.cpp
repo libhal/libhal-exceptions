@@ -12,33 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern "C"
-{
-  void __wrap___gnu_unwind_pr_common()
-  {
-  }
-  void __wrap___aeabi_unwind_cpp_pr0()
-  {
-  }
-  void __wrap___aeabi_unwind_cpp_pr1()
-  {
-  }
-  void __wrap___aeabi_unwind_cpp_pr2()
-  {
-  }
-  void __wrap__sig_func()
-  {
-  }
-  void __wrap___gxx_personality_v0()
-  {
-  }
-  void __wrap___gcc_personality_v0()
-  {
-  }
-  void __wrap_deregister_tm_clones()
-  {
-  }
-  void __wrap_register_tm_clones()
-  {
-  }
-}
+// NOTE: Yes this looks awful, but it does the right thing and so long as the
+// file is minimally this, then this shouldn't be an issue. This becomes a
+// problem if such a scheme is abused. So only do this for identical platform
+// implementations.
+
+#include "stm32f103c8.cpp"  // NOLINT(bugprone-suspicious-include)
