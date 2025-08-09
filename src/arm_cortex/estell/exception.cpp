@@ -138,22 +138,35 @@ struct nearpoint_descriptor
   std::uint32_t normal_block_size = 0;
   std::uint32_t text_starting_address = 0;
 };
-[[gnu::weak]] std::span<std::uint32_t const> near_point_descriptor{};
+[[gnu::weak]] std::span<std::uint32_t const> nearpoint_descriptor{};
 [[gnu::weak]] std::span<std::uint32_t const> normal_table{};
 [[gnu::weak]] std::span<std::uint32_t const> small_table{};
 }  // namespace __except_abi::inline v1
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(bugprone-reserved-identifier)
 
-std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
+std::uintptr_t nearpoint_guess_index(std::uintptr_t p_program_counter)
 {
-  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
-  auto const pc = p_program_counter - progarm_offset;
-  auto const block_power = ke::__except_abi::near_point_descriptor[0];
+
+  auto const [program_offset, block_power] = [p_program_counter]() {
+    if (p_program_counter >= ke::__except_abi::nearpoint_descriptor[3]) {
+      return std::make_pair(ke::__except_abi::nearpoint_descriptor[3],
+                            ke::__except_abi::nearpoint_descriptor[2]);
+    }
+    return std::make_pair(ke::__except_abi::nearpoint_descriptor[1],
+                          ke::__except_abi::nearpoint_descriptor[0]);
+  }();
+
+  auto const pc = p_program_counter - program_offset;
   auto const inter_block_mask = (1U << block_power) - 1U;
   auto const inter_block_location = pc & inter_block_mask;
   auto const block_index = pc >> block_power;
-  auto const linear_info = ke::__except_abi::normal_table[block_index];
+  auto const linear_info = [p_program_counter, block_index]() {
+    if (p_program_counter >= ke::__except_abi::nearpoint_descriptor[3]) {
+      return ke::__except_abi::small_table[block_index];
+    }
+    return ke::__except_abi::normal_table[block_index];
+  }();
 
   auto const entry_start = linear_info >> block_power;
   auto const average_function_size = linear_info & inter_block_mask;
@@ -164,11 +177,17 @@ std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
   auto const location = entry_start + guess_offset;
   return location;
 }
+std::array<std::uint8_t, 65 * 50> distances{};
+std::array<std::uint16_t, 65> guesses{};
+unsigned error_index = 0;
 
-index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
+index_entry_t const& get_index_entry_nearpoint(std::uint32_t p_program_counter)
 {
   auto const index_table = get_arm_exception_index();
-  auto const initial_guess = near_point_guess_index(p_program_counter);
+  auto const initial_guess = nearpoint_guess_index(p_program_counter);
+  if (error_index < guesses.size()) {
+    guesses[error_index] = initial_guess;
+  }
   auto current = index_table[initial_guess].function();
   auto const go_left = p_program_counter < current;
 
@@ -177,8 +196,10 @@ index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
       current = index_table[iter].function();
       auto next = index_table[iter + 1].function();
       if (current <= p_program_counter && p_program_counter < next) {
+        error_index++;
         return index_table[iter];
       }
+      distances[error_index]++;
     }
     return index_table[0];
   } else {
@@ -186,8 +207,10 @@ index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
       current = index_table[iter].function();
       auto next = index_table[iter + 1].function();
       if (current <= p_program_counter && p_program_counter < next) {
+        error_index++;
         return index_table[iter];
       }
+      distances[error_index]++;
     }
     return index_table.end()[-1];
   }
@@ -1822,7 +1845,7 @@ void raise_exception(exception_control_block& p_exception_object)
           if (__except_abi::normal_table.empty()) {
             return get_index_entry(p_exception_object.cpu.pc);
           } else {
-            return get_index_entry_near_point(p_exception_object.cpu.pc);
+            return get_index_entry_nearpoint(p_exception_object.cpu.pc);
           }
         }();
 
@@ -2071,34 +2094,31 @@ extern "C"
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
-  void* __wrap___cxa_allocate_exception(size_t p_thrown_size)
+  void* __wrap___cxa_allocate_exception(std::size_t p_thrown_size)
   {
     if (ke::control_block.cache.state() != ke::runtime_state::handled_state) {
       std::terminate();
     }
 
-    // We set the state to `get_next_frame` to prep the control block state but
-    // more importantly, in order to detect if the allocator throws bad alloc
-    // and we re-enter this function, we can detect that and terminate.
     ke::control_block.cache.state(ke::runtime_state::get_next_frame);
-    auto const allocation_amount =
-      sizeof(ke::exception_allocation<>) + p_thrown_size;
 
-    auto exception_memory_resource = &hal::get_exception_allocator();
+    constexpr auto data_offset = offsetof(ke::exception_header, data);
 
-    auto* object = static_cast<ke::exception_allocation<>*>(
-      exception_memory_resource->allocate(allocation_amount));
+    auto const allocation_amount = data_offset + p_thrown_size;
+    auto* const resource = &hal::get_exception_allocator();
+    auto* const memory = resource->allocate(allocation_amount);
+    auto* const allocation = static_cast<ke::exception_header*>(memory);
 
-    object->allocator = exception_memory_resource;
-    object->size = allocation_amount;
+    allocation->allocator = resource;
+    allocation->size = allocation_amount;
 
-    return &object->data;
+    return &allocation->data;
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
   void __wrap___cxa_free_exception(void* p_thrown_exception)
   {
-    auto object = ke::get_allocation_from_exception(p_thrown_exception);
+    auto* const object = ke::exception_header::extract(p_thrown_exception);
     object->allocator->deallocate(object, object->size);
   }
 

@@ -359,22 +359,19 @@ struct flattened_hierarchy
   }
 };
 
-template<typename T = std::byte>
-struct exception_allocation
+struct exception_header
 {
   std::pmr::memory_resource* allocator = nullptr;
   std::size_t size = 0uz;
-  alignas(std::max_align_t) T data;
-};
+  alignas(std::max_align_t) std::byte data;
 
-template<typename T = std::byte>
-exception_allocation<T>* get_allocation_from_exception(void* p_exception_ptr)
-{
-  auto const member_offset = offsetof(exception_allocation<T>, data);
-  auto const exception_bytes = static_cast<std::byte*>(p_exception_ptr);
-  return reinterpret_cast<exception_allocation<T>*>(exception_bytes -
-                                                    member_offset);
-}
+  static exception_header* extract(void* p_exception_address)
+  {
+    auto const member_offset = offsetof(exception_header, data);
+    auto const exception_bytes = static_cast<std::byte*>(p_exception_address);
+    return reinterpret_cast<exception_header*>(exception_bytes - member_offset);
+  }
+};
 
 struct exception_control_block
 {

@@ -8,6 +8,7 @@ import struct
 from pathlib import Path
 from collections import defaultdict
 import statistics
+import math
 
 
 class FunctionInfo:
@@ -175,6 +176,16 @@ def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
     return actualized_functions
 
 
+def read_map_get_arm_index_address(map_file_text: str) -> int:
+    for line in map_file_text.split('\n'):
+        if '__exidx_start' in line:
+            # Trim all lines before this line
+            ADDRESS_STRING = line.strip().split()[0]
+            return int(ADDRESS_STRING, 16)
+
+    raise Exception("Could not find `__exidx_start` in map file")
+
+
 def get_substring_after(main_string, delimiter):
     index = main_string.rfind(delimiter)
     if index == -1:
@@ -277,9 +288,12 @@ def break_into_blocks(exception_index: List[FunctionGroup],
 
 
 def generate_cpp_table_file(filename: str,
-                            block_power: int,
-                            blocks: List[Block],
-                            program_start: int):
+                            normal_program_start: int,
+                            normal_block_power: int,
+                            normal_blocks: List[Block],
+                            small_program_start: int,
+                            small_block_power: int,
+                            small_blocks: List[Block]):
     # TODO(kammce): Add support for small table
     code = """#include <cstdint>
 
@@ -291,19 +305,37 @@ namespace ke::__except_abi::inline v1 {
 namespace {
 """
 
-    code += "std::array<std::uint32_t, 2> const _near_point_descriptor_data = {\n"
-    code += f"  0x{block_power:08x},\n"
-    code += f"  0x{program_start:08x},\n"
+    code += "std::array<std::uint32_t, 4> const _nearpoint_descriptor_data = {\n"
+    code += f"  0x{normal_block_power:08x}, // normal block power\n"
+    code += f"  0x{normal_program_start:08x}, // normal program start address\n"
+    code += f"  0x{small_block_power:08x}, // small block power\n"
+    code += f"  0x{small_program_start:08x}, // small block address\n"
     code += "};\n\n"
 
-    code += f"std::array<std::uint32_t, {len(blocks)}> const _normal_table_data = {{\n"
-    for block in blocks:
-        code += f"  {block.as_c_bit_mask(block_power)}, // entry={block.start}, avg_size={block.average_size}\n"
+    # Emit the normal table
+    code += f"std::array<std::uint32_t, {len(normal_blocks)}> const _normal_table_data = {{\n"
+    for block in normal_blocks:
+        code += f"  {block.as_c_bit_mask(normal_block_power)}, // entry={block.start}, avg_size={block.average_size}\n"
     code += "};\n\n"
+
+    # Emit the small table
+    code += f"std::array<std::uint32_t, {len(small_blocks)}> const _small_table_data = {{\n"
+    for block in small_blocks:
+        code += f"  {block.as_c_bit_mask(small_block_power)}, // entry={block.start}, avg_size={block.average_size}\n"
+    code += "};\n\n"
+
+    # End of namespace
     code += "}  // namespace\n\n"
 
-    code += "std::span<std::uint32_t const> near_point_descriptor = _near_point_descriptor_data;\n"
+    # Emit spans
+    code += "[[gnu::used]]\n"
+    code += "std::span<std::uint32_t const> nearpoint_descriptor = _nearpoint_descriptor_data;\n"
+
+    code += "[[gnu::used]]\n"
     code += "std::span<std::uint32_t const> normal_table = _normal_table_data;\n"
+
+    code += "[[gnu::used]]\n"
+    code += "std::span<std::uint32_t const> small_table = _small_table_data;\n"
     code += "}  // namespace ke::__except_abi::inline v1\n"
 
     with open(filename, "w") as f:
@@ -363,8 +395,8 @@ def main():
     # ==========================================================================
 
     map_file = Path(args.map).read_text()
-    FINALIZED_FUNCTIONS = read_map_get_function(
-        map_file)
+    FINALIZED_FUNCTIONS = read_map_get_function(map_file)
+    EXCEPTION_INDEX_ADDRESS = read_map_get_arm_index_address(map_file)
     logging.debug(f"FINALIZED_FUNCTIONS = \n{FINALIZED_FUNCTIONS}")
 
     # ==========================================================================
@@ -391,7 +423,7 @@ def main():
             value |= 1 << 31
         return struct.unpack('>i', struct.pack('>I', value))[0]
 
-    def parse_exception_index(hex_data: str):
+    def parse_exception_index(index_address: int, hex_data: str):
         """Parse exception index from hex dump"""
         # Remove hex dump formatting and convert to bytes
         hex_lines = hex_data.strip().split('\n')
@@ -401,6 +433,9 @@ def main():
         initial_address_text = bytes.fromhex(first_line)
         initial_address = struct.unpack('>I', initial_address_text)[0]
         logging.debug(f'initial address = {initial_address:08x}')
+        entries_to_skip = 0
+        if index_address != initial_address:
+            entries_to_skip = int(abs(initial_address - index_address) / 4)
         # format:  800835c 00000000 e07cff7f 10ffff7f ec7cff7f  .....|.......|..
 
         # For some reason there is a set of 0s at the start which puts
@@ -413,9 +448,8 @@ def main():
             logging.debug(f'parts = {parts}')
             hex_bytes.extend(parts)
 
-        # Skip the first 0s in the index if it exists
-        if hex_bytes[0] == "00000000":
-            hex_bytes = hex_bytes[1:]
+        # Skip hex value before `__eidx_start` (provided by index_address)
+        hex_bytes = hex_bytes[entries_to_skip:]
         results: List[FunctionInfo] = []
 
         # Process in pairs (skip first two, then take pairs)
@@ -439,7 +473,7 @@ def main():
             offset_prel31 = offset_raw
 
             entry_offset = i * 4
-            absolute_address = (initial_address + entry_offset) + addr_prel31
+            absolute_address = (index_address + entry_offset) + addr_prel31
             logging.debug(
                 f"addr_prel31 = {addr_prel31} -> {absolute_address:08x}\n")
 
@@ -447,7 +481,8 @@ def main():
 
         return results
 
-    EXCEPTION_ENTRIES = parse_exception_index(exception_index_text)
+    EXCEPTION_ENTRIES = parse_exception_index(
+        EXCEPTION_INDEX_ADDRESS, exception_index_text)
 
     hex_values = ' '.join(
         f'(function: {entry[0]:08x}, data: {entry[1]:08x}),\n' for entry in EXCEPTION_ENTRIES)
@@ -502,8 +537,7 @@ def main():
     # ==========================================================================
     # Step 4: Collect functions into groups with common unwind info
     # ==========================================================================
-    unwind_groups_map: defaultdict[int,
-                                   FunctionGroup] = {}
+    unwind_groups_map: defaultdict[int, FunctionGroup] = {}
     logging.debug("unwind_groups_map")
     for function in FINALIZED_FUNCTIONS:
         if function.unwind_info in unwind_groups_map:
@@ -557,15 +591,79 @@ def main():
     logging.debug(order_string)
 
     # ==========================================================================
-    # Step 7: Generate nearpoint table
+    # Step 7: Break into (normal) blocks
     # ==========================================================================
-    blocks = break_into_blocks(
-        sorted_unwind_groups_list, block_power=args.block_power)
+    blocks = break_into_blocks(sorted_unwind_groups_list,
+                               block_power=args.block_power)
+
+    # ==========================================================================
+    # Step 7: Find where error is greater than 8
+    # ==========================================================================
+    def predict_location(address: int,
+                         blocks: List[Block],
+                         block_power: int):
+        INTER_BLOCK_MASK = (1 << block_power) - 1
+        INTER_BLOCK_LOCATION = address & INTER_BLOCK_MASK
+        EQUATION_INDEX = address >> block_power
+
+        if EQUATION_INDEX >= len(blocks):
+            return len(blocks) - 1
+
+        BLOCK = blocks[EQUATION_INDEX]
+        if BLOCK.average_size == 0:
+            return BLOCK.start
+
+        GUESS_OFFSET = math.ceil(INTER_BLOCK_LOCATION / BLOCK.average_size)
+        LOCATION = BLOCK.start + GUESS_OFFSET
+
+        return int(LOCATION)
+
+    small_table_start = len(sorted_unwind_groups_list)
+    small_table_address = 0
+    for index, group in enumerate(sorted_unwind_groups_list):
+        # subdivide
+        SUBDIVIDE = 16
+        CHUNK = int(group.size() / SUBDIVIDE)
+        worst_guess_error = 0
+        for i in range(SUBDIVIDE):
+            current_guess = predict_location(
+                small_table_address + CHUNK,
+                blocks=blocks,
+                block_power=args.block_power)
+            error = abs(current_guess - index)
+            logging.debug(f"[{index}] error = {error}")
+            if error > worst_guess_error:
+                worst_guess_error = error
+
+        if worst_guess_error > 8:
+            logging.info(f"Small table starts @ block {index}")
+            small_table_start = index
+            break
+        small_table_address += group.size()
+
+    # ==========================================================================
+    # Step 8: Generate nearpoint table
+    # ==========================================================================
+    SMALL_BLOCK_POWER = args.block_power - 2
+    small_group = sorted_unwind_groups_list[small_table_start:]
+    if len(small_group) == 0:
+        small_blocks = []
+    else:
+        small_blocks = break_into_blocks(
+            sorted_unwind_groups_list[small_table_start:],
+            block_power=SMALL_BLOCK_POWER)
+
     logging.debug(f"blocks={blocks}")
-    generate_cpp_table_file(blocks=blocks,
-                            block_power=args.block_power,
-                            filename=args.nearpoint_file,
-                            program_start=FINALIZED_FUNCTIONS[0].address)
+    generate_cpp_table_file(
+        filename=args.nearpoint_file,
+        normal_program_start=FINALIZED_FUNCTIONS[0].address,
+        normal_blocks=blocks,
+        normal_block_power=args.block_power,
+        small_program_start=(
+            FINALIZED_FUNCTIONS[0].address + small_table_address),
+        small_blocks=small_blocks,
+        small_block_power=SMALL_BLOCK_POWER,
+    )
 
     return 0
 

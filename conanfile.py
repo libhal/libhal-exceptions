@@ -16,7 +16,7 @@ from conan import ConanFile
 from conan.tools.cmake import CMake, cmake_layout
 from conan.tools.files import copy
 from conan.tools.build import check_min_cppstd
-import os
+from pathlib import Path
 
 required_conan_version = ">=2.0.14"
 
@@ -91,22 +91,24 @@ class libhal_exceptions_conan(ConanFile):
         cmake.build()
 
     def package(self):
+        package_folder = Path(self.package_folder)
+        source_folder = Path(self.source_folder)
         copy(self,
              "LICENSE",
-             dst=os.path.join(self.package_folder, "licenses"),
-             src=self.source_folder)
+             dst=package_folder / "licenses",
+             src=source_folder)
         copy(self,
              "*.h",
-             dst=os.path.join(self.package_folder, "include"),
-             src=os.path.join(self.source_folder, "include"))
+             dst=package_folder / "include",
+             src=source_folder / "include")
         copy(self,
              "*.hpp",
-             dst=os.path.join(self.package_folder, "include"),
-             src=os.path.join(self.source_folder, "include"))
+             dst=package_folder / "include",
+             src=source_folder / "include")
         copy(self,
              "*.ld",
-             dst=os.path.join(self.package_folder, "linker_scripts"),
-             src=os.path.join(self.source_folder, "linker_scripts"))
+             dst=package_folder / "linker_scripts",
+             src=source_folder / "linker_scripts")
 
         cmake = CMake(self)
         cmake.install()
@@ -114,8 +116,10 @@ class libhal_exceptions_conan(ConanFile):
     def package_info(self):
         self.cpp_info.libs = ["libhal-exceptions"]
         self.cpp_info.set_property("cmake_target_name", "libhal::exceptions")
-        lib_path = os.path.join(self.package_folder,
-                                'lib', 'liblibhal-exceptions.a')
+        lib_path = Path(self.package_folder) / 'lib' / 'liblibhal-exceptions.a'
+        linker_script_path = Path(self.package_folder) / 'linker_scripts'
+        gcc_arm_14_2 = linker_script_path / 'arm-none-eabi-gcc-14.2'
+
         using_wrap = False
         if self.options.runtime == "estell":
             using_wrap = True
@@ -123,23 +127,15 @@ class libhal_exceptions_conan(ConanFile):
             # script
             self.cpp_info.exelinkflags.extend([
                 "-fexceptions",
-                "-L" + os.path.join(self.package_folder, "linker_scripts"),
-                '-Wl,-Tarm-none-eabi-gcc-14.2_discard.ld',
+                f"-L{linker_script_path}",
+                f'-Wl,-T{gcc_arm_14_2 / "discard_unwind_c.ld" }',
+                f'-Wl,-T{gcc_arm_14_2 / "override_gxx_personality_v0.ld" }',
                 "-Wl,--wrap=__cxa_throw",
                 "-Wl,--wrap=__cxa_rethrow",
                 "-Wl,--wrap=__cxa_end_catch",
                 "-Wl,--wrap=__cxa_begin_catch",
                 "-Wl,--wrap=__cxa_end_cleanup",
                 "-Wl,--wrap=_Unwind_Resume",
-                # "-Wl,--wrap=__gnu_unwind_pr_common",
-                # "-Wl,--wrap=__aeabi_unwind_cpp_pr0",
-                # "-Wl,--wrap=__aeabi_unwind_cpp_pr1",
-                # "-Wl,--wrap=__aeabi_unwind_cpp_pr2",
-                # "-Wl,--wrap=_sig_func",
-                # "-Wl,--wrap=__gxx_personality_v0",
-                # "-Wl,--wrap=__gcc_personality_v0",
-                # "-Wl,--wrap=deregister_tm_clones",
-                # "-Wl,--wrap=register_tm_clones",
             ])
 
         # Keep this for now, will update this for the runtime select
@@ -155,6 +151,6 @@ class libhal_exceptions_conan(ConanFile):
             self.cpp_info.exelinkflags.extend([
                 # Ensure that all symbols are added to the linker's symbol table
                 "-Wl,--whole-archive",
-                lib_path,
+                str(lib_path),
                 "-Wl,--no-whole-archive",
             ])
