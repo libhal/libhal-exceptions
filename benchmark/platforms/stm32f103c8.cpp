@@ -116,7 +116,7 @@ void log_start(std::string_view p_message)
 
 std::array<hal::u64, 100> cycles{};
 auto cycle_index = 0Uz;
-constexpr auto use_cycle_counter = true;
+constexpr auto use_cycle_counter = false;
 
 void start()
 {

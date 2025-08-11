@@ -316,7 +316,7 @@ struct flattened_hierarchy
   std::array<base_class_type_info, max_count> bases{};
   std::uint32_t size = 0;
 
-  explicit flattened_hierarchy(std::type_info const* p_info)
+  explicit constexpr flattened_hierarchy(std::type_info const* p_info)
   {
     bases[0].type_info = p_info;
     bases[0].offset = 0;
@@ -325,27 +325,27 @@ struct flattened_hierarchy
 
   flattened_hierarchy() = default;
 
-  [[nodiscard]] auto begin()
+  [[nodiscard]] constexpr auto begin()
   {
     return bases.begin();
   }
 
-  [[nodiscard]] auto end()
+  [[nodiscard]] constexpr auto end()
   {
     return bases.begin() + size;
   }
 
-  [[nodiscard]] auto cbegin() const
+  [[nodiscard]] constexpr auto cbegin() const
   {
     return bases.cbegin();
   }
 
-  [[nodiscard]] auto cend() const
+  [[nodiscard]] constexpr auto cend() const
   {
     return bases.cbegin() + size;
   }
 
-  void push_back(base_class_type_info const& p_info)
+  constexpr void push_back(base_class_type_info const& p_info)
   {
     if (size > max_count) {
       std::terminate();
@@ -353,7 +353,19 @@ struct flattened_hierarchy
     bases[size++] = p_info;
   }
 
-  void reset()
+  using iter = decltype(bases.end());
+
+  constexpr iter find(std::type_info const* p_type)
+  {
+    for (auto const base : bases) {
+      if (base->type_info == p_type) {
+        return &base;
+      }
+    }
+    return bases.end();
+  }
+
+  constexpr void reset()
   {
     size = 0;
   }
