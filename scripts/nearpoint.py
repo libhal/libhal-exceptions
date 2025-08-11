@@ -2,7 +2,7 @@
 import subprocess
 import re
 import argparse
-from typing import List
+from typing import List, Tuple
 import logging
 import struct
 from pathlib import Path
@@ -260,8 +260,7 @@ def break_into_blocks(exception_index: List[FunctionGroup],
     # the last block
     while index_cursor < len(group_addresses) - 1:
         index_cursor += 1
-        BLOCK_START_ADDRESS = group_addresses[start_index] - \
-            FIRST_FUNCTION
+        BLOCK_START_ADDRESS = group_addresses[start_index] - FIRST_FUNCTION
         BLOCK_NUMBER_START = (BLOCK_START_ADDRESS >> block_power)
         BLOCK_END_ADDRESS = group_addresses[index_cursor] - FIRST_FUNCTION
         BLOCK_NUMBER_END = (BLOCK_END_ADDRESS >> block_power)
@@ -272,6 +271,11 @@ def break_into_blocks(exception_index: List[FunctionGroup],
                 EXCEPTION_SLICE = exception_index[start_index:index_cursor]
                 AVERAGE_SIZE = round(statistics.fmean(
                     entry.size() for entry in EXCEPTION_SLICE))
+                MAX_VAL = max(entry.size() for entry in EXCEPTION_SLICE)
+                MIN_VAL = min(entry.size() for entry in EXCEPTION_SLICE)
+                logging.debug(f"({MAX_VAL}, {MIN_VAL})")
+                if (1 - (MIN_VAL / MAX_VAL)) > 0.2:
+                    logging.debug("Big delta!")
                 block_list[BLOCK_NUMBER_START] = Block(
                     start_index, AVERAGE_SIZE)
             start_index = index_cursor
@@ -282,6 +286,9 @@ def break_into_blocks(exception_index: List[FunctionGroup],
     EXCEPTION_SLICE = exception_index[start_index:index_cursor]
     AVERAGE_SIZE = round(statistics.fmean(
         entry.size() for entry in exception_index[start_index:index_cursor]))
+    MAX_VAL = max(entry.size() for entry in EXCEPTION_SLICE)
+    MIN_VAL = min(entry.size() for entry in EXCEPTION_SLICE)
+    logging.debug(f"final ({MAX_VAL}, {MIN_VAL})")
     block_list[-1] = Block(start_index, AVERAGE_SIZE)
 
     return block_list
@@ -294,7 +301,6 @@ def generate_cpp_table_file(filename: str,
                             small_program_start: int,
                             small_block_power: int,
                             small_blocks: List[Block]):
-    # TODO(kammce): Add support for small table
     code = """#include <cstdint>
 
 #include <array>
@@ -306,9 +312,9 @@ namespace {
 """
 
     code += "std::array<std::uint32_t, 4> const _nearpoint_descriptor_data = {\n"
-    code += f"  0x{normal_block_power:08x}, // normal block power\n"
+    code += f"  {normal_block_power:d}, // normal block power\n"
     code += f"  0x{normal_program_start:08x}, // normal program start address\n"
-    code += f"  0x{small_block_power:08x}, // small block power\n"
+    code += f"  {small_block_power:d}, // small block power\n"
     code += f"  0x{small_program_start:08x}, // small block address\n"
     code += "};\n\n"
 
@@ -450,7 +456,7 @@ def main():
 
         # Skip hex value before `__eidx_start` (provided by index_address)
         hex_bytes = hex_bytes[entries_to_skip:]
-        results: List[FunctionInfo] = []
+        results: List[Tuple(int, int)] = []
 
         # Process in pairs (skip first two, then take pairs)
         for i in range(0, len(hex_bytes), 2):
@@ -596,9 +602,6 @@ def main():
     blocks = break_into_blocks(sorted_unwind_groups_list,
                                block_power=args.block_power)
 
-    # ==========================================================================
-    # Step 7: Find where error is greater than 8
-    # ==========================================================================
     def predict_location(address: int,
                          blocks: List[Block],
                          block_power: int):
@@ -617,6 +620,48 @@ def main():
         LOCATION = BLOCK.start + GUESS_OFFSET
 
         return int(LOCATION)
+
+    # TODO(kammce): remove!
+    TEST_PC = 37373
+    GUESS = predict_location(37373, blocks=blocks,
+                             block_power=args.block_power)
+    logging.warning(f'predict_location={GUESS}')
+
+    def get_prediction_error(guess: int):
+        error: int = 0
+
+        def to_rel(grouped_index: List[FunctionGroup],  guess: int):
+            sum = 0
+            for entry in grouped_index[:guess]:
+                sum += entry.size()
+            return sum
+
+        address = to_rel(sorted_unwind_groups_list, guess)
+        if TEST_PC < address:
+            # Go left
+            while True:
+                logging.warning(f"[{guess}]: {TEST_PC} < {address}")
+                if (TEST_PC < to_rel(sorted_unwind_groups_list, guess)):
+                    break
+                error -= 1
+                guess -= 1
+                address = to_rel(sorted_unwind_groups_list, guess)
+        else:
+            while True:
+                logging.warning(f"[{guess}]: {TEST_PC} < {address}")
+                if TEST_PC > to_rel(sorted_unwind_groups_list, guess):
+                    break
+                error += 1
+                guess += 1
+                address = to_rel(sorted_unwind_groups_list, guess)
+
+        return error
+
+    logging.warning(f'get_prediction_error={get_prediction_error(GUESS)}')
+
+    # ==========================================================================
+    # Step 7: Find where error is greater than 8
+    # ==========================================================================
 
     small_table_start = len(sorted_unwind_groups_list)
     small_table_address = 0

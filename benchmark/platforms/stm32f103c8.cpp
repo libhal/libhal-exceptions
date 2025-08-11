@@ -19,6 +19,7 @@
 #include <libhal-arm-mcu/stm32f1/gpio.hpp>
 #include <libhal-arm-mcu/stm32f1/uart.hpp>
 #include <libhal-exceptions/control.hpp>
+#include <libhal-exceptions/extra.hpp>
 #include <libhal-util/serial.hpp>
 #include <libhal-util/steady_clock.hpp>
 
@@ -68,7 +69,16 @@ private:
   bool m_allocated = false;
 };
 
+#include <cinttypes>
+
 single_block_memory_resource<256> exception_memory_resource{};
+void serial_printer(std::uint32_t p_pc, std::uint32_t p_guess_error)
+{
+  hal::print<64>(*analyzer_serial,
+                 "pc: 0x%" PRIx32 ", error: %" PRIu32 "\n",
+                 p_pc,
+                 p_guess_error);
+}
 
 void initialize_platform()
 {
@@ -93,6 +103,9 @@ void initialize_platform()
 
   hal::delay(dwt_steady_clock, 1ms);
 
+  static hal::stm32f1::uart serial(hal::port<1>, hal::buffer<128>);
+  analyzer_serial = &serial;
+
   start();
   end();
   start();
@@ -105,8 +118,9 @@ void initialize_platform()
   end();
   pause();
 
-  static hal::stm32f1::uart serial(hal::port<1>, hal::buffer<128>);
-  analyzer_serial = &serial;
+  // NOTE(kammce): I was trying to print out the errors with the nearpoint table
+  // but I didn't finish getting it to work in time. It seg faults currently.
+  ke::print_nearpoint_table_errors(serial_printer);
 }
 
 void log_start(std::string_view p_message)

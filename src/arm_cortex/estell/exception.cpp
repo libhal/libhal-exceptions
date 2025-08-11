@@ -23,6 +23,7 @@
 #include <typeinfo>
 
 #include <libhal-exceptions/control.hpp>
+#include <libhal-exceptions/extra.hpp>
 
 #include "internal.hpp"
 
@@ -149,10 +150,12 @@ std::uintptr_t nearpoint_guess_index(std::uintptr_t p_program_counter)
 {
 
   auto const [program_offset, block_power] = [p_program_counter]() {
+    // Small table
     if (p_program_counter >= ke::__except_abi::nearpoint_descriptor[3]) {
       return std::make_pair(ke::__except_abi::nearpoint_descriptor[3],
                             ke::__except_abi::nearpoint_descriptor[2]);
     }
+    // Normal table
     return std::make_pair(ke::__except_abi::nearpoint_descriptor[1],
                           ke::__except_abi::nearpoint_descriptor[0]);
   }();
@@ -177,11 +180,13 @@ std::uintptr_t nearpoint_guess_index(std::uintptr_t p_program_counter)
   auto const location = entry_start + guess_offset;
   return location;
 }
+
 std::array<std::uint8_t, 65 * 50> distances{};
+[[gnu::used]]
 std::array<std::uint16_t, 65> guesses{};
 unsigned error_index = 0;
 
-index_entry_t const& get_index_entry_nearpoint(std::uint32_t p_program_counter)
+index_entry_t const& get_index_entry_nearpoint(std::uintptr_t p_program_counter)
 {
   auto const index_table = get_arm_exception_index();
   auto const initial_guess = nearpoint_guess_index(p_program_counter);
@@ -192,10 +197,9 @@ index_entry_t const& get_index_entry_nearpoint(std::uint32_t p_program_counter)
   auto const go_left = p_program_counter < current;
 
   if (go_left) {
-    for (std::size_t iter = initial_guess; iter > 0; iter--) {
+    for (auto iter = initial_guess - 1uz; iter > 0; iter--) {
       current = index_table[iter].function();
-      auto next = index_table[iter + 1].function();
-      if (current <= p_program_counter && p_program_counter < next) {
+      if (current <= p_program_counter) {
         error_index++;
         return index_table[iter];
       }
@@ -203,16 +207,42 @@ index_entry_t const& get_index_entry_nearpoint(std::uint32_t p_program_counter)
     }
     return index_table[0];
   } else {
-    for (std::size_t iter = initial_guess; iter < index_table.size(); iter++) {
+    for (auto iter = initial_guess + 1uz; iter < index_table.size(); iter++) {
       current = index_table[iter].function();
-      auto next = index_table[iter + 1].function();
-      if (current <= p_program_counter && p_program_counter < next) {
+      if (current >= p_program_counter) {
         error_index++;
-        return index_table[iter];
+        return index_table[iter - 1];
       }
       distances[error_index]++;
     }
     return index_table.end()[-1];
+  }
+}
+
+[[gnu::noinline]]
+std::intptr_t get_index_entry_nearpoint_error(std::uintptr_t p_program_counter)
+{
+  auto const index_table = get_arm_exception_index();
+  auto const initial_guess = nearpoint_guess_index(p_program_counter);
+  auto current = index_table[initial_guess].function();
+  auto const go_left = p_program_counter < current;
+
+  if (go_left) {
+    for (auto iter = initial_guess - 1uz; iter > 0; iter--) {
+      current = index_table[iter].function();
+      if (current <= p_program_counter) {
+        return static_cast<std::intptr_t>(initial_guess - iter);
+      }
+    }
+    return static_cast<std::intptr_t>(initial_guess);
+  } else {
+    for (auto iter = initial_guess + 1uz; iter < index_table.size(); iter++) {
+      current = index_table[iter].function();
+      if (current >= p_program_counter) {
+        return static_cast<std::intptr_t>(initial_guess - iter);
+      }
+    }
+    return static_cast<std::intptr_t>(initial_guess - index_table.size());
   }
 }
 
@@ -226,6 +256,35 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
     return *index;
   }
   return *(index - 1);
+}
+
+// NOLINTBEGIN(readability-identifier-naming)
+// NOLINTBEGIN(bugprone-reserved-identifier)
+extern "C"
+{
+  extern void _start();
+  extern void __text_end();
+}
+// NOLINTEND(bugprone-reserved-identifier)
+// NOLINTEND(readability-identifier-naming)
+
+[[gnu::noinline]]
+void print_nearpoint_table_errors(console_writer p_writer)
+{
+  auto* start_addr = reinterpret_cast<uint32_t*>(&_start);
+  auto* end_addr = reinterpret_cast<uint32_t*>(&__text_end);
+  // NOLINTNEXTLINE(bugprone-sizeof-expression)
+  auto const length = (end_addr - start_addr) / sizeof(std::uint32_t);
+  std::span<uint32_t> text_section(start_addr, length);
+
+  for (auto const& pc : text_section) {
+    auto const address = reinterpret_cast<std::uintptr_t>(&pc);
+    auto const guess_error = get_index_entry_nearpoint_error(
+      reinterpret_cast<std::uintptr_t>(address));
+    if (guess_error > 8) {
+      p_writer(address, guess_error);
+    }
+  }
 }
 
 [[gnu::always_inline]] inline constexpr std::uint32_t read_uleb128(
