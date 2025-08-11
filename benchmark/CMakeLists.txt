@@ -143,3 +143,41 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/nearpoint.cpp")
 else()
     message(WARNING "nearpoint.cpp does not exist")
 endif()
+
+
+# Build nearpoint binary if if available
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fast_gcc_unwind.cpp")
+  message(STATUS "fast_gcc_unwind.cpp exists!")
+  set(elf fast_gcc_unwind.cpp.elf)
+  message(STATUS "Generating Demo for \"${elf}\"")
+  add_executable(${elf} generated_tests/except.cpp fast_gcc_unwind.cpp)
+  target_include_directories(${elf} PRIVATE .)
+  target_compile_options(${elf} PRIVATE
+    ${BENCHMARK_COMPILE_OPTIONS}
+    -fexceptions
+    -Wno-error=attributes)
+
+  target_link_libraries(${elf} PRIVATE
+    startup_code
+    libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
+  )
+  target_link_options(${elf} PRIVATE -fno-threadsafe-statics
+    -L${CMAKE_SOURCE_DIR}/
+    -Wl,-Map=${CMAKE_BINARY_DIR}/${elf}.map
+    -Wl,--wrap=__gnu_unwind_execute
+    -Wl,--wrap=_Unwind_VRS_Pop
+    -Wl,--wrap=__gnu_unwind_frame
+  )
+  if(prebuilt-picolibc_FOUND)
+    target_link_libraries(${elf} PRIVATE picolibc)
+  endif()
+
+  if(${CMAKE_CROSSCOMPILING})
+    # Convert elf into .bin, .hex and other formats needed for programming
+    # devices.
+    libhal_post_build(${elf})
+    libhal_disassemble(${elf})
+  endif()
+else()
+    message(WARNING "nearpoint.cpp does not exist")
+endif()
