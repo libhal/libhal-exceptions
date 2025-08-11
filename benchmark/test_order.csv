@@ -1,5 +1,7 @@
 executable,pulse_order
 build/stm32f103c8/builtin/Release/except.cpp.elf.bin,generated_tests/except.cpp.csv
+build/stm32f103c8/builtin/Release/fast_gcc_unwind.cpp.elf,generated_tests/gcc_except_fast.csv
+build/stm32f103c8/estell/Release/except.cpp.elf.bin,generated_tests/estell_except.cpp.csv
 build/stm32f103c8/estell/Release/except.cpp.elf.bin,generated_tests/estell_except.cpp.csv
 build/stm32f103c8/estell/Release/nearpoint.cpp.elf.bin,generated_tests/nearpoint.cpp.csv
 build/stm32f103c8/builtin/Release/result_error04.cpp.elf.bin,generated_tests/result_error04.cpp.csv
