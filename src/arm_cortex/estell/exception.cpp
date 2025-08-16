@@ -137,6 +137,8 @@ struct nearpoint_descriptor
 {
   std::uint32_t normal_block_size = 0;
   std::uint32_t text_starting_address = 0;
+  std::uint32_t small_block_size = 0;
+  std::uint32_t small_starting_address = 0;
 };
 [[gnu::weak]] std::span<std::uint32_t const> near_point_descriptor{};
 [[gnu::weak]] std::span<std::uint32_t const> normal_table{};
