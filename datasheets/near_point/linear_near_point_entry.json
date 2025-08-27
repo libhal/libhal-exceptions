@@ -1,13 +1,13 @@
 {
   "reg": [
     {
-      "bits": 24,
-      "name": "entry number offset",
+      "bits": 22,
+      "name": "starting entry number",
       "type": 5
     },
     {
-      "bits": 8,
-      "name": "average function size",
+      "bits": 10,
+      "name": "entry count",
       "type": 6
     }
   ],

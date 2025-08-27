@@ -392,6 +392,7 @@ extern "C"
     return _URC_OK;
   }
 
+  [[gnu::used]]
   _Unwind_Reason_Code __wrap___gnu_unwind_frame(_Unwind_Control_Block* ucbp,
                                                 _Unwind_Context* context)
   {

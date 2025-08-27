@@ -2,12 +2,11 @@
 import subprocess
 import re
 import argparse
-from typing import List
+from typing import List, Tuple
 import logging
 import struct
 from pathlib import Path
 from collections import defaultdict
-import statistics
 
 
 class FunctionInfo:
@@ -123,7 +122,7 @@ def parse_object_map_line(line):
     return address, size, obj_file
 
 
-def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
+def get_functions_from_map_file(map_file_text: str) -> List[FunctionInfo]:
     actualized_functions: List[FunctionInfo] = []
     lines = map_file_text.split('\n')
     text_only_lines: List[str] = []
@@ -175,6 +174,19 @@ def read_map_get_function(map_file_text: str) -> List[FunctionInfo]:
     return actualized_functions
 
 
+def get_index_start(map_file_text: str) -> List[FunctionInfo]:
+    lines = map_file_text.split('\n')
+    for line in lines:
+        if "__exidx_start" in line:
+            sections = line.strip().split(maxsplit=3)
+            # 0x0800c8a0 PROVIDE (__exidx_start = .)
+            # Trim all lines before this line
+            return int(sections[0], 16)
+
+    logging.error("Failed to find __exidx_start symbol in map file!")
+    exit(1)
+
+
 def get_substring_after(main_string, delimiter):
     index = main_string.rfind(delimiter)
     if index == -1:
@@ -184,15 +196,24 @@ def get_substring_after(main_string, delimiter):
 
 
 class Block:
-    def __init__(self, start_entry: int, average_size: int):
+    def __init__(self, start_entry: int, entry_count: int):
         self.start = start_entry
-        self.average_size = average_size
+        self.entry_count = entry_count
 
     def __repr__(self):
-        return f"Block(start='{self.start}', avg_size={self.average_size})"
+        return f"Block(start={self.start}, count={self.entry_count})"
 
     def as_c_bit_mask(self, block_power: int):
-        return f"({self.start} << {block_power}) | {self.average_size}"
+        return f"({self.start} << {block_power}) | {self.entry_count}"
+
+
+def generate_csv_for_graphing(exception_index: List[FunctionGroup], file: Path):
+    csv = "entry, address\n"
+    location_counter = 0
+    for entry_number, group in enumerate(exception_index):
+        csv += f"{entry_number}, {location_counter}\n"
+        location_counter += group.size()
+    file.write_text(csv)
 
 
 def break_into_blocks(exception_index: List[FunctionGroup],
@@ -220,7 +241,7 @@ def break_into_blocks(exception_index: List[FunctionGroup],
     PROGRAM_LENGTH = LAST_FUNCTION - FIRST_FUNCTION
     NUMBER_OF_BLOCKS = (PROGRAM_LENGTH >> block_power) + 1
 
-    block_list = [Block(0, 0)] * NUMBER_OF_BLOCKS
+    block_list = [Block(0, 1)] * NUMBER_OF_BLOCKS
     logging.info(f"Created {len(block_list)} blocks")
 
     # Lookup Table Region
@@ -237,7 +258,7 @@ def break_into_blocks(exception_index: List[FunctionGroup],
 
         for i in range(starting_block, ending_block):
             if i < len(block_list):
-                block_list[i] = Block(index_cursor, 0)
+                block_list[i] = Block(index_cursor, 1)
 
         index_cursor += 1
 
@@ -255,28 +276,23 @@ def break_into_blocks(exception_index: List[FunctionGroup],
         BLOCK_END_ADDRESS = group_addresses[index_cursor] - FIRST_FUNCTION
         BLOCK_NUMBER_END = (BLOCK_END_ADDRESS >> block_power)
         BLOCK_INDEX_DELTA = (BLOCK_NUMBER_END - BLOCK_NUMBER_START)
+        BLOCK_ENTRY_COUNT = (index_cursor - start_index) + 1
 
         if BLOCK_INDEX_DELTA == 1:
             if BLOCK_NUMBER_START < len(block_list):
-                EXCEPTION_SLICE = exception_index[start_index:index_cursor]
-                AVERAGE_SIZE = round(statistics.fmean(
-                    entry.size() for entry in EXCEPTION_SLICE))
                 block_list[BLOCK_NUMBER_START] = Block(
-                    start_index, AVERAGE_SIZE)
+                    start_index, BLOCK_ENTRY_COUNT)
             start_index = index_cursor
         elif BLOCK_INDEX_DELTA > 1:
             logging.warning("Block delta > 1, adjusting...")
 
     # Setting final block
-    EXCEPTION_SLICE = exception_index[start_index:index_cursor]
-    AVERAGE_SIZE = round(statistics.fmean(
-        entry.size() for entry in exception_index[start_index:index_cursor]))
-    block_list[-1] = Block(start_index, AVERAGE_SIZE)
+    block_list[-1] = Block(start_index, (index_cursor - start_index) + 1)
 
     return block_list
 
 
-def generate_cpp_table_file(filename: str,
+def generate_cpp_table_file(filename: Path,
                             block_power: int,
                             blocks: List[Block],
                             program_start: int):
@@ -298,7 +314,7 @@ namespace {
 
     code += f"std::array<std::uint32_t, {len(blocks)}> const _normal_table_data = {{\n"
     for block in blocks:
-        code += f"  {block.as_c_bit_mask(block_power)}, // entry={block.start}, avg_size={block.average_size}\n"
+        code += f"  {block.as_c_bit_mask(block_power)}, // {block}\n"
     code += "};\n\n"
     code += "}  // namespace\n\n"
 
@@ -306,17 +322,84 @@ namespace {
     code += "std::span<std::uint32_t const> normal_table = _normal_table_data;\n"
     code += "}  // namespace ke::__except_abi::inline v1\n"
 
-    with open(filename, "w") as f:
-        f.write(code)
-
+    filename.write_text(code)
     logging.info(f"C++ nearpoint tables written to: {filename}")
+
+
+def parse_prel31(value):
+    """Convert PREL31 value to signed 32-bit integer"""
+    # Check if MSB (bit 30) is set for sign extension
+    if value & (1 << 30):
+        value |= 1 << 31
+    return struct.unpack('>i', struct.pack('>I', value))[0]
+
+
+def parse_exception_index(hex_data: str,
+                          starting_location: int) -> List[Tuple[int, int]]:
+    """Parse exception index from hex dump"""
+
+    # Remove hex dump formatting and convert to bytes
+    hex_lines = hex_data.strip().split('\n')
+    hex_bytes = []
+
+    # Line format below (address, 4x 32-bit word contents, ascii):
+    # 800835c 00000000 e07cff7f 10ffff7f ec7cff7f  .....|.......|..
+    for line in hex_lines:
+        # split the line between the double space that devices the numbers and
+        # the ASCII, and take the first part with the numbers.
+        line_segments = line.strip().split('  ')[0]
+        # Split up the line into the segments above shown by the format
+        line_segments = line_segments.split(' ')
+        # Remove the address word at the start
+        line_segments = line_segments[1:]
+
+        for segment in line_segments:
+            SEGMENT_AS_HEX = bytes.fromhex(segment)
+            hex_bytes.append(struct.unpack('<I', SEGMENT_AS_HEX)[0])
+
+    first_line = hex_lines[0].split()[0].zfill(8)
+    logging.debug(f'first_line = "{first_line}"')
+    initial_address_text = bytes.fromhex(first_line)
+    initial_address = struct.unpack('>I', initial_address_text)[0]
+    logging.debug(f'initial address = {initial_address:08x}')
+
+    WORD_OFFSET = (starting_location - initial_address) // 4
+    hex_bytes = hex_bytes[WORD_OFFSET:]
+
+    results: List[Tuple[int, int]] = []
+
+    # Process in pairs (skip first two, then take pairs)
+    for i in range(0, len(hex_bytes), 2):
+        if i + 1 >= len(hex_bytes):
+            # this should never happen though...
+            break
+
+        addr_raw = hex_bytes[i]
+        offset_raw = hex_bytes[i + 1]
+
+        # Apply PREL31 conversion
+        addr_prel31 = parse_prel31(addr_raw)
+        offset_prel31 = offset_raw
+
+        entry_offset = i * 4
+        absolute_address = (starting_location + entry_offset) + addr_prel31
+        logging.debug(
+            f"addr_prel31 = {addr_prel31} -> {absolute_address:08x}\n")
+
+        # We do not use the absolute address of the offset_prel31 because we
+        # actually do not want them to match currently. We do not have a good
+        # way to support matching LSDA data and the LD merge algorithm won't
+        # notice that they can be merged.
+        results.append((absolute_address, offset_prel31))
+
+    return results
 
 
 def main():
     parser = argparse.ArgumentParser(
         description='Generate nearpoint exception tables and linker script from ELF file'
     )
-    parser.add_argument('elf_file', help='Path to the ELF binary')
+    parser.add_argument('elf_file', type=Path, help='Path to the ELF binary')
     parser.add_argument('-o', '--output',
                         help='Output name (default: elf_file.nearpoint.cpp)',
                         default=None)
@@ -328,14 +411,14 @@ def main():
                         help='Error threshold for small table generation (default: 8, min: 4) (NOT CURRENTLY SUPPORTED!)')
     parser.add_argument('--auto-optimize', action='store_true',
                         help='Automatically find optimal block sizes (NOT CURRENTLY SUPPORTED!)')
-    parser.add_argument('--tool-prefix', type=str, default="",
+    parser.add_argument('--tool-prefix', type=Path, default="",
                         help='Toolchain prefix for objdump/nm (e.g., "arm-none-eabi-" or full path)')
     parser.add_argument('-m', '--map', type=Path, required=True,
                         help='Path to map file for executable')
-    parser.add_argument('-r', '--order_file', type=str,
+    parser.add_argument('-r', '--order_file', type=Path,
                         default="order.ld",
                         help='Path to where to store the ordering file.')
-    parser.add_argument('-n', '--nearpoint_file', type=str,
+    parser.add_argument('-n', '--nearpoint_file', type=Path,
                         default="nearpoint.cpp",
                         help='Path to where to store the nearpoint table.')
     parser.add_argument('-v', '--verbose', action='store_true',
@@ -363,7 +446,7 @@ def main():
     # ==========================================================================
 
     map_file = Path(args.map).read_text()
-    FINALIZED_FUNCTIONS = read_map_get_function(
+    FINALIZED_FUNCTIONS = get_functions_from_map_file(
         map_file)
     logging.debug(f"FINALIZED_FUNCTIONS = \n{FINALIZED_FUNCTIONS}")
 
@@ -372,6 +455,7 @@ def main():
     # ==========================================================================
     # I, for the life of me, cannot understand why they put the index in the
     # ordered area and the table in the ordered area. Might be a typo.
+    # TODO(kammce): when you get back, you need to fix this.
     EXCEPTION_INDEX_SECTION_NAME = ".except_unordered:\n"
     section_content = disassembly.split("Contents of section ")
     exception_index = ""
@@ -382,72 +466,11 @@ def main():
 
     exception_index_text = exception_index.removeprefix(
         EXCEPTION_INDEX_SECTION_NAME)
-    logging.debug(f"\n{exception_index_text}")
+    logging.debug(f"\nexception_index_text = {exception_index_text}")
 
-    def parse_prel31(value):
-        """Convert PREL31 value to signed 32-bit integer"""
-        # Check if MSB (bit 30) is set for sign extension
-        if value & (1 << 30):
-            value |= 1 << 31
-        return struct.unpack('>i', struct.pack('>I', value))[0]
-
-    def parse_exception_index(hex_data: str):
-        """Parse exception index from hex dump"""
-        # Remove hex dump formatting and convert to bytes
-        hex_lines = hex_data.strip().split('\n')
-        hex_bytes = []
-        first_line = hex_lines[0].split()[0].zfill(8)
-        logging.debug(f'first_line = "{first_line}"')
-        initial_address_text = bytes.fromhex(first_line)
-        initial_address = struct.unpack('>I', initial_address_text)[0]
-        logging.debug(f'initial address = {initial_address:08x}')
-        # format:  800835c 00000000 e07cff7f 10ffff7f ec7cff7f  .....|.......|..
-
-        # For some reason there is a set of 0s at the start which puts
-        # everything off by 1. We need to handle this line outside of the loop
-        for line in hex_lines:
-            # Extract hex values after the address
-            address_and_values = (line.split("  ")[0]).strip()
-            logging.debug(f'address_and_values = {address_and_values}')
-            parts = address_and_values.split(" ")[1:]
-            logging.debug(f'parts = {parts}')
-            hex_bytes.extend(parts)
-
-        # Skip the first 0s in the index if it exists
-        if hex_bytes[0] == "00000000":
-            hex_bytes = hex_bytes[1:]
-        results: List[FunctionInfo] = []
-
-        # Process in pairs (skip first two, then take pairs)
-        for i in range(0, len(hex_bytes), 2):
-            if i + 1 >= len(hex_bytes):
-                break
-
-            addr_hex = hex_bytes[i]
-            offset_hex = hex_bytes[i + 1]
-            logging.debug(f"  addr_hex = {addr_hex}")
-            logging.debug(f"offset_hex = {offset_hex}")
-
-            addr_bytes = bytes.fromhex(addr_hex)
-            offset_bytes = bytes.fromhex(offset_hex)
-
-            addr_raw = struct.unpack('<I', addr_bytes)[0]
-            offset_raw = struct.unpack('<I', offset_bytes)[0]
-
-            # Apply PREL31 conversion
-            addr_prel31 = parse_prel31(addr_raw)
-            offset_prel31 = offset_raw
-
-            entry_offset = i * 4
-            absolute_address = (initial_address + entry_offset) + addr_prel31
-            logging.debug(
-                f"addr_prel31 = {addr_prel31} -> {absolute_address:08x}\n")
-
-            results.append((absolute_address, offset_prel31))
-
-        return results
-
-    EXCEPTION_ENTRIES = parse_exception_index(exception_index_text)
+    index_starting_address = get_index_start(map_file)
+    EXCEPTION_ENTRIES = parse_exception_index(
+        exception_index_text, index_starting_address)
 
     hex_values = ' '.join(
         f'(function: {entry[0]:08x}, data: {entry[1]:08x}),\n' for entry in EXCEPTION_ENTRIES)
@@ -559,6 +582,8 @@ def main():
     # ==========================================================================
     # Step 7: Generate nearpoint table
     # ==========================================================================
+    generate_csv_for_graphing(
+        sorted_unwind_groups_list, Path("table_graph.csv"))
     blocks = break_into_blocks(
         sorted_unwind_groups_list, block_power=args.block_power)
     logging.debug(f"blocks={blocks}")
