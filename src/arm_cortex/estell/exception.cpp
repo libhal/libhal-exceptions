@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -137,6 +138,8 @@ struct nearpoint_descriptor
 {
   std::uint32_t normal_block_size = 0;
   std::uint32_t text_starting_address = 0;
+  std::uint32_t small_block_size = 0;
+  std::uint32_t small_starting_address = 0;
 };
 [[gnu::weak]] std::span<std::uint32_t const> near_point_descriptor{};
 [[gnu::weak]] std::span<std::uint32_t const> normal_table{};
@@ -147,50 +150,64 @@ struct nearpoint_descriptor
 
 std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
 {
+  auto const block_power = ke::__except_abi::near_point_descriptor[0];
   auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
   auto const pc = p_program_counter - progarm_offset;
-  auto const block_power = ke::__except_abi::near_point_descriptor[0];
+
   auto const inter_block_mask = (1U << block_power) - 1U;
   auto const inter_block_location = pc & inter_block_mask;
   auto const block_index = pc >> block_power;
   auto const linear_info = ke::__except_abi::normal_table[block_index];
 
+  auto const average_size = linear_info & inter_block_mask;
   auto const entry_start = linear_info >> block_power;
-  auto const average_function_size = linear_info & inter_block_mask;
-  if (average_function_size == 0) {
+  if (average_size == 0) {
     return entry_start;
   }
-  auto const guess_offset = inter_block_location / average_function_size;
+  auto const guess_offset = inter_block_location / average_size;
   auto const location = entry_start + guess_offset;
+
   return location;
 }
 
 index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
 {
   auto const index_table = get_arm_exception_index();
-  auto const initial_guess = near_point_guess_index(p_program_counter);
-  auto current = index_table[initial_guess].function();
-  auto const go_left = p_program_counter < current;
 
-  if (go_left) {
-    for (std::size_t iter = initial_guess; iter > 0; iter--) {
-      current = index_table[iter].function();
-      auto next = index_table[iter + 1].function();
-      if (current <= p_program_counter && p_program_counter < next) {
-        return index_table[iter];
-      }
-    }
-    return index_table[0];
-  } else {
-    for (std::size_t iter = initial_guess; iter < index_table.size(); iter++) {
-      current = index_table[iter].function();
-      auto next = index_table[iter + 1].function();
-      if (current <= p_program_counter && p_program_counter < next) {
-        return index_table[iter];
-      }
-    }
-    return index_table.end()[-1];
+  auto const block_power = ke::__except_abi::near_point_descriptor[0];
+  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
+  auto const pc = p_program_counter - progarm_offset;
+
+  auto const inter_block_mask = (1U << block_power) - 1U;
+  auto const inter_block_location = pc & inter_block_mask;
+  auto const block_index = pc >> block_power;
+  auto const linear_info = ke::__except_abi::normal_table[block_index];
+
+  auto const entry_start = linear_info >> block_power;
+  auto const entry_count = linear_info & inter_block_mask;
+  if (entry_count == 1) {
+    return index_table[entry_start];
   }
+  auto const scaled = inter_block_location * entry_count;
+  auto const guess_offset = scaled >> block_power;
+  auto const initial_guess = static_cast<ptrdiff_t>(entry_start + guess_offset);
+
+  auto it = index_table.begin() + initial_guess;
+
+  if (p_program_counter < it->function()) {
+    // Find the rightmost entry with function() <= p_program_counter
+    do {
+      --it;
+    } while (it->function() > p_program_counter);
+  } else {
+    // Find the leftmost entry with function() > p_program_counter, then back up
+    do {
+      ++it;
+    } while (it->function() <= p_program_counter);
+    --it;
+  }
+
+  return *it;
 }
 
 index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
@@ -762,18 +779,18 @@ inline void enter_function(exception_control_block& p_exception_object)
   action_decoder a_decoder(
     info.type_table_end, info.call_site_end, site_info.action);
 
-  for (auto const* type_info = a_decoder.get_next_catch_type();
-       type_info != nullptr;
-       type_info = a_decoder.get_next_catch_type()) {
+  for (auto const* catch_type = a_decoder.get_next_catch_type();
+       catch_type != nullptr;
+       catch_type = a_decoder.get_next_catch_type()) {
 
     // This is our dynamic cast :P
     auto position = std::ranges::find_if(
-      p_exception_object.type_info, [&type_info](auto const& element) -> bool {
-        return element.type_info == type_info;
+      p_exception_object.type_info, [&catch_type](auto const& element) {
+        return element.type_info == catch_type;
       });
 
     if (position == p_exception_object.type_info.end() &&
-        type_info != action_decoder::install_context_type()) {
+        catch_type != action_decoder::install_context_type()) {
       continue;
     }
 
