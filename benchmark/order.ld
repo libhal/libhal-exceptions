@@ -4,7 +4,6 @@ SECTIONS {
     /* Unwind info 0x00000001 */
     *(.text.unlikely._Z3endv)
     *(.text.unlikely._exit)
-    *(.text.unlikely.__wrap___cxa_call_unexpected)
     *(.text.unlikely._Znwj)
     *(.text.unlikely._ZnwjSt11align_val_t)
     *(.text.unlikely._ZSt9terminatev)
@@ -112,21 +111,6 @@ SECTIONS {
     *_arm_fixunsdfsi.o(.text*)
     *_arm_addsubsf3.o(.text*)
     *_arm_fixunssfsi.o(.text*)
-    *(.text.selfrel_offset31)
-    *(.text.search_EIT_table)
-    *(.text.__gnu_unwind_get_pr_addr)
-    *(.text._Unwind_decode_typeinfo_ptr.constprop.0)
-    *(.text._Unwind_DebugHook)
-    *(.text.__gnu_Unwind_ForcedUnwind)
-    *(.text._Unwind_VRS_Get)
-    *(.text._Unwind_GetGR)
-    *(.text._Unwind_VRS_Set)
-    *(.text._Unwind_SetGR)
-    *(.text.__aeabi_unwind_cpp_pr0)
-    *(.text.__aeabi_unwind_cpp_pr1)
-    *(.text.__aeabi_unwind_cpp_pr2)
-    *libunwind.o(.text*)
-    *(.text.next_unwind_byte)
     *_arm_muldivsf3.o(.text*)
     *_arm_cmpsf2.o(.text*)
     *_arm_unordsf2.o(.text*)
@@ -216,30 +200,6 @@ SECTIONS {
     *(.text._Z20depth_47_percent_000v.isra.0)
     *(.text._Z20depth_49_percent_000v.isra.0)
     *(.text._Z20depth_50_percent_000v.isra.0)
-    /* Unwind info 0x8002a9b0 */
-    *(.text._Z20depth_10_percent_050v.isra.0)
-    *(.text._Z20depth_12_percent_050v.isra.0)
-    *(.text._Z20depth_36_percent_050v.isra.0)
-    *(.text._Z20depth_40_percent_050v.isra.0)
-    *(.text._Z20depth_42_percent_050v.isra.0)
-    *(.text._Z20depth_10_percent_025v.isra.0)
-    *(.text._Z20depth_12_percent_025v.isra.0)
-    *(.text._Z20depth_15_percent_025v.isra.0)
-    *(.text._Z20depth_36_percent_025v.isra.0)
-    *(.text._Z20depth_39_percent_025v.isra.0)
-    *(.text._Z20depth_40_percent_025v.isra.0)
-    *(.text._Z20depth_41_percent_025v.isra.0)
-    *(.text._Z20depth_09_percent_000v.isra.0)
-    *(.text._Z20depth_10_percent_000v.isra.0)
-    *(.text._Z20depth_12_percent_000v.isra.0)
-    *(.text._Z20depth_15_percent_000v.isra.0)
-    *(.text._Z20depth_25_percent_000v.isra.0)
-    *(.text._Z20depth_36_percent_000v.isra.0)
-    *(.text._Z20depth_39_percent_000v.isra.0)
-    *(.text._Z20depth_40_percent_000v.isra.0)
-    *(.text._Z20depth_41_percent_000v.isra.0)
-    *(.text._Z20depth_42_percent_000v.isra.0)
-    *(.text.get_eit_entry)
     /* Unwind info 0x8001a8b0 */
     *(.text._Z20depth_02_percent_025v.isra.0)
     *(.text._Z20depth_18_percent_050v.isra.0)
@@ -266,24 +226,40 @@ SECTIONS {
     *(.text._Z20depth_44_percent_000v.isra.0)
     *(.text._Z20depth_45_percent_000v.isra.0)
     *(.text._Z20depth_48_percent_000v.isra.0)
+    /* Unwind info 0x8002a9b0 */
+    *(.text._Z20depth_10_percent_050v.isra.0)
+    *(.text._Z20depth_12_percent_050v.isra.0)
+    *(.text._Z20depth_36_percent_050v.isra.0)
+    *(.text._Z20depth_40_percent_050v.isra.0)
+    *(.text._Z20depth_42_percent_050v.isra.0)
+    *(.text._Z20depth_10_percent_025v.isra.0)
+    *(.text._Z20depth_12_percent_025v.isra.0)
+    *(.text._Z20depth_15_percent_025v.isra.0)
+    *(.text._Z20depth_36_percent_025v.isra.0)
+    *(.text._Z20depth_39_percent_025v.isra.0)
+    *(.text._Z20depth_40_percent_025v.isra.0)
+    *(.text._Z20depth_41_percent_025v.isra.0)
+    *(.text._Z20depth_09_percent_000v.isra.0)
+    *(.text._Z20depth_10_percent_000v.isra.0)
+    *(.text._Z20depth_12_percent_000v.isra.0)
+    *(.text._Z20depth_15_percent_000v.isra.0)
+    *(.text._Z20depth_25_percent_000v.isra.0)
+    *(.text._Z20depth_36_percent_000v.isra.0)
+    *(.text._Z20depth_39_percent_000v.isra.0)
+    *(.text._Z20depth_40_percent_000v.isra.0)
+    *(.text._Z20depth_41_percent_000v.isra.0)
+    *(.text._Z20depth_42_percent_000v.isra.0)
     /* Unwind info 0x8004afb0 */
     *(.text.startup.main)
     /* Unwind info 0x8012afb0 */
     *(.text._ZNK10__cxxabiv121__vmi_class_type_info12__do_dyncastEiNS_17__class_type_info10__sub_kindEPKS1_PKvS4_S6_RNS1_16__dyncast_resultE)
-    /* Unwind info 0x8008afb0 */
-    *(.text._ZNK10__cxxabiv121__vmi_class_type_info11__do_upcastEPKNS_17__class_type_infoEPKvRNS1_15__upcast_resultE)
-    *(.text.__gnu_unwind_pr_common)
-    /* Unwind info 0x8004adb0 */
-    *(.text.__gnu_unwind_execute)
-    /* Unwind info 0x80033fac */
-    *(.text._Unwind_VRS_Pop)
     /* Unwind info 0x8001aab0 */
     *(.text._ZN3hal7stm32f113configure_pinENS0_10pin_selectENS0_12pin_config_tE)
     *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE7reserveEj)
     /* Unwind info 0x8002afb0 */
     *(.text.__wrap___cxa_throw)
     *(.text._ZNK10__cxxabiv121__vmi_class_type_info20__do_find_public_srcEiPKvPKNS_17__class_type_infoES2_)
-    /* Unwind info 0x7ffff2b4 */
+    /* Unwind info 0x7ffff2c4 */
     *(.text._Z20depth_41_percent_050v.isra.0)
     *(.text._Z20depth_17_percent_025v.isra.0)
     *(.text._Z20depth_25_percent_025v.isra.0)
@@ -293,321 +269,313 @@ SECTIONS {
     *(.text._ZN3hal5delayERNS_12steady_clockENSt6chrono8durationIxSt5ratioILx1ELx1000000000EEEE.constprop.0)
     *(.text._ZNK10__cxxabiv120__si_class_type_info11__do_upcastEPKNS_17__class_type_infoEPKvRNS1_15__upcast_resultE)
     *(.text._ZN9__gnu_cxx15__snprintf_liteEPcjPKcSt9__va_list)
+    /* Unwind info 0x8008afb0 */
+    *(.text._ZNK10__cxxabiv121__vmi_class_type_info11__do_upcastEPKNS_17__class_type_infoEPKvRNS1_15__upcast_resultE)
+    /* Unwind info 0x7ffff2b8 */
+    *(.text._Z20depth_35_percent_050v.isra.0)
+    *(.text._Z20depth_38_percent_025v.isra.0)
+    *(.text._Z20depth_46_percent_025v.isra.0)
     /* Unwind info 0x80a8b0b0 */
     *(.text.unlikely._ZN3hal7stm32f127throw_if_pin_is_unavailableENS0_10pin_selectE.part.0)
     *(.text.unlikely._ZN3hal7stm32f112_GLOBAL__N_124get_enable_register_infoENS0_10peripheralE.part.0)
     *(.text._ZNSt12length_errorC2EPKc)
     *(.text._ZNSt12out_of_rangeC2EPKc)
     *(.text._ZNSs4_Rep9_S_createEjjRKSaIcE)
-    *(.text.restore_non_core_regs)
-    /* Unwind info 0x80aab0b0 */
-    *(.text._ZN3hal7stm32f112gpio_manager6output16driver_configureERKNS_10output_pin8settingsE)
-    *(.text.unwind_phase2)
-    *(.text.__gnu_Unwind_Resume)
-    /* Unwind info 0x7ffff2a8 */
-    *(.text._Z20depth_35_percent_050v.isra.0)
-    *(.text._Z20depth_38_percent_025v.isra.0)
-    *(.text._Z20depth_46_percent_025v.isra.0)
-    /* Unwind info 0x80b276af */
-    *(.text.unwind_phase2_forced)
-    /* Unwind info 0x7ffff014 */
+    /* Unwind info 0x7ffff024 */
     *(.text._Z20depth_01_percent_025v.isra.0)
     /* Unwind info 0x8004a9b0 */
     *(.text._Z20depth_01_percent_000v.isra.0)
-    /* Unwind info 0x7ffff2ac */
+    /* Unwind info 0x7ffff2bc */
     *(.text._Z20depth_37_percent_050v.isra.0)
     *(.text._Z20depth_42_percent_025v.isra.0)
-    /* Unwind info 0x7ffff2b0 */
+    /* Unwind info 0x7ffff2c0 */
     *(.text._Z20depth_39_percent_050v.isra.0)
     *(.text._Z20depth_21_percent_025v.isra.0)
-    /* Unwind info 0x7ffff2b8 */
+    /* Unwind info 0x7ffff2c8 */
     *(.text._Z20depth_43_percent_050v.isra.0)
     *(.text._Z20depth_29_percent_025v.isra.0)
-    /* Unwind info 0x7ffff75c */
+    /* Unwind info 0x7ffff76c */
     *(.text._ZNK12_GLOBAL__N_122generic_error_category7messageB5cxx11Ei)
-    /* Unwind info 0x7ffff298 */
+    /* Unwind info 0x7ffff2a8 */
     *(.text._Z20depth_27_percent_050v.isra.0)
     *(.text._Z38run_test_depth_05_error_04_cleanup_025v)
-    /* Unwind info 0x7ffff798 */
+    /* Unwind info 0x7ffff7a8 */
     *(.text._ZN3hal7stm32f14uartD2Ev)
-    /* Unwind info 0x7ffff79c */
+    /* Unwind info 0x7ffff7ac */
     *(.text._ZN3hal7stm32f14uartD0Ev)
     /* Unwind info 0x80b108a9 */
     *(.text.__wrap___cxa_rethrow)
     *(.text.__wrap___cxa_allocate_exception)
-    /* Unwind info 0x7ffff1d4 */
+    /* Unwind info 0x7ffff1e4 */
     *(.text._Z20depth_38_percent_100v.isra.0)
     *(.text._Z38run_test_depth_35_error_04_cleanup_000v)
-    /* Unwind info 0x7ffff228 */
+    /* Unwind info 0x7ffff238 */
     *(.text._Z20depth_45_percent_100v.isra.0)
     *(.text._Z38run_test_depth_01_error_04_cleanup_000v)
-    /* Unwind info 0x7ffff29c */
+    /* Unwind info 0x7ffff2ac */
     *(.text._Z20depth_29_percent_050v.isra.0)
     *(.text._Z20depth_50_percent_025v.isra.0)
-    /* Unwind info 0x7ffff2c0 */
+    /* Unwind info 0x7ffff2d0 */
     *(.text._Z20depth_47_percent_050v.isra.0)
     *(.text._Z20depth_13_percent_025v.isra.0)
-    /* Unwind info 0x7ffff27c */
+    /* Unwind info 0x7ffff28c */
     *(.text._Z20depth_13_percent_050v.isra.0)
     *(.text._Z38run_test_depth_15_error_04_cleanup_025v)
-    /* Unwind info 0x80b20fac */
-    *(.text.__gnu_Unwind_Backtrace)
-    /* Unwind info 0x7ffff768 */
+    /* Unwind info 0x7ffff778 */
     *(.text._Z38run_test_depth_15_error_65_cleanup_100v)
     *(.text._ZN10__cxxabiv111__terminateEPFvvE)
     *(.text._ZNKSt3_V214error_category10_M_messageB5cxx11Ei)
-    /* Unwind info 0x7ffff780 */
+    /* Unwind info 0x80aab0b0 */
+    *(.text._ZN3hal7stm32f112gpio_manager6output16driver_configureERKNS_10output_pin8settingsE)
+    /* Unwind info 0x7ffff790 */
     *(.text._ZNSt11logic_errorC2EPKc)
-    /* Unwind info 0x7ffff024 */
+    /* Unwind info 0x7ffff034 */
     *(.text._ZNSt5arrayISt8optionalIN6stdext16inplace_functionIFvbELj8ELj8EEEELj16EED2Ev)
     *(.text._Z20depth_02_percent_100v.isra.0)
     /* Unwind info 0x8002abb0 */
     *(.text._ZNSt12__cow_stringC2EPKcj)
-    /* Unwind info 0x803a3fab */
-    *(.text.__gnu_Unwind_RaiseException)
-    /* Unwind info 0x7ffff730 */
-    *(.text._Z38run_test_depth_50_error_65_cleanup_100v)
-    *(.text.__gnu_Unwind_Resume_or_Rethrow)
-    /* Unwind info 0x7fffff38 */
+    /* Unwind info 0x7fffff48 */
     *(.text.unlikely._ZSt24__throw_out_of_range_fmtPKcz)
-    /* Unwind info 0x7ffff078 */
+    /* Unwind info 0x7ffff088 */
     *(.text._Z20depth_09_percent_100v.isra.0)
-    /* Unwind info 0x7ffff138 */
+    /* Unwind info 0x7ffff148 */
     *(.text._Z20depth_25_percent_100v.isra.0)
-    /* Unwind info 0x7ffff150 */
+    /* Unwind info 0x7ffff160 */
     *(.text._Z20depth_27_percent_100v.isra.0)
-    /* Unwind info 0x7ffff1e0 */
+    /* Unwind info 0x7ffff1f0 */
     *(.text._Z20depth_39_percent_100v.isra.0)
-    /* Unwind info 0x7ffff210 */
+    /* Unwind info 0x7ffff220 */
     *(.text._Z20depth_43_percent_100v.isra.0)
-    /* Unwind info 0x7ffff274 */
+    /* Unwind info 0x7ffff284 */
     *(.text._Z20depth_09_percent_050v.isra.0)
-    /* Unwind info 0x7ffff294 */
+    /* Unwind info 0x7ffff2a4 */
     *(.text._Z20depth_25_percent_050v.isra.0)
-    /* Unwind info 0x7ffff2cc */
+    /* Unwind info 0x7ffff2dc */
     *(.text._Z20depth_09_percent_025v.isra.0)
-    /* Unwind info 0x7ffff048 */
+    /* Unwind info 0x7ffff058 */
     *(.text._Z20depth_05_percent_100v.isra.0)
-    /* Unwind info 0x7ffff0e4 */
+    /* Unwind info 0x7ffff0f4 */
     *(.text._Z20depth_18_percent_100v.isra.0)
-    /* Unwind info 0x7ffff0f0 */
+    /* Unwind info 0x7ffff100 */
     *(.text._Z20depth_19_percent_100v.isra.0)
-    /* Unwind info 0x7ffff120 */
+    /* Unwind info 0x7ffff130 */
     *(.text._Z20depth_23_percent_100v.isra.0)
-    /* Unwind info 0x7ffff12c */
+    /* Unwind info 0x7ffff13c */
     *(.text._Z20depth_24_percent_100v.isra.0)
-    /* Unwind info 0x7ffff180 */
+    /* Unwind info 0x7ffff190 */
     *(.text._Z20depth_31_percent_100v.isra.0)
-    /* Unwind info 0x7ffff18c */
+    /* Unwind info 0x7ffff19c */
     *(.text._Z20depth_32_percent_100v.isra.0)
-    /* Unwind info 0x7ffff1b0 */
+    /* Unwind info 0x7ffff1c0 */
     *(.text._Z20depth_35_percent_100v.isra.0)
-    /* Unwind info 0x7ffff1c8 */
+    /* Unwind info 0x7ffff1d8 */
     *(.text._Z20depth_37_percent_100v.isra.0)
-    /* Unwind info 0x7ffff21c */
+    /* Unwind info 0x7ffff22c */
     *(.text._Z20depth_44_percent_100v.isra.0)
-    /* Unwind info 0x7ffff234 */
+    /* Unwind info 0x7ffff244 */
     *(.text._Z20depth_46_percent_100v.isra.0)
-    /* Unwind info 0x7ffff26c */
+    /* Unwind info 0x7ffff27c */
     *(.text._Z20depth_05_percent_050v.isra.0)
-    /* Unwind info 0x7ffff288 */
+    /* Unwind info 0x7ffff298 */
     *(.text._Z20depth_19_percent_050v.isra.0)
-    /* Unwind info 0x7ffff290 */
-    *(.text._Z20depth_23_percent_050v.isra.0)
     /* Unwind info 0x7ffff2a0 */
+    *(.text._Z20depth_23_percent_050v.isra.0)
+    /* Unwind info 0x7ffff2b0 */
     *(.text._Z20depth_31_percent_050v.isra.0)
-    /* Unwind info 0x7ffff2bc */
+    /* Unwind info 0x7ffff2cc */
     *(.text._Z20depth_45_percent_050v.isra.0)
-    /* Unwind info 0x7ffff2c8 */
+    /* Unwind info 0x7ffff2d8 */
     *(.text._Z20depth_05_percent_025v.isra.0)
-    /* Unwind info 0x7ffff770 */
+    /* Unwind info 0x7ffff780 */
     *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_createERjj)
-    /* Unwind info 0x7ffff030 */
+    /* Unwind info 0x7ffff040 */
     *(.text._Z20depth_03_percent_100v.isra.0)
-    /* Unwind info 0x7ffff03c */
+    /* Unwind info 0x7ffff04c */
     *(.text._Z20depth_04_percent_100v.isra.0)
-    /* Unwind info 0x7ffff054 */
+    /* Unwind info 0x7ffff064 */
     *(.text._Z20depth_06_percent_100v.isra.0)
-    /* Unwind info 0x7ffff060 */
+    /* Unwind info 0x7ffff070 */
     *(.text._Z20depth_07_percent_100v.isra.0)
-    /* Unwind info 0x7ffff06c */
+    /* Unwind info 0x7ffff07c */
     *(.text._Z20depth_08_percent_100v.isra.0)
-    /* Unwind info 0x7ffff084 */
+    /* Unwind info 0x7ffff094 */
     *(.text._Z20depth_10_percent_100v.isra.0)
-    /* Unwind info 0x7ffff090 */
+    /* Unwind info 0x7ffff0a0 */
     *(.text._Z20depth_11_percent_100v.isra.0)
-    /* Unwind info 0x7ffff09c */
+    /* Unwind info 0x7ffff0ac */
     *(.text._Z20depth_12_percent_100v.isra.0)
-    /* Unwind info 0x7ffff0b4 */
+    /* Unwind info 0x7ffff0c4 */
     *(.text._Z20depth_14_percent_100v.isra.0)
-    /* Unwind info 0x7ffff0c0 */
+    /* Unwind info 0x7ffff0d0 */
     *(.text._Z20depth_15_percent_100v.isra.0)
-    /* Unwind info 0x7ffff0cc */
+    /* Unwind info 0x7ffff0dc */
     *(.text._Z20depth_16_percent_100v.isra.0)
-    /* Unwind info 0x7ffff0fc */
+    /* Unwind info 0x7ffff10c */
     *(.text._Z20depth_20_percent_100v.isra.0)
-    /* Unwind info 0x7ffff114 */
+    /* Unwind info 0x7ffff124 */
     *(.text._Z20depth_22_percent_100v.isra.0)
-    /* Unwind info 0x7ffff144 */
+    /* Unwind info 0x7ffff154 */
     *(.text._Z20depth_26_percent_100v.isra.0)
-    /* Unwind info 0x7ffff15c */
+    /* Unwind info 0x7ffff16c */
     *(.text._Z20depth_28_percent_100v.isra.0)
-    /* Unwind info 0x7ffff1a4 */
+    /* Unwind info 0x7ffff1b4 */
     *(.text._Z20depth_34_percent_100v.isra.0)
-    /* Unwind info 0x7ffff1bc */
+    /* Unwind info 0x7ffff1cc */
     *(.text._Z20depth_36_percent_100v.isra.0)
-    /* Unwind info 0x7ffff1ec */
+    /* Unwind info 0x7ffff1fc */
     *(.text._Z20depth_40_percent_100v.isra.0)
-    /* Unwind info 0x7ffff1f8 */
+    /* Unwind info 0x7ffff208 */
     *(.text._Z20depth_41_percent_100v.isra.0)
-    /* Unwind info 0x7ffff204 */
+    /* Unwind info 0x7ffff214 */
     *(.text._Z20depth_42_percent_100v.isra.0)
-    /* Unwind info 0x7ffff240 */
+    /* Unwind info 0x7ffff250 */
     *(.text._Z20depth_47_percent_100v.isra.0)
-    /* Unwind info 0x7ffff258 */
-    *(.text._Z20depth_49_percent_100v.isra.0)
-    /* Unwind info 0x7ffff264 */
-    *(.text._Z20depth_50_percent_100v.isra.0)
     /* Unwind info 0x7ffff268 */
-    *(.text._Z20depth_03_percent_050v.isra.0)
-    /* Unwind info 0x7ffff270 */
-    *(.text._Z20depth_07_percent_050v.isra.0)
+    *(.text._Z20depth_49_percent_100v.isra.0)
+    /* Unwind info 0x7ffff274 */
+    *(.text._Z20depth_50_percent_100v.isra.0)
     /* Unwind info 0x7ffff278 */
-    *(.text._Z20depth_11_percent_050v.isra.0)
+    *(.text._Z20depth_03_percent_050v.isra.0)
     /* Unwind info 0x7ffff280 */
+    *(.text._Z20depth_07_percent_050v.isra.0)
+    /* Unwind info 0x7ffff288 */
+    *(.text._Z20depth_11_percent_050v.isra.0)
+    /* Unwind info 0x7ffff290 */
     *(.text._Z20depth_15_percent_050v.isra.0)
-    /* Unwind info 0x7ffff2c4 */
+    /* Unwind info 0x7ffff2d4 */
     *(.text._Z20depth_49_percent_050v.isra.0)
-    /* Unwind info 0x7ffff784 */
+    /* Unwind info 0x7ffff794 */
     *(.text._Z38run_test_depth_05_error_65_cleanup_100v)
     *(.text._ZNSt3pmr12_GLOBAL__N_110null_res_t11do_allocateEjj)
     /* Unwind info 0x80971cab */
     *(.text.unlikely._ZN9__gnu_cxx26__throw_insufficient_spaceEPKcS1_)
-    /* Unwind info 0x7ffff0a8 */
+    /* Unwind info 0x7ffff0b8 */
     *(.text._Z20depth_13_percent_100v.isra.0)
-    /* Unwind info 0x7ffff0d8 */
+    /* Unwind info 0x7ffff0e8 */
     *(.text._Z20depth_17_percent_100v.isra.0)
-    /* Unwind info 0x7ffff108 */
+    /* Unwind info 0x7ffff118 */
     *(.text._Z20depth_21_percent_100v.isra.0)
-    /* Unwind info 0x7ffff168 */
+    /* Unwind info 0x7ffff178 */
     *(.text._Z20depth_29_percent_100v.isra.0)
-    /* Unwind info 0x7ffff24c */
+    /* Unwind info 0x7ffff25c */
     *(.text._Z20depth_48_percent_100v.isra.0)
-    /* Unwind info 0x7ffff284 */
+    /* Unwind info 0x7ffff294 */
     *(.text._Z20depth_17_percent_050v.isra.0)
-    /* Unwind info 0x7ffff28c */
+    /* Unwind info 0x7ffff29c */
     *(.text._Z20depth_21_percent_050v.isra.0)
-    /* Unwind info 0x7ffff010 */
+    /* Unwind info 0x7ffff020 */
     *(.text._ZN3hal7stm32f18power_onENS0_10peripheralE)
-    /* Unwind info 0x7ffff174 */
+    /* Unwind info 0x7ffff184 */
     *(.text._Z20depth_30_percent_100v.isra.0)
-    /* Unwind info 0x7ffff198 */
+    /* Unwind info 0x7ffff1a8 */
     *(.text._Z20depth_33_percent_100v.isra.0)
-    /* Unwind info 0x7ffff2a4 */
+    /* Unwind info 0x7ffff2b4 */
     *(.text._Z20depth_33_percent_050v.isra.0)
-    /* Unwind info 0x7ffff1b8 */
+    /* Unwind info 0x7ffff1c8 */
     *(.text._Z38run_test_depth_50_error_04_cleanup_000v)
-    /* Unwind info 0x7ffff1f0 */
+    /* Unwind info 0x7ffff200 */
     *(.text._Z38run_test_depth_15_error_04_cleanup_000v)
-    /* Unwind info 0x7ffff20c */
+    /* Unwind info 0x7ffff21c */
     *(.text._Z38run_test_depth_05_error_04_cleanup_000v)
-    /* Unwind info 0x7ffff244 */
+    /* Unwind info 0x7ffff254 */
     *(.text._Z38run_test_depth_50_error_04_cleanup_025v)
-    /* Unwind info 0x7ffff260 */
+    /* Unwind info 0x7ffff270 */
     *(.text._Z38run_test_depth_35_error_04_cleanup_025v)
-    /* Unwind info 0x7ffff2d0 */
+    /* Unwind info 0x7ffff2e0 */
     *(.text._Z38run_test_depth_50_error_04_cleanup_050v)
-    /* Unwind info 0x7ffff2ec */
+    /* Unwind info 0x7ffff2fc */
     *(.text._Z38run_test_depth_35_error_04_cleanup_050v)
-    /* Unwind info 0x7ffff308 */
+    /* Unwind info 0x7ffff318 */
     *(.text._Z38run_test_depth_15_error_04_cleanup_050v)
-    /* Unwind info 0x7ffff324 */
+    /* Unwind info 0x7ffff334 */
     *(.text._Z38run_test_depth_05_error_04_cleanup_050v)
-    /* Unwind info 0x7ffff340 */
+    /* Unwind info 0x7ffff350 */
     *(.text._Z38run_test_depth_50_error_04_cleanup_100v)
-    /* Unwind info 0x7ffff35c */
+    /* Unwind info 0x7ffff36c */
     *(.text._Z38run_test_depth_35_error_04_cleanup_100v)
-    /* Unwind info 0x7ffff378 */
+    /* Unwind info 0x7ffff388 */
     *(.text._Z38run_test_depth_15_error_04_cleanup_100v)
-    /* Unwind info 0x7ffff394 */
+    /* Unwind info 0x7ffff3a4 */
     *(.text._Z38run_test_depth_05_error_04_cleanup_100v)
-    /* Unwind info 0x7ffff3b0 */
+    /* Unwind info 0x7ffff3c0 */
     *(.text._Z38run_test_depth_50_error_16_cleanup_000v)
-    /* Unwind info 0x7ffff3cc */
+    /* Unwind info 0x7ffff3dc */
     *(.text._Z38run_test_depth_35_error_16_cleanup_000v)
-    /* Unwind info 0x7ffff3e8 */
+    /* Unwind info 0x7ffff3f8 */
     *(.text._Z38run_test_depth_15_error_16_cleanup_000v)
-    /* Unwind info 0x7ffff404 */
+    /* Unwind info 0x7ffff414 */
     *(.text._Z38run_test_depth_05_error_16_cleanup_000v)
-    /* Unwind info 0x7ffff420 */
+    /* Unwind info 0x7ffff430 */
     *(.text._Z38run_test_depth_01_error_16_cleanup_000v)
-    /* Unwind info 0x7ffff43c */
+    /* Unwind info 0x7ffff44c */
     *(.text._Z38run_test_depth_50_error_16_cleanup_025v)
-    /* Unwind info 0x7ffff458 */
+    /* Unwind info 0x7ffff468 */
     *(.text._Z38run_test_depth_35_error_16_cleanup_025v)
-    /* Unwind info 0x7ffff474 */
+    /* Unwind info 0x7ffff484 */
     *(.text._Z38run_test_depth_15_error_16_cleanup_025v)
-    /* Unwind info 0x7ffff490 */
+    /* Unwind info 0x7ffff4a0 */
     *(.text._Z38run_test_depth_05_error_16_cleanup_025v)
-    /* Unwind info 0x7ffff4ac */
+    /* Unwind info 0x7ffff4bc */
     *(.text._Z38run_test_depth_01_error_16_cleanup_025v)
-    /* Unwind info 0x7ffff4c8 */
+    /* Unwind info 0x7ffff4d8 */
     *(.text._Z38run_test_depth_50_error_16_cleanup_050v)
-    /* Unwind info 0x7ffff4e4 */
+    /* Unwind info 0x7ffff4f4 */
     *(.text._Z38run_test_depth_35_error_16_cleanup_050v)
-    /* Unwind info 0x7ffff500 */
+    /* Unwind info 0x7ffff510 */
     *(.text._Z38run_test_depth_15_error_16_cleanup_050v)
-    /* Unwind info 0x7ffff51c */
+    /* Unwind info 0x7ffff52c */
     *(.text._Z38run_test_depth_05_error_16_cleanup_050v)
-    /* Unwind info 0x7ffff538 */
+    /* Unwind info 0x7ffff548 */
     *(.text._Z38run_test_depth_50_error_16_cleanup_100v)
-    /* Unwind info 0x7ffff554 */
+    /* Unwind info 0x7ffff564 */
     *(.text._Z38run_test_depth_35_error_16_cleanup_100v)
-    /* Unwind info 0x7ffff570 */
+    /* Unwind info 0x7ffff580 */
     *(.text._Z38run_test_depth_15_error_16_cleanup_100v)
-    /* Unwind info 0x7ffff58c */
+    /* Unwind info 0x7ffff59c */
     *(.text._Z38run_test_depth_05_error_16_cleanup_100v)
-    /* Unwind info 0x7ffff5a8 */
+    /* Unwind info 0x7ffff5b8 */
     *(.text._Z38run_test_depth_50_error_65_cleanup_000v)
-    /* Unwind info 0x7ffff5c4 */
+    /* Unwind info 0x7ffff5d4 */
     *(.text._Z38run_test_depth_35_error_65_cleanup_000v)
-    /* Unwind info 0x7ffff5e0 */
+    /* Unwind info 0x7ffff5f0 */
     *(.text._Z38run_test_depth_15_error_65_cleanup_000v)
-    /* Unwind info 0x7ffff5fc */
+    /* Unwind info 0x7ffff60c */
     *(.text._Z38run_test_depth_05_error_65_cleanup_000v)
-    /* Unwind info 0x7ffff618 */
+    /* Unwind info 0x7ffff628 */
     *(.text._Z38run_test_depth_01_error_65_cleanup_000v)
-    /* Unwind info 0x7ffff634 */
+    /* Unwind info 0x7ffff644 */
     *(.text._Z38run_test_depth_50_error_65_cleanup_025v)
-    /* Unwind info 0x7ffff650 */
+    /* Unwind info 0x7ffff660 */
     *(.text._Z38run_test_depth_35_error_65_cleanup_025v)
-    /* Unwind info 0x7ffff66c */
+    /* Unwind info 0x7ffff67c */
     *(.text._Z38run_test_depth_15_error_65_cleanup_025v)
-    /* Unwind info 0x7ffff688 */
+    /* Unwind info 0x7ffff698 */
     *(.text._Z38run_test_depth_05_error_65_cleanup_025v)
-    /* Unwind info 0x7ffff6a4 */
+    /* Unwind info 0x7ffff6b4 */
     *(.text._Z38run_test_depth_01_error_65_cleanup_025v)
-    /* Unwind info 0x7ffff6c0 */
+    /* Unwind info 0x7ffff6d0 */
     *(.text._Z38run_test_depth_50_error_65_cleanup_050v)
-    /* Unwind info 0x7ffff6dc */
+    /* Unwind info 0x7ffff6ec */
     *(.text._Z38run_test_depth_35_error_65_cleanup_050v)
-    /* Unwind info 0x7ffff6f8 */
+    /* Unwind info 0x7ffff708 */
     *(.text._Z38run_test_depth_15_error_65_cleanup_050v)
-    /* Unwind info 0x7ffff714 */
+    /* Unwind info 0x7ffff724 */
     *(.text._Z38run_test_depth_05_error_65_cleanup_050v)
-    /* Unwind info 0x7ffff74c */
+    /* Unwind info 0x7ffff740 */
+    *(.text._Z38run_test_depth_50_error_65_cleanup_100v)
+    /* Unwind info 0x7ffff75c */
     *(.text._Z38run_test_depth_35_error_65_cleanup_100v)
-    /* Unwind info 0x7ffff7a0 */
+    /* Unwind info 0x7ffff7b0 */
     *(.text._ZN3hal7stm32f112gpio_manager6output12driver_levelEb)
     /* Unwind info 0x8003aab0 */
     *(.text._ZNK10__cxxabiv117__class_type_info11__do_upcastEPKS0_PPv)
-    /* Unwind info 0x7fffff20 */
+    /* Unwind info 0x7fffff30 */
     *(.text.unlikely._ZSt19__throw_logic_errorPKc)
-    /* Unwind info 0x7fffff2c */
+    /* Unwind info 0x7fffff3c */
     *(.text.unlikely._ZSt20__throw_length_errorPKc)
-    /* Unwind info 0x7ffff7a4 */
+    /* Unwind info 0x7ffff7b4 */
     *(.text._ZN3hal7stm32f112gpio_manager6output12driver_levelEv)
-    /* Unwind info 0x7fffff1c */
+    /* Unwind info 0x7fffff2c */
     *(.text.unlikely._ZSt17__throw_bad_allocv)
   }
 }

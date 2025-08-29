@@ -203,8 +203,16 @@ class Block:
     def __repr__(self):
         return f"Block(start={self.start}, count={self.entry_count})"
 
-    def as_c_bit_mask(self, block_power: int):
+    def as_c_bit_mask_entry_count(self, block_power: int):
         return f"({self.start} << {block_power}) | {self.entry_count}"
+
+    def as_c_bit_mask_entry_average(self, block_power: int):
+        if self.entry_count == 1:
+            average_size = 0
+        else:
+            average_size = (1 << block_power) // self.entry_count
+
+        return f"({self.start} << {block_power}) | {average_size}"
 
 
 def generate_csv_for_graphing(exception_index: List[FunctionGroup], file: Path):
@@ -314,7 +322,7 @@ namespace {
 
     code += f"std::array<std::uint32_t, {len(blocks)}> const _normal_table_data = {{\n"
     for block in blocks:
-        code += f"  {block.as_c_bit_mask(block_power)}, // {block}\n"
+        code += f"  {block.as_c_bit_mask_entry_count(block_power)}, // {block}\n"
     code += "};\n\n"
     code += "}  // namespace\n\n"
 
@@ -489,7 +497,6 @@ def main():
             f"entry_function: {entry_function:08x}, unwind: {unwind_info}, next_entry_function: {next_entry_function:08x}")
 
         if FINALIZED_FUNCTIONS[function_index].address != entry_function:
-            # TODO(kammce): figure out better exception
             logging.error(
                 f"entry_function({i}): {entry_function:08x} != {FINALIZED_FUNCTIONS[function_index].address:08x}:{FINALIZED_FUNCTIONS[function_index].name}")
 
@@ -521,6 +528,13 @@ def main():
         last_unwind_info = 0xFFFFFFFF
     for i in range(function_index, len(FINALIZED_FUNCTIONS)):
         FINALIZED_FUNCTIONS[i].unwind_info = last_unwind_info
+
+    # ==========================================================================
+    # Step 3.1: Remove GNU functions
+    # ==========================================================================
+    SKIP_PATTERNS = ["libunwind", "next_unwind_byte", "__gnu_unwind_execute"]
+    FINALIZED_FUNCTIONS = list(filter(lambda f: not any(
+        pattern in f.name for pattern in SKIP_PATTERNS), FINALIZED_FUNCTIONS))
 
     # ==========================================================================
     # Step 4: Collect functions into groups with common unwind info
