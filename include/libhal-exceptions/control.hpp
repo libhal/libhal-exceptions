@@ -14,11 +14,8 @@
 
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <memory_resource>
-#include <span>
 
 namespace hal {
 /**
