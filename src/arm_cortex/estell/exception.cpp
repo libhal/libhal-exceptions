@@ -2042,7 +2042,7 @@ void flatten_rtti(exception_ptr p_thrown_exception,
   // Add first element to the list
   p_map.push_back({ .type_info = p_type_info, .offset = 0 });
   // Skip the catch all type
-  auto iter = p_map.begin() + 1;
+  auto iter = p_map.begin();
   auto info = get_rtti_type(p_type_info);
 
   // If this is a non-class type, then there is no hierarchy and the first
