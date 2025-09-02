@@ -637,7 +637,7 @@ public:
       to_absolute_address(p_type_info_address));
   }
 
-  static std::type_info const* install_context_type()
+  static std::type_info const* catch_all()
   {
     return reinterpret_cast<std::type_info const*>(0xFFFF'FFFF);
   }
@@ -653,15 +653,16 @@ public:
     auto const* current_type = &type_table[-m_filter];
 
     if (*current_type == nullptr) {
-      return install_context_type();
+      return catch_all();
     }
 
     auto const* test =
       to_absolute_address_ptr(static_cast<void const*>(current_type));
+
     return reinterpret_cast<std::type_info const*>(test);
   }
 
-  std::type_info const* get_next_catch_type()
+  [[nodiscard]] std::type_info const* get_next_catch_type()
   {
     if (m_action_position == nullptr) {
       return nullptr;
@@ -683,13 +684,13 @@ public:
     } while (m_filter < 0);
 
     if (m_filter == 0) {
-      return install_context_type();
+      return catch_all();
     }
 
     return get_current_type_info_from_filter();
   }
 
-  std::uint8_t filter()
+  [[nodiscard]] constexpr auto filter() const
   {
     return m_filter;
   }
@@ -783,31 +784,24 @@ inline void enter_function(exception_control_block& p_exception_object)
        catch_type != nullptr;
        catch_type = a_decoder.get_next_catch_type()) {
 
-    // This is our dynamic cast :P
-    auto position = std::ranges::find_if(
-      p_exception_object.type_info, [&catch_type](auto const& element) {
-        return element.type_info == catch_type;
-      });
+    for (auto const& type_entry : p_exception_object.type_info) {
+      if (type_entry.type_info == catch_type) {
+        p_exception_object.choosen_type_offset = type_entry.offset;
+        // ====== Prepare to Install context!! =====
+        cpu[0] = &p_exception_object;
+        cpu[1] = a_decoder.filter();
 
-    if (position == p_exception_object.type_info.end() &&
-        catch_type != action_decoder::install_context_type()) {
-      continue;
+        // LSB must be set to 1 to jump to an address
+        auto const final_destination =
+          (entry_ptr->function() + site_info.landing_pad) | 0b1;
+
+        // Set PC to the cleanup destination
+        cpu.pc = final_destination;
+
+        // Install CPU state
+        restore_cpu_core(cpu);
+      }
     }
-
-    p_exception_object.choosen_type_offset = position->offset;
-    // ====== Prepare to Install context!! =====
-    cpu[0] = &p_exception_object;
-    cpu[1] = a_decoder.filter();
-
-    // LSB must be set to 1 to jump to an address
-    auto const final_destination =
-      (entry_ptr->function() + site_info.landing_pad) | 0b1;
-
-    // Set PC to the cleanup destination
-    cpu.pc = final_destination;
-
-    // Install CPU state
-    restore_cpu_core(cpu);
   }
 }
 
@@ -2042,9 +2036,13 @@ void flatten_rtti(exception_ptr p_thrown_exception,
                   flattened_hierarchy<length>& p_map,
                   std::type_info const* p_type_info)
 {
+  // OPTIMIZATION: Add `catch_all` to list of allowed types so we don't need a
+  // separate branch in `enter_function()`.
+  p_map.push_back({ .type_info = action_decoder::catch_all(), .offset = 0 });
   // Add first element to the list
   p_map.push_back({ .type_info = p_type_info, .offset = 0 });
-  auto iter = p_map.begin();
+  // Skip the catch all type
+  auto iter = p_map.begin() + 1;
   auto info = get_rtti_type(p_type_info);
 
   // If this is a non-class type, then there is no hierarchy and the first
@@ -2053,7 +2051,7 @@ void flatten_rtti(exception_ptr p_thrown_exception,
     return;
   }
 
-  for (; iter != p_map.begin() + p_map.size; iter++) {
+  for (; iter != p_map.begin() + p_map.size(); iter++) {
     info = get_rtti_type(iter->type_info);
 
     if (info == rtti_type::class_type) {
