@@ -256,9 +256,6 @@ SECTIONS {
     /* Unwind info 0x8001aab0 */
     *(.text._ZN3hal7stm32f113configure_pinENS0_10pin_selectENS0_12pin_config_tE)
     *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE7reserveEj)
-    /* Unwind info 0x8002afb0 */
-    *(.text.__wrap___cxa_throw)
-    *(.text._ZNK10__cxxabiv121__vmi_class_type_info20__do_find_public_srcEiPKvPKNS_17__class_type_infoES2_)
     /* Unwind info 0x7ffff2c4 */
     *(.text._Z20depth_41_percent_050v.isra.0)
     *(.text._Z20depth_17_percent_025v.isra.0)
@@ -269,6 +266,8 @@ SECTIONS {
     *(.text._ZN3hal5delayERNS_12steady_clockENSt6chrono8durationIxSt5ratioILx1ELx1000000000EEEE.constprop.0)
     *(.text._ZNK10__cxxabiv120__si_class_type_info11__do_upcastEPKNS_17__class_type_infoEPKvRNS1_15__upcast_resultE)
     *(.text._ZN9__gnu_cxx15__snprintf_liteEPcjPKcSt9__va_list)
+    /* Unwind info 0x80b108af */
+    *(.text.__wrap___cxa_throw)
     /* Unwind info 0x8008afb0 */
     *(.text._ZNK10__cxxabiv121__vmi_class_type_info11__do_upcastEPKNS_17__class_type_infoEPKvRNS1_15__upcast_resultE)
     /* Unwind info 0x7ffff2b8 */
@@ -327,6 +326,8 @@ SECTIONS {
     *(.text._ZNKSt3_V214error_category10_M_messageB5cxx11Ei)
     /* Unwind info 0x80aab0b0 */
     *(.text._ZN3hal7stm32f112gpio_manager6output16driver_configureERKNS_10output_pin8settingsE)
+    /* Unwind info 0x8002afb0 */
+    *(.text._ZNK10__cxxabiv121__vmi_class_type_info20__do_find_public_srcEiPKvPKNS_17__class_type_infoES2_)
     /* Unwind info 0x7ffff790 */
     *(.text._ZNSt11logic_errorC2EPKc)
     /* Unwind info 0x7ffff034 */

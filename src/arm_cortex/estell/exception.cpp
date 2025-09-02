@@ -658,10 +658,11 @@ public:
 
     auto const* test =
       to_absolute_address_ptr(static_cast<void const*>(current_type));
+
     return reinterpret_cast<std::type_info const*>(test);
   }
 
-  std::type_info const* get_next_catch_type()
+  [[nodiscard]] std::type_info const* get_next_catch_type()
   {
     if (m_action_position == nullptr) {
       return nullptr;
@@ -689,7 +690,7 @@ public:
     return get_current_type_info_from_filter();
   }
 
-  std::uint8_t filter()
+  [[nodiscard]] constexpr auto filter() const
   {
     return m_filter;
   }
@@ -783,29 +784,24 @@ inline void enter_function(exception_control_block& p_exception_object)
        catch_type != nullptr;
        catch_type = a_decoder.get_next_catch_type()) {
 
-    auto position = std::ranges::find_if(
-      p_exception_object.type_info, [&catch_type](auto const& element) {
-        return element.type_info == catch_type;
-      });
+    for (auto const& type_entry : p_exception_object.type_info) {
+      if (type_entry.type_info == catch_type) {
+        p_exception_object.choosen_type_offset = type_entry.offset;
+        // ====== Prepare to Install context!! =====
+        cpu[0] = &p_exception_object;
+        cpu[1] = a_decoder.filter();
 
-    if (position == p_exception_object.type_info.end()) {
-      continue;
+        // LSB must be set to 1 to jump to an address
+        auto const final_destination =
+          (entry_ptr->function() + site_info.landing_pad) | 0b1;
+
+        // Set PC to the cleanup destination
+        cpu.pc = final_destination;
+
+        // Install CPU state
+        restore_cpu_core(cpu);
+      }
     }
-
-    p_exception_object.choosen_type_offset = position->offset;
-    // ====== Prepare to Install context!! =====
-    cpu[0] = &p_exception_object;
-    cpu[1] = a_decoder.filter();
-
-    // LSB must be set to 1 to jump to an address
-    auto const final_destination =
-      (entry_ptr->function() + site_info.landing_pad) | 0b1;
-
-    // Set PC to the cleanup destination
-    cpu.pc = final_destination;
-
-    // Install CPU state
-    restore_cpu_core(cpu);
   }
 }
 
