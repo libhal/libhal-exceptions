@@ -206,6 +206,15 @@ class Block:
     def as_c_bit_mask_entry_count(self, block_power: int):
         return f"({self.start} << {block_power}) | {self.entry_count}"
 
+    def as_u16(self):
+        return f"{self.start}, {self.entry_count}"
+
+    def as_u64(self):
+        return f"({self.start}ULL << 32ULL) | {self.entry_count}"
+
+    def as_u32(self):
+        return f"{self.start}, {self.entry_count}"
+
     def as_c_bit_mask_entry_average(self, block_power: int):
         if self.entry_count == 1:
             average_size = 0
@@ -310,16 +319,19 @@ def generate_cpp_table_file(filename: Path,
 #include <array>
 #include <span>
 
+// NOLINTNEXTLINE
 namespace ke::__except_abi::inline v1 {
 
 namespace {
 """
 
+    code += "// NOLINTNEXTLINE\n"
     code += "std::array<std::uint32_t, 2> const _near_point_descriptor_data = {\n"
     code += f"  0x{block_power:08x},\n"
     code += f"  0x{program_start:08x},\n"
     code += "};\n\n"
 
+    code += "// NOLINTNEXTLINE\n"
     code += f"std::array<std::uint32_t, {len(blocks)}> const _normal_table_data = {{\n"
     for block in blocks:
         code += f"  {block.as_c_bit_mask_entry_count(block_power)}, // {block}\n"

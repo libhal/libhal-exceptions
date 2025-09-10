@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cinttypes>
 #include <cstddef>
+
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/stm32f1/clock.hpp>
 #include <libhal-arm-mcu/stm32f1/constants.hpp>
@@ -84,6 +86,7 @@ void initialize_platform()
   hal::set_exception_allocator(exception_memory_resource);
 
   static hal::stm32f1::gpio<hal::stm32f1::peripheral::gpio_a> gpio_a;
+
   static auto signal_pin = gpio_a.acquire_output_pin(0);
   time_signal = &signal_pin;
 
@@ -145,6 +148,19 @@ void end()
   }
 }
 
+hal::u64 search_time = 0;
+
+void start_sub()
+{
+  search_time = counter->uptime();
+}
+
+void end_sub()
+{
+  search_time = counter->uptime() - search_time;
+  hal::print<64>(*analyzer_serial, "search_time = %" PRIu64 "\n", search_time);
+}
+
 void end_benchmark()
 {
   while (true) {
@@ -156,8 +172,11 @@ void end_benchmark()
 extern "C"
 {
   // This gets rid of an issue with libhal-exceptions in Debug mode.
-  void __assert_func()  // NOLINT
+  void __assert_func(char const*, int, char const*, char const*)  // NOLINT
   {
+    while (true) {
+      continue;
+    }
   }
 }
 

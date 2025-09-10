@@ -18,7 +18,6 @@ SECTIONS {
     *(.text.__do_global_dtors_aux)
     *(.text.frame_dummy)
     *(.text._ZN10__cxxabiv119__terminate_handlerMUlvE_4_FUNEv)
-    *(.text._ZN3hal26single_exception_allocator11do_allocateEjj)
     *(.text._ZNK3hal26single_exception_allocator11do_is_equalERKNSt3pmr15memory_resourceE)
     *(.text._ZZ19initialize_platformvENUlvE_4_FUNEv)
     *(.text._ZN3hal7stm32f112gpio_manager6outputD2Ev)
@@ -32,11 +31,13 @@ SECTIONS {
     *(.text._ZN3hal7stm32f14uart12driver_flushEv)
     *(.text._Z5pausev)
     *(.text._ZN2ke12unwind_frameERKNS_14instructions_tERNS_12cortex_m_cpuE)
+    *(.text._ZN3hal26single_exception_allocator11do_allocateEjj)
     *(.text._ZN3hal26single_exception_allocator13do_deallocateEPvjj)
     *(.text._ZN28single_block_memory_resourceILj256EE11do_allocateEjj)
     *(.text._ZN3hal26single_exception_allocatorD2Ev)
     *(.text._ZN3hal26single_exception_allocatorD0Ev)
     *(.text._ZN28single_block_memory_resourceILj256EED2Ev)
+    *(.text._ZN13test_error_16D2Ev)
     *(.text._ZN28single_block_memory_resourceILj256EE13do_deallocateEPvjj)
     *(.text._ZN3hal7stm32f14uart16driver_configureERKNS_6serial8settingsE)
     *(.text._ZN2ke16capture_cpu_coreERNS_12cortex_m_cpuE)
@@ -48,6 +49,7 @@ SECTIONS {
     *(.text.__wrap___cxa_end_cleanup)
     *(.text.__wrap__Unwind_Resume)
     *(.text._ZdlPvj)
+    *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE10_M_disposeEv)
     *(.text._ZdlPv)
     *(.text._ZdlPvSt11align_val_t)
     *(.text.__aeabi_atexit)
@@ -92,7 +94,6 @@ SECTIONS {
     *(.text._ZNSt12length_errorD0Ev)
     *(.text._ZNSt12out_of_rangeD0Ev)
     *(.text._ZNSs4_Rep10_M_destroyERKSaIcE)
-    *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE10_M_disposeEv)
     *(.text._ZNK12_GLOBAL__N_122generic_error_category4nameEv)
     *(.text._ZNK12_GLOBAL__N_122generic_error_category10equivalentEiRKSt15error_condition)
     *(.text._ZN12_GLOBAL__N_122generic_error_categoryD2Ev)
@@ -274,16 +275,16 @@ SECTIONS {
     *(.text._Z20depth_35_percent_050v.isra.0)
     *(.text._Z20depth_38_percent_025v.isra.0)
     *(.text._Z20depth_46_percent_025v.isra.0)
+    /* Unwind info 0x7ffff024 */
+    *(.text._Z20depth_01_percent_025v.isra.0)
+    /* Unwind info 0x8004a9b0 */
+    *(.text._Z20depth_01_percent_000v.isra.0)
     /* Unwind info 0x80a8b0b0 */
     *(.text.unlikely._ZN3hal7stm32f127throw_if_pin_is_unavailableENS0_10pin_selectE.part.0)
     *(.text.unlikely._ZN3hal7stm32f112_GLOBAL__N_124get_enable_register_infoENS0_10peripheralE.part.0)
     *(.text._ZNSt12length_errorC2EPKc)
     *(.text._ZNSt12out_of_rangeC2EPKc)
     *(.text._ZNSs4_Rep9_S_createEjjRKSaIcE)
-    /* Unwind info 0x7ffff024 */
-    *(.text._Z20depth_01_percent_025v.isra.0)
-    /* Unwind info 0x8004a9b0 */
-    *(.text._Z20depth_01_percent_000v.isra.0)
     /* Unwind info 0x7ffff2bc */
     *(.text._Z20depth_37_percent_050v.isra.0)
     *(.text._Z20depth_42_percent_025v.isra.0)
@@ -293,7 +294,7 @@ SECTIONS {
     /* Unwind info 0x7ffff2c8 */
     *(.text._Z20depth_43_percent_050v.isra.0)
     *(.text._Z20depth_29_percent_025v.isra.0)
-    /* Unwind info 0x7ffff76c */
+    /* Unwind info 0x7ffff774 */
     *(.text._ZNK12_GLOBAL__N_122generic_error_category7messageB5cxx11Ei)
     /* Unwind info 0x7ffff2a8 */
     *(.text._Z20depth_27_percent_050v.isra.0)
@@ -320,12 +321,11 @@ SECTIONS {
     /* Unwind info 0x7ffff28c */
     *(.text._Z20depth_13_percent_050v.isra.0)
     *(.text._Z38run_test_depth_15_error_04_cleanup_025v)
-    /* Unwind info 0x7ffff778 */
-    *(.text._Z38run_test_depth_15_error_65_cleanup_100v)
-    *(.text._ZN10__cxxabiv111__terminateEPFvvE)
-    *(.text._ZNKSt3_V214error_category10_M_messageB5cxx11Ei)
     /* Unwind info 0x80aab0b0 */
     *(.text._ZN3hal7stm32f112gpio_manager6output16driver_configureERKNS_10output_pin8settingsE)
+    /* Unwind info 0x7ffff780 */
+    *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_createERjj)
+    *(.text._ZNKSt3_V214error_category10_M_messageB5cxx11Ei)
     /* Unwind info 0x8002afb0 */
     *(.text._ZNK10__cxxabiv121__vmi_class_type_info20__do_find_public_srcEiPKvPKNS_17__class_type_infoES2_)
     /* Unwind info 0x7ffff790 */
@@ -353,6 +353,9 @@ SECTIONS {
     *(.text._Z20depth_25_percent_050v.isra.0)
     /* Unwind info 0x7ffff2dc */
     *(.text._Z20depth_09_percent_025v.isra.0)
+    /* Unwind info 0x7ffff778 */
+    *(.text._Z38run_test_depth_15_error_65_cleanup_100v)
+    *(.text._ZN10__cxxabiv111__terminateEPFvvE)
     /* Unwind info 0x7ffff058 */
     *(.text._Z20depth_05_percent_100v.isra.0)
     /* Unwind info 0x7ffff0f4 */
@@ -387,8 +390,6 @@ SECTIONS {
     *(.text._Z20depth_45_percent_050v.isra.0)
     /* Unwind info 0x7ffff2d8 */
     *(.text._Z20depth_05_percent_025v.isra.0)
-    /* Unwind info 0x7ffff780 */
-    *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_createERjj)
     /* Unwind info 0x7ffff040 */
     *(.text._Z20depth_03_percent_100v.isra.0)
     /* Unwind info 0x7ffff04c */
