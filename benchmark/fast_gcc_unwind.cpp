@@ -1,3 +1,4 @@
+#include <atomic>
 #include <unwind.h>
 
 #include <algorithm>
@@ -5,6 +6,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <span>
+
+#include <platform.hpp>
 
 /* Misc constants.  */
 #define R_IP 12
@@ -76,47 +79,17 @@ typedef struct __EIT_entry
   std::uint32_t content;
 } __EIT_entry;
 
-std::uint32_t selfrel_offset31(std::uint32_t const* p)
+std::uintptr_t selfrel_offset31(std::uint32_t const* p)
 {
-  std::uint32_t offset;
+  auto offset = static_cast<std::int32_t>(*p);
 
-  offset = *p;
   /* Sign extend to 32 bits.  */
-  if (offset & (1 << 30))
-    offset |= 1u << 31;
-  else
-    offset &= ~(1u << 31);
+  offset <<= 1;
+  offset >>= 1;
 
-  return offset + (std::uint32_t)p;
+  return std::bit_cast<std::uintptr_t>(offset +
+                                       std::bit_cast<std::intptr_t>(p));
 }
-
-struct eit_entry_less_than
-{
-  [[gnu::always_inline]] static std::uint32_t to_absolute(
-    __EIT_entry const& entry)
-  {
-    auto entry_addr = reinterpret_cast<std::uint32_t>(&entry.content);
-    // Sign extend :D
-    entry_addr <<= 1;
-    entry_addr >>= 1;
-    return entry_addr;
-  }
-
-  bool operator()(__EIT_entry const& left, __EIT_entry const& right)
-  {
-    return left.fnoffset < right.fnoffset;
-  }
-  bool operator()(__EIT_entry const& left, std::uint32_t right)
-  {
-    std::uint32_t absolute_left = to_absolute(left);
-    return absolute_left < right;
-  }
-  bool operator()(std::uint32_t left, __EIT_entry const& right)
-  {
-    std::uint32_t absolute_right = to_absolute(right);
-    return left < absolute_right;
-  }
-};
 
 /* Return the next byte of unwinding information, or CODE_FINISH if there is
    no data remaining.  */
@@ -411,18 +384,76 @@ extern "C"
     return __wrap___gnu_unwind_execute(context, &uws);
   }
 
-  __EIT_entry const* search_EIT_table(__EIT_entry const* table,
-                                      int nrec,  // NOLINT
+  struct eit_entry_less_than
+  {
+    bool operator()(__EIT_entry const& left, __EIT_entry const& right)
+    {
+      return selfrel_offset31(&left.fnoffset) <
+             selfrel_offset31(&right.fnoffset);
+    }
+
+    bool operator()(__EIT_entry const& left, std::uint32_t right)
+    {
+      return selfrel_offset31(&left.fnoffset) < right;
+    }
+    bool operator()(std::uint32_t left, __EIT_entry const& right)
+    {
+      return left < selfrel_offset31(&right.fnoffset);
+    }
+    bool operator()(std::uint32_t left, std::uint32_t right)
+    {
+      return left < right;
+    }
+  };
+
+#if 1
+  __EIT_entry const* search_EIT_table(__EIT_entry const* table,  // NOLINT
+                                      int nrec,                  // NOLINT
                                       std::uint32_t return_address)
   {
     if (nrec == 0) {
       return nullptr;
     }
-    std::span<__EIT_entry const> table_span(table, nrec);
-    auto const& entry = std::upper_bound(table_span.begin(),
-                                         table_span.end(),
-                                         return_address,
-                                         eit_entry_less_than{});
-    return entry.base();
+
+    auto const& next_entry = std::ranges::upper_bound(
+      std::span(table, nrec), return_address, eit_entry_less_than{});
+    auto const& actual_entry = *(next_entry - 1);
+
+    return &actual_entry;
   }
+#else
+  __EIT_entry const* search_EIT_table(__EIT_entry const* table,  // NOLINT
+                                      int nrec,                  // NOLINT
+                                      _uw return_address)
+  {
+    _uw next_fn;
+    _uw this_fn;
+    int n, left, right;
+    if (nrec == 0)
+      return (__EIT_entry*)0;
+
+    left = 0;
+    right = nrec - 1;
+
+    while (1) {
+      n = (left + right) / 2;
+      this_fn = selfrel_offset31(&table[n].fnoffset);
+      if (n != nrec - 1) {
+        next_fn = selfrel_offset31(&table[n + 1].fnoffset) - 1;
+      } else {
+        next_fn = (_uw)0 - 1;
+      }
+      if (return_address < this_fn) {
+        if (n == left) {
+          return (__EIT_entry*)0;
+        }
+        right = n - 1;
+      } else if (return_address <= next_fn) {
+        return &table[n];
+      } else {
+        left = n + 1;
+      }
+    }
+  }
+#endif
 }

@@ -110,6 +110,49 @@ foreach(test_path ${GENERATED_TEST})
   endif()
 endforeach()
 
+
+file(GLOB WRITTEN_TEST "${CMAKE_CURRENT_SOURCE_DIR}/written_tests/*.cpp")
+
+foreach(test_path ${WRITTEN_TEST})
+  get_filename_component(test_file_name ${test_path} NAME)
+  set(elf ${test_file_name}.elf)
+
+  message(STATUS "Generating written Demo for \"${elf}\"")
+  add_executable(${elf} ${test_path})
+  target_include_directories(${elf} PRIVATE .)
+  target_compile_options(${elf} PRIVATE ${BENCHMARK_COMPILE_OPTIONS})
+
+  # Check if the test file name starts with "result_"
+  string(REGEX MATCH "^result_" is_result_file ${test_file_name})
+  if(is_result_file)
+    target_compile_options(${elf} PRIVATE
+      $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>)
+  else()
+    target_compile_options(${elf} PRIVATE
+      $<$<COMPILE_LANGUAGE:CXX>:-fexceptions>)
+  endif()
+
+  target_link_libraries(${elf} PRIVATE
+    startup_code
+    libhal::$ENV{LIBHAL_PLATFORM_LIBRARY}
+  )
+  target_link_options(${elf} PRIVATE -fno-threadsafe-statics
+    -L${CMAKE_SOURCE_DIR}/
+    -Wl,-Map=${CMAKE_BINARY_DIR}/${elf}.map
+  )
+  if(prebuilt-picolibc_FOUND)
+    target_link_libraries(${elf} PRIVATE picolibc)
+  endif()
+
+  if(${CMAKE_CROSSCOMPILING})
+    # Convert elf into .bin, .hex and other formats needed for programming
+    # devices.
+    libhal_post_build(${elf})
+    libhal_disassemble(${elf})
+  endif()
+endforeach()
+
+
 # Build nearpoint binary if if available
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/nearpoint.cpp")
   message(STATUS "nearpoint.cpp exists!")

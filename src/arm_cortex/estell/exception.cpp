@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <algorithm>
-#include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +25,9 @@
 #include <libhal-exceptions/control.hpp>
 
 #include "internal.hpp"
+
+void start_sub();
+void end_sub();
 
 // NOLINTBEGIN(bugprone-reserved-identifier)
 // NOLINTBEGIN(readability-identifier-naming)
@@ -148,11 +150,59 @@ struct nearpoint_descriptor
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(bugprone-reserved-identifier)
 
+index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
+{
+  auto const index_table = get_arm_exception_index();
+
+  auto const block_power = ke::__except_abi::near_point_descriptor[0];
+  auto const program_offset = ke::__except_abi::near_point_descriptor[1];
+  auto const pc = p_program_counter - program_offset;
+
+  auto const block_index = pc >> block_power;
+  auto const linear_info = ke::__except_abi::normal_table[block_index];
+  auto const entry_start = linear_info >> block_power;
+
+  auto const inter_block_mask = (1U << block_power) - 1U;
+  auto const entry_count = linear_info & inter_block_mask;
+  auto const inter_block_location = pc & inter_block_mask;
+
+  auto const scaled = inter_block_location * entry_count;
+  auto const guess_offset = scaled >> block_power;
+  auto const initial_guess = static_cast<ptrdiff_t>(entry_start + guess_offset);
+
+  auto guess = index_table.begin() + initial_guess;
+
+  if (p_program_counter < guess->function()) {
+    do {
+      --guess;
+    } while (guess->function() > p_program_counter);
+  } else {
+    do {
+      ++guess;
+    } while (guess->function() <= p_program_counter);
+    --guess;
+  }
+
+  return *guess;
+}
+
+index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
+{
+  auto const index_table = get_arm_exception_index();
+  auto const& index =
+    std::ranges::upper_bound(index_table, p_program_counter, index_less_than{});
+
+  if (index == index_table.begin()) {
+    return *index;
+  }
+  return *(index - 1);
+}
+
 std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
 {
   auto const block_power = ke::__except_abi::near_point_descriptor[0];
-  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
-  auto const pc = p_program_counter - progarm_offset;
+  auto const program_offset = ke::__except_abi::near_point_descriptor[1];
+  auto const pc = p_program_counter - program_offset;
 
   auto const inter_block_mask = (1U << block_power) - 1U;
   auto const inter_block_location = pc & inter_block_mask;
@@ -168,58 +218,6 @@ std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
   auto const location = entry_start + guess_offset;
 
   return location;
-}
-
-index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
-{
-  auto const index_table = get_arm_exception_index();
-
-  auto const block_power = ke::__except_abi::near_point_descriptor[0];
-  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
-  auto const pc = p_program_counter - progarm_offset;
-
-  auto const inter_block_mask = (1U << block_power) - 1U;
-  auto const inter_block_location = pc & inter_block_mask;
-  auto const block_index = pc >> block_power;
-  auto const linear_info = ke::__except_abi::normal_table[block_index];
-
-  auto const entry_start = linear_info >> block_power;
-  auto const entry_count = linear_info & inter_block_mask;
-  if (entry_count == 1) {
-    return index_table[entry_start];
-  }
-  auto const scaled = inter_block_location * entry_count;
-  auto const guess_offset = scaled >> block_power;
-  auto const initial_guess = static_cast<ptrdiff_t>(entry_start + guess_offset);
-
-  auto it = index_table.begin() + initial_guess;
-
-  if (p_program_counter < it->function()) {
-    // Find the rightmost entry with function() <= p_program_counter
-    do {
-      --it;
-    } while (it->function() > p_program_counter);
-  } else {
-    // Find the leftmost entry with function() > p_program_counter, then back up
-    do {
-      ++it;
-    } while (it->function() <= p_program_counter);
-    --it;
-  }
-
-  return *it;
-}
-
-index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
-{
-  auto const index_table = get_arm_exception_index();
-  auto const& index =
-    std::ranges::upper_bound(index_table, p_program_counter, index_less_than{});
-
-  if (index == index_table.begin()) {
-    return *index;
-  }
-  return *(index - 1);
 }
 
 [[gnu::always_inline]] inline constexpr std::uint32_t read_uleb128(
@@ -2270,7 +2268,7 @@ private:
                     [[maybe_unused]] std::size_t p_alignment) override
   {
     if (m_allocated || p_size > m_buffer.size()) {
-      return nullptr;
+      std::terminate();
     }
     m_allocated = true;
     return m_buffer.data();
@@ -2292,7 +2290,7 @@ private:
     return this == &other;
   }
 
-  alignas(std::max_align_t) std::array<std::uint8_t, 64> m_buffer{};
+  alignas(std::max_align_t) std::array<std::uint8_t, 96> m_buffer{};
   bool m_allocated = false;
 };
 

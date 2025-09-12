@@ -3,14 +3,17 @@
 #include <array>
 #include <span>
 
+// NOLINTNEXTLINE
 namespace ke::__except_abi::inline v1 {
 
 namespace {
+// NOLINTNEXTLINE
 std::array<std::uint32_t, 2> const _near_point_descriptor_data = {
   0x0000000b,
   0x08000044,
 };
 
+// NOLINTNEXTLINE
 std::array<std::uint32_t, 18> const _normal_table_data = {
   (0 << 11) | 1, // Block(start=0, count=1)
   (0 << 11) | 1, // Block(start=0, count=1)
@@ -20,16 +23,16 @@ std::array<std::uint32_t, 18> const _normal_table_data = {
   (0 << 11) | 1, // Block(start=0, count=1)
   (1 << 11) | 1, // Block(start=1, count=1)
   (1 << 11) | 1, // Block(start=1, count=1)
-  (2 << 11) | 2, // Block(start=2, count=2)
-  (3 << 11) | 3, // Block(start=3, count=3)
-  (5 << 11) | 3, // Block(start=5, count=3)
+  (1 << 11) | 1, // Block(start=1, count=1)
+  (3 << 11) | 2, // Block(start=3, count=2)
+  (5 << 11) | 2, // Block(start=5, count=2)
   (7 << 11) | 7, // Block(start=7, count=7)
-  (13 << 11) | 14, // Block(start=13, count=14)
-  (26 << 11) | 20, // Block(start=26, count=20)
-  (45 << 11) | 27, // Block(start=45, count=27)
-  (71 << 11) | 29, // Block(start=71, count=29)
-  (99 << 11) | 31, // Block(start=99, count=31)
-  (129 << 11) | 26, // Block(start=129, count=26)
+  (14 << 11) | 20, // Block(start=14, count=20)
+  (34 << 11) | 26, // Block(start=34, count=26)
+  (60 << 11) | 27, // Block(start=60, count=27)
+  (87 << 11) | 29, // Block(start=87, count=29)
+  (116 << 11) | 30, // Block(start=116, count=30)
+  (146 << 11) | 28, // Block(start=146, count=28)
 };
 
 }  // namespace

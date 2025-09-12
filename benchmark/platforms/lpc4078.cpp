@@ -12,17 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cinttypes>
+#include <cstddef>
+
 #include <libhal-arm-mcu/dwt_counter.hpp>
 #include <libhal-arm-mcu/lpc40/clock.hpp>
+#include <libhal-arm-mcu/lpc40/output_pin.hpp>
+#include <libhal-arm-mcu/lpc40/uart.hpp>
 #include <libhal-exceptions/control.hpp>
+#include <libhal-util/serial.hpp>
+#include <libhal-util/steady_clock.hpp>
 
-#include <resource_list.hpp>
+#include <platform.hpp>
 
-hal::cortex_m::dwt_counter* counter;
+hal::lpc40::output_pin* time_signal = nullptr;
+hal::serial* analyzer_serial = nullptr;
+hal::cortex_m::dwt_counter* counter = nullptr;
 
 void initialize_platform()
 {
   using namespace hal::literals;
+  using namespace std::literals;
 
   // Set the MCU to the maximum clock speed
   hal::lpc40::maximum(12.0_MHz);
@@ -31,6 +41,87 @@ void initialize_platform()
     hal::lpc40::get_frequency(hal::lpc40::peripheral::cpu));
 
   counter = &dwt_steady_clock;
+
+  hal::delay(*counter, 1ms);
+
+  static hal::lpc40::output_pin signal(1, 15);
+  time_signal = &signal;
+
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
+  start();
+  end();
+  pause();
+
+  static std::array<hal::byte, 64> uart0_buffer{};
+  static hal::lpc40::uart console(0,
+                                  uart0_buffer,
+                                  hal::serial::settings{
+                                    .baud_rate = 115200,
+                                  });
+  analyzer_serial = &console;
+}
+
+void log_start(std::string_view p_message)
+{
+  hal::print<64>(*analyzer_serial, "%.*s", p_message.size(), p_message.data());
+}
+
+std::array<hal::u64, 100> cycles{};
+auto cycle_index = 0Uz;
+constexpr auto use_cycle_counter = false;
+
+void start()
+{
+  if constexpr (use_cycle_counter) {
+    // Set time stamp at this index to the current uptime
+    cycles[cycle_index] = counter->uptime();
+  } else {
+    time_signal->level(false);
+  }
+}
+
+void pause()
+{
+  using namespace std::literals;
+  hal::delay(*counter, 1ms);
+}
+
+void end()
+{
+  if constexpr (use_cycle_counter) {
+    // Subtract the current uptime from the previous to get the time
+    cycles[cycle_index] = counter->uptime() - cycles[cycle_index];
+    cycle_index++;
+  } else {
+    time_signal->level(true);
+  }
+}
+
+hal::u64 search_time = 0;
+
+void start_sub()
+{
+  search_time = counter->uptime();
+}
+
+void end_sub()
+{
+  search_time = counter->uptime() - search_time;
+  hal::print<64>(*analyzer_serial, "search_time = %" PRIu64 "\n", search_time);
+}
+
+void end_benchmark()
+{
+  while (true) {
+    continue;
+  }
 }
 
 hal::u64 get_uptime()
@@ -42,8 +133,12 @@ hal::u64 get_uptime()
 extern "C"
 {
   // This gets rid of an issue with libhal-exceptions in Debug mode.
-  void __assert_func()  // NOLINT
+
+  void __assert_func(char const*, int, char const*, char const*)  // NOLINT
   {
+    while (true) {
+      continue;
+    }
   }
 }
 

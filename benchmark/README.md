@@ -78,11 +78,33 @@ To execute the benchmark you can either supply the python script with a binary
 file to flash OR provide it a newline delimitated list of executable paths.
 
 ```bash
-python3 halbord_benchmark.py -o all_tests.csv -f all_tests.list
+python3 halbord_benchmark.py -n 10000000 -f test_order.list
 ```
 
 We currently provide the following test lists within the directory:
 
-1. `all_tests.list`
-2. `except_tests.list`
-3. `result_tests.list`
+1. `test_order.csv`
+2. `test_order_lpc4078.csv`
+3. `test_nearpoint.csv`
+
+## About `fast_gcc_except`
+
+This test can only fully reach its maximum performance if you make the
+`search_EIT_Table()` function visible and weakened so the implementation in
+this project can take over.
+
+To do this you must run the following command on ARM GCC:
+
+```bash
+arm-none-eabi-objcopy \
+  /path/to/arm-none-eabi-gcc/lib/gcc/arm-none-eabi/14.2.1/thumb/v7-m/nofp/libgcc.a \
+  --globalize-symbol=search_EIT_table \
+  --weaken-symbol=search_EIT_table \
+  /path/to/arm-none-eabi-gcc/lib/gcc/arm-none-eabi/14.2.1/thumb/v7-m/nofp/libgcc.a
+```
+
+You need to change the `/path/to/` to the actual path of your
+`arm-none-eabi-gcc` toolchain.
+
+Once you've done this, delete the `build` directory if it exists and rebuilt
+the project.

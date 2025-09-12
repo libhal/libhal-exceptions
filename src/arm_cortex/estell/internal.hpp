@@ -28,6 +28,7 @@ namespace ke {
 using exception_ptr = void*;
 using destructor_t = void(void*);
 
+// TODO(#102): use uintptr and intptr instead of exact word length types.
 struct register_t
 {
   std::uint32_t data;
@@ -396,7 +397,7 @@ exception_allocation<T>* get_allocation_from_exception(void* p_exception_ptr)
 struct exception_control_block
 {
   cortex_m_cpu cpu{};
-  flattened_hierarchy<8> type_info{};
+  flattened_hierarchy<4> type_info{};
   void* thrown_object;
   std::size_t choosen_type_offset = 0;
   destructor_t* destructor = nullptr;
