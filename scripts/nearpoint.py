@@ -233,6 +233,7 @@ def generate_csv_for_graphing(exception_index: List[FunctionGroup], file: Path):
     file.write_text(csv)
 
 
+"""
 def break_into_blocks(exception_index: List[FunctionGroup],
                       block_power: int = 10) -> List[Block]:
     # TODO(kammce): Add support for small table
@@ -305,6 +306,80 @@ def break_into_blocks(exception_index: List[FunctionGroup],
 
     # Setting final block
     block_list[-1] = Block(start_index, (index_cursor - start_index) + 1)
+
+    return block_list
+"""
+
+
+def break_into_blocks(exception_index: List[FunctionGroup],
+                      block_power: int = 10) -> List[Block]:
+    if block_power < 3:
+        raise Exception("Block size power must be greater than 2")
+
+    logging.info(f"len(exception_index) = {len(exception_index)}")
+
+    # Build cumulative address array
+    group_addresses: List[int] = []
+    address_space_sum = 0
+    for entry in exception_index:
+        group_addresses.append(address_space_sum)
+        address_space_sum += entry.size()
+
+    logging.info(f"Exception index covers {address_space_sum}B of code")
+
+    BLOCK_SIZE = 1 << block_power
+    FIRST_FUNCTION = group_addresses[0]
+    LAST_FUNCTION = group_addresses[-1]
+    PROGRAM_LENGTH = LAST_FUNCTION - FIRST_FUNCTION
+    NUMBER_OF_BLOCKS = (PROGRAM_LENGTH >> block_power) + 1
+
+    block_list = [Block(0, 1)] * NUMBER_OF_BLOCKS
+    logging.info(f"Created {len(block_list)} blocks")
+
+    # Process each block systematically
+    for block_idx in range(NUMBER_OF_BLOCKS):
+        block_start_addr = block_idx << block_power
+        block_end_addr = block_start_addr + BLOCK_SIZE
+
+        # Find all function groups that start within this block
+        functions_in_block = []
+        block_start_entry = None
+
+        for entry_idx, addr in enumerate(group_addresses):
+            relative_addr = addr - FIRST_FUNCTION
+
+            # Check if this function starts within the current block
+            if block_start_addr <= relative_addr < block_end_addr:
+                if block_start_entry is None:
+                    block_start_entry = entry_idx
+                functions_in_block.append(entry_idx)
+
+        # Set block parameters
+        if functions_in_block:
+            block_list[block_idx] = Block(
+                start_entry=functions_in_block[0],
+                entry_count=len(functions_in_block)
+            )
+        elif block_idx > 0:
+            # If no functions in this block, use the last function from previous blocks
+            prev_block = block_list[block_idx - 1]
+            block_list[block_idx] = Block(
+                start_entry=prev_block.start + prev_block.entry_count - 1,
+                entry_count=1
+            )
+
+    # Handle large functions that span multiple blocks (immediate table)
+    for entry_idx, addr in enumerate(group_addresses[:-1]):
+        next_addr = group_addresses[entry_idx + 1]
+        function_size = next_addr - addr
+
+        if function_size >= BLOCK_SIZE:
+            # This function spans multiple blocks - set all covered blocks to point to it
+            start_block = (addr - FIRST_FUNCTION) >> block_power
+            end_block = (next_addr - FIRST_FUNCTION) >> block_power
+
+            for block_idx in range(start_block, min(end_block + 1, len(block_list))):
+                block_list[block_idx] = Block(entry_idx, 1)
 
     return block_list
 
@@ -404,7 +479,7 @@ def parse_exception_index(hex_data: str,
         entry_offset = i * 4
         absolute_address = (starting_location + entry_offset) + addr_prel31
         logging.debug(
-            f"addr_prel31 = {addr_prel31} -> {absolute_address:08x}\n")
+            f"addr_prel31({addr_raw:08x}) = {addr_prel31} -> {absolute_address:08x}\n")
 
         # We do not use the absolute address of the offset_prel31 because we
         # actually do not want them to match currently. We do not have a good
@@ -501,12 +576,14 @@ def main():
     # ==========================================================================
     function_index = 0
 
+    logging.debug(f"len(FINALIZED_FUNCTIONS) = {len(FINALIZED_FUNCTIONS)}")
+
     for i in range(1, len(EXCEPTION_ENTRIES)):
         entry_function, unwind_info = EXCEPTION_ENTRIES[i - 1]
         next_entry_function, next_unwind_info = EXCEPTION_ENTRIES[i]
 
         logging.debug(
-            f"entry_function: {entry_function:08x}, unwind: {unwind_info}, next_entry_function: {next_entry_function:08x}")
+            f"entry_function: {entry_function:08x}, unwind: {unwind_info:08x}, next_entry_function: {next_entry_function:08x}, name: {FINALIZED_FUNCTIONS[function_index].name}")
 
         if FINALIZED_FUNCTIONS[function_index].address != entry_function:
             logging.error(
@@ -523,14 +600,12 @@ def main():
         function_index = function_index + 1
 
         while (FINALIZED_FUNCTIONS[function_index].address < next_entry_function):
-            if unwind_info & 1 << 31 or unwind_info == 1:
+            IS_PREL31 = unwind_info & (1 << 31) == 0
+            IS_NOEXCEPT = unwind_info == 1
+            if not IS_PREL31 or IS_NOEXCEPT:
                 logging.debug(
                     f"Set [{function_index}] = {FINALIZED_FUNCTIONS[function_index].address:08x}:{FINALIZED_FUNCTIONS[function_index].name} = {unwind_info:08x}")
                 FINALIZED_FUNCTIONS[function_index].unwind_info = unwind_info
-            else:
-                logging.debug(
-                    f"Transparent [{function_index}] = 0xFFFFFFFF")
-                FINALIZED_FUNCTIONS[function_index].unwind_info = 0xFFFFFFFF
 
             function_index = function_index + 1
 
@@ -538,6 +613,7 @@ def main():
     last_unwind_info = EXCEPTION_ENTRIES[-1][1]
     if not (last_unwind_info & 1 << 31):
         last_unwind_info = 0xFFFFFFFF
+
     for i in range(function_index, len(FINALIZED_FUNCTIONS)):
         FINALIZED_FUNCTIONS[i].unwind_info = last_unwind_info
 
@@ -553,10 +629,25 @@ def main():
     # ==========================================================================
     unwind_groups_map: defaultdict[int,
                                    FunctionGroup] = {}
-    logging.debug("unwind_groups_map")
+    prel31_groups_list: List[FunctionGroup] = []
+    logging.debug("unwind_groups_map!")
     for function in FINALIZED_FUNCTIONS:
-        if function.unwind_info in unwind_groups_map:
+        logging.debug(f"function = {function.name}")
+        # prel31 offsets (assumes little endian)
+        IS_PREL31 = function.unwind_info & (1 << 31) == 0
+        IS_NOEXCEPT = function.unwind_info == 1
+        IS_LEAF = function.unwind_info == 0xFFFFFFFF
+        if IS_PREL31 and not IS_NOEXCEPT and not IS_LEAF:
+            logging.debug(
+                f"function w/ offset unwind_info = {function.unwind_info:08x}")
+            new_group = FunctionGroup(function.unwind_info)
+            new_group.add(function)
+            prel31_groups_list.append(new_group)
+        # Any unwind information we've already found
+        elif function.unwind_info in unwind_groups_map:
             unwind_groups_map[function.unwind_info].add(function)
+        # Any unwind info we haven't found yet, make a new entry in the unwind
+        # group map.
         else:
             new_group = FunctionGroup(function.unwind_info)
             new_group.add(function)
@@ -570,12 +661,16 @@ def main():
     # ==========================================================================
     # Make a copy of the leaf functions because we are going to delete them
     # from the unwind groups as they don't have unwind information.
+
     leaf_functions = unwind_groups_map[0xFFFFFFFF]
     unwind_groups_map.pop(0xFFFFFFFF)
+
     # Add all of the leaf functions to the NOEXCEPT terminate group
     for funct in leaf_functions.functions:
         unwind_groups_map[1].add(funct)
+
     sorted_unwind_groups_list = list(unwind_groups_map.values())
+    sorted_unwind_groups_list.extend(prel31_groups_list)
     sorted_unwind_groups_list.sort(key=FunctionGroup.size, reverse=True)
     logging.debug(f"Size sorted unwind groups\n")
     for group in sorted_unwind_groups_list:
@@ -589,10 +684,10 @@ def main():
     order_string += "SECTIONS {\n"
     order_string += "  .text.sorted : {\n"
     order_string += "    /* LEAF & unsortable functions below */\n"
-    for group in sorted_unwind_groups_list:
+    for idx, group in enumerate(sorted_unwind_groups_list):
         # SECTIONS {
         #     .text : {
-        order_string += f"    /* Unwind info 0x{group.unwind_info:08x} */\n"
+        order_string += f"    /* [{idx}] Unwind info 0x{group.unwind_info:08x} */\n"
         order_string += group.generate_order_list()
         #     }
         # }

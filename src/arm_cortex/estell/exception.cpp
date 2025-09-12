@@ -27,6 +27,9 @@
 
 #include "internal.hpp"
 
+void start_sub();
+void end_sub();
+
 // NOLINTBEGIN(bugprone-reserved-identifier)
 // NOLINTBEGIN(readability-identifier-naming)
 extern "C"
@@ -148,42 +151,46 @@ struct nearpoint_descriptor
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(bugprone-reserved-identifier)
 
+int volatile error = 0;
 index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
 {
+  // start_sub();
   auto const index_table = get_arm_exception_index();
 
   auto const block_power = ke::__except_abi::near_point_descriptor[0];
-  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
-  auto const pc = p_program_counter - progarm_offset;
+  auto const program_offset = ke::__except_abi::near_point_descriptor[1];
+  auto const pc = p_program_counter - program_offset;
 
-  auto const inter_block_mask = (1U << block_power) - 1U;
-  auto const inter_block_location = pc & inter_block_mask;
   auto const block_index = pc >> block_power;
   auto const linear_info = ke::__except_abi::normal_table[block_index];
-
   auto const entry_start = linear_info >> block_power;
+
+  auto const inter_block_mask = (1U << block_power) - 1U;
   auto const entry_count = linear_info & inter_block_mask;
+  auto const inter_block_location = pc & inter_block_mask;
 
   auto const scaled = inter_block_location * entry_count;
   auto const guess_offset = scaled >> block_power;
   auto const initial_guess = static_cast<ptrdiff_t>(entry_start + guess_offset);
 
-  auto it = index_table.begin() + initial_guess;
+  auto guess = index_table.begin() + initial_guess;
 
-  if (p_program_counter < it->function()) {
-    // Find the rightmost entry with function() <= p_program_counter
+  if (p_program_counter < guess->function()) {
     do {
-      --it;
-    } while (it->function() > p_program_counter);
+      --guess;
+      error = error - 1;
+    } while (guess->function() > p_program_counter);
   } else {
-    // Find the leftmost entry with function() > p_program_counter, then back up
     do {
-      ++it;
-    } while (it->function() <= p_program_counter);
-    --it;
+      ++guess;
+      error = error + 1;
+    } while (guess->function() <= p_program_counter);
+    --guess;
   }
+  // end_sub();
 
-  return *it;
+  error = 0;
+  return *guess;
 }
 
 index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
@@ -201,8 +208,8 @@ index_entry_t const& get_index_entry(std::uint32_t p_program_counter)
 std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
 {
   auto const block_power = ke::__except_abi::near_point_descriptor[0];
-  auto const progarm_offset = ke::__except_abi::near_point_descriptor[1];
-  auto const pc = p_program_counter - progarm_offset;
+  auto const program_offset = ke::__except_abi::near_point_descriptor[1];
+  auto const pc = p_program_counter - program_offset;
 
   auto const inter_block_mask = (1U << block_power) - 1U;
   auto const inter_block_location = pc & inter_block_mask;
@@ -215,7 +222,7 @@ std::uintptr_t near_point_guess_index(std::uintptr_t p_program_counter)
     return entry_start;
   }
   auto const guess_offset = inter_block_location / average_size;
-  auto const location = entry_start + guess_offset + 1;
+  auto const location = entry_start + guess_offset;
 
   return location;
 }
