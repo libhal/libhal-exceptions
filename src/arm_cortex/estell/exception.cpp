@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <algorithm>
-#include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -151,10 +150,8 @@ struct nearpoint_descriptor
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(bugprone-reserved-identifier)
 
-int volatile error = 0;
 index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
 {
-  // start_sub();
   auto const index_table = get_arm_exception_index();
 
   auto const block_power = ke::__except_abi::near_point_descriptor[0];
@@ -178,18 +175,14 @@ index_entry_t const& get_index_entry_near_point(std::uint32_t p_program_counter)
   if (p_program_counter < guess->function()) {
     do {
       --guess;
-      error = error - 1;
     } while (guess->function() > p_program_counter);
   } else {
     do {
       ++guess;
-      error = error + 1;
     } while (guess->function() <= p_program_counter);
     --guess;
   }
-  // end_sub();
 
-  error = 0;
   return *guess;
 }
 

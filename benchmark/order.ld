@@ -37,6 +37,7 @@ SECTIONS {
     *(.text._ZN3hal26single_exception_allocatorD2Ev)
     *(.text._ZN3hal26single_exception_allocatorD0Ev)
     *(.text._ZN28single_block_memory_resourceILj256EED2Ev)
+    *(.text._ZN13test_error_16D2Ev)
     *(.text._ZN28single_block_memory_resourceILj256EE13do_deallocateEPvjj)
     *(.text._ZN3hal7stm32f14uart16driver_configureERKNS_6serial8settingsE)
     *(.text._ZN2ke16capture_cpu_coreERNS_12cortex_m_cpuE)
@@ -48,6 +49,7 @@ SECTIONS {
     *(.text.__wrap___cxa_end_cleanup)
     *(.text.__wrap__Unwind_Resume)
     *(.text._ZdlPvj)
+    *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE10_M_disposeEv)
     *(.text._ZdlPv)
     *(.text._ZdlPvSt11align_val_t)
     *(.text.__aeabi_atexit)
@@ -92,7 +94,6 @@ SECTIONS {
     *(.text._ZNSt12length_errorD0Ev)
     *(.text._ZNSt12out_of_rangeD0Ev)
     *(.text._ZNSs4_Rep10_M_destroyERKSaIcE)
-    *(.text._ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE10_M_disposeEv)
     *(.text._ZNK12_GLOBAL__N_122generic_error_category4nameEv)
     *(.text._ZNK12_GLOBAL__N_122generic_error_category10equivalentEiRKSt15error_condition)
     *(.text._ZN12_GLOBAL__N_122generic_error_categoryD2Ev)
@@ -264,17 +265,17 @@ SECTIONS {
     *(.text.__wrap___cxa_throw)
     /* [9] Unwind info 0x8008afb0 */
     *(.text._ZNK10__cxxabiv121__vmi_class_type_info11__do_upcastEPKNS_17__class_type_infoEPKvRNS1_15__upcast_resultE)
-    /* [10] Unwind info 0x80a8b0b0 */
+    /* [10] Unwind info 0x7ffff024 */
+    *(.text._Z20depth_01_percent_025v.isra.0)
+    /* [11] Unwind info 0x8004a9b0 */
+    *(.text._Z20depth_01_percent_000v.isra.0)
+    /* [12] Unwind info 0x80a8b0b0 */
     *(.text.unlikely._ZN3hal7stm32f127throw_if_pin_is_unavailableENS0_10pin_selectE.part.0)
     *(.text.unlikely._ZN3hal7stm32f112_GLOBAL__N_124get_enable_register_infoENS0_10peripheralE.part.0)
     *(.text._ZNSt12length_errorC2EPKc)
     *(.text._ZNSt12out_of_rangeC2EPKc)
     *(.text._ZNSs4_Rep9_S_createEjjRKSaIcE)
-    /* [11] Unwind info 0x7ffff024 */
-    *(.text._Z20depth_01_percent_025v.isra.0)
-    /* [12] Unwind info 0x8004a9b0 */
-    *(.text._Z20depth_01_percent_000v.isra.0)
-    /* [13] Unwind info 0x7ffff76c */
+    /* [13] Unwind info 0x7ffff774 */
     *(.text._ZNK12_GLOBAL__N_122generic_error_category7messageB5cxx11Ei)
     /* [14] Unwind info 0x80b108a9 */
     *(.text.__wrap___cxa_rethrow)
@@ -581,7 +582,7 @@ SECTIONS {
     *(.text._ZN3hal7stm32f112gpio_manager6output12driver_levelEb)
     /* [165] Unwind info 0x8003aab0 */
     *(.text._ZNK10__cxxabiv117__class_type_info11__do_upcastEPKS0_PPv)
-    /* [166] Unwind info 0x7ffff778 */
+    /* [166] Unwind info 0x7ffff780 */
     *(.text._ZNKSt3_V214error_category10_M_messageB5cxx11Ei)
     /* [167] Unwind info 0x7fffff30 */
     *(.text.unlikely._ZSt19__throw_logic_errorPKc)
