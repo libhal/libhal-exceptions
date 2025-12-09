@@ -13,11 +13,28 @@
 # limitations under the License.
 
 cmake_minimum_required(VERSION 3.15)
-project(test_package LANGUAGES CXX)
 
-find_package(libhal-exceptions REQUIRED CONFIG)
+project(demos LANGUAGES CXX)
 
-add_executable(${PROJECT_NAME} main.cpp)
-target_include_directories(${PROJECT_NAME} PUBLIC .)
-target_link_libraries(${PROJECT_NAME} PRIVATE libhal::exceptions)
-target_compile_options(${PROJECT_NAME} PRIVATE -fexceptions -fno-rtti)
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --save-temps")
+
+libhal_build_demos(
+  DEMOS
+  single_level
+  multiple_inheritance
+
+  INCLUDES
+  .
+
+  PACKAGES
+  libhal-exceptions
+
+  LINK_LIBRARIES
+  libhal::exceptions
+
+  COMPILE_FLAGS
+  -fno-threadsafe-statics
+
+  LINK_FLAGS
+  -fno-threadsafe-statics
+)
