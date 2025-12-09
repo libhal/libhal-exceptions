@@ -93,6 +93,8 @@ int main()
   try {
     foo();
   } catch (error const&) {
-    return -1;
+    return 0;
   }
+
+  return -1;
 }

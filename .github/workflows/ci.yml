@@ -26,42 +26,36 @@ on:
 jobs:
   ci:
     uses: libhal/ci/.github/workflows/library_check.yml@5.x.y
+    with:
+      dir: v1
     secrets: inherit
 
   deploy_cortex-m4f_check:
-    uses: libhal/ci/.github/workflows/deploy.yml@5.x.y
+    uses: libhal/ci/.github/workflows/package_and_upload_all.yml@5.x.y
     with:
-      arch: cortex-m4f
-      os: baremetal
-      compiler: gcc
-      compiler_version: 12.3
-      compiler_package: arm-gnu-toolchain
+      dir: v1
     secrets: inherit
 
   demo_check_lpc4078:
     uses: ./.github/workflows/demo_check.yml
     with:
-      compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
-      compiler_profile: v1/arm-gcc-12.3
-      platform_profile_url: https://github.com/libhal/libhal-arm-mcu.git
-      platform_profile: v1/lpc4078
+      compiler_profile: hal/tc/arm-gcc-12.3
+      platform_profile: hal/mcu/lpc4078
+      dir: v1/demos
     secrets: inherit
 
   demo_check_stm32f103c8:
     uses: ./.github/workflows/demo_check.yml
     with:
-      compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
-      compiler_profile: v1/arm-gcc-12.3
-      platform_profile_url: https://github.com/libhal/libhal-arm-mcu.git
-      platform_profile: v1/stm32f103c8
+      compiler_profile: hal/tc/arm-gcc-12.3
+      platform_profile: hal/mcu/stm32f103c8
+      dir: v1/demos
     secrets: inherit
 
   build_benchmarks:
-    uses: libhal/ci/.github/workflows/app_builder.yml@5.x.y
+    uses: libhal/ci/.github/workflows/app_builder2.yml@5.x.y
     with:
-      compiler_profile_url: https://github.com/libhal/arm-gnu-toolchain.git
-      compiler_profile: v1/arm-gcc-12.3
-      platform_profile_url: https://github.com/libhal/libhal-arm-mcu.git
-      platform_profile: v1/stm32f103c8
-      conan_build_dir: benchmark
+      dir: v1/benchmark/
+      compiler_profile: hal/tc/arm-gcc-12.3
+      platform_profile: hal/mcu/lpc4078
     secrets: inherit

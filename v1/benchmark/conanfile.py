@@ -44,8 +44,8 @@ class demos(ConanFile):
         cmake_layout(self, build_folder=build_path)
 
     def build_requirements(self):
-        self.tool_requires("make/4.4.1")
-        self.tool_requires("cmake/3.27.1")
+        self.tool_requires("ninja/[^1.0.0]")
+        self.tool_requires("cmake/[^4.0.0]")
         self.tool_requires("libhal-cmake-util/[^4.3.3]")
 
     def generate(self):
