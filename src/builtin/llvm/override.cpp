@@ -12,27 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <libhal-arm-mcu/dwt_counter.hpp>
-#include <libhal-arm-mcu/stm32f1/clock.hpp>
+#include <exception>
 
-#include <resource_list.hpp>
-
-hal::cortex_m::dwt_counter* counter;
-
-void initialize_platform()
-{
-  using namespace hal::literals;
-
-#ifndef DEBUG
-  hal::stm32f1::maximum_speed_using_internal_oscillator();
-#endif
-
-  static hal::cortex_m::dwt_counter dwt_steady_clock(
-    hal::stm32f1::frequency(hal::stm32f1::peripheral::cpu));
-  counter = &dwt_steady_clock;
+std::terminate_handler __wrap___cxa_terminate_handler = []() {
+  while (true) {
+    continue;
+  }
 };
-
-hal::u64 get_uptime()
-{
-  return counter->uptime();
-}

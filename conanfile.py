@@ -16,7 +16,8 @@ from conan import ConanFile
 from conan.tools.cmake import CMake, cmake_layout
 from conan.tools.files import copy
 from conan.tools.build import check_min_cppstd
-import os
+from conan.errors import ConanException
+from pathlib import Path
 
 required_conan_version = ">=2.0.14"
 
@@ -62,12 +63,15 @@ class libhal_exceptions_conan(ConanFile):
 
     @property
     def _runtime_select(self):
-        if self._is_arm_cortex and self.options.runtime == "builtin":
-            return "ARM_CORTEX_GCC"
-        elif self._is_arm_cortex and self.options.runtime == "estell":
+        if self.options.runtime == "builtin":
+            if self.settings.compiler == "gcc":
+                return "ARM_CORTEX_GCC"
+            if self.settings.compiler == "clang":
+                return "ARM_CORTEX_LLVM"
+        elif self.options.runtime == "estell":
             return "ARM_CORTEX_ESTELL"
-        else:
-            return "ARM_CORTEX_GCC"
+        raise ConanException(
+            f"Invalid runtime ({self.options.runtime}) & compiler ({self.settings.compiler}) selected")
 
     def validate(self):
         if self.settings.get_safe("compiler.cppstd"):
@@ -77,7 +81,7 @@ class libhal_exceptions_conan(ConanFile):
         cmake_layout(self)
 
     def build_requirements(self):
-        self.tool_requires("cmake/3.27.1")
+        self.tool_requires("cmake/[>=3.38.0 <5.0.0]")
         self.tool_requires("libhal-cmake-util/[^4.0.3]")
         self.test_requires("boost-ext-ut/2.1.0")
 
@@ -93,57 +97,58 @@ class libhal_exceptions_conan(ConanFile):
     def package(self):
         copy(self,
              "LICENSE",
-             dst=os.path.join(self.package_folder, "licenses"),
+             dst=Path(self.package_folder) / "licenses",
              src=self.source_folder)
         copy(self,
              "*.h",
-             dst=os.path.join(self.package_folder, "include"),
-             src=os.path.join(self.source_folder, "include"))
+             dst=Path(self.package_folder) / "include",
+             src=Path(self.source_folder) / "include")
         copy(self,
              "*.hpp",
-             dst=os.path.join(self.package_folder, "include"),
-             src=os.path.join(self.source_folder, "include"))
+             dst=Path(self.package_folder) / "include",
+             src=Path(self.source_folder) / "include")
         copy(self,
              "*.ld",
-             dst=os.path.join(self.package_folder, "linker_scripts"),
-             src=os.path.join(self.source_folder, "linker_scripts"))
+             dst=Path(self.package_folder) / "linker_scripts",
+             src=Path(self.source_folder) / "linker_scripts")
 
         cmake = CMake(self)
         cmake.install()
 
     def package_info(self):
-        self.cpp_info.libs = ["libhal-exceptions"]
+        self.cpp_info.libs = ["hal-exceptions"]
         self.cpp_info.set_property("cmake_target_name", "libhal::exceptions")
-        lib_path = os.path.join(self.package_folder,
-                                'lib', 'liblibhal-exceptions.a')
         using_wrap = False
+        self.cpp_info.defines = []
+
         if self.options.runtime == "estell":
             using_wrap = True
             # If the platform matches the linker script, just use that linker
             # script
             self.cpp_info.exelinkflags.extend([
                 "-fexceptions",
-                "-L" + os.path.join(self.package_folder, "linker_scripts"),
-                '-Wl,-Tarm-none-eabi-gcc-14.2_discard.ld',
+                "-L" + str(Path(self.package_folder) / "linker_scripts"),
+                # '-Wl,-Tarm-none-eabi-gcc-14.2_discard.ld',
                 "-Wl,--wrap=__cxa_throw",
                 "-Wl,--wrap=__cxa_rethrow",
                 "-Wl,--wrap=__cxa_end_catch",
                 "-Wl,--wrap=__cxa_begin_catch",
                 "-Wl,--wrap=__cxa_end_cleanup",
                 "-Wl,--wrap=_Unwind_Resume",
-                # "-Wl,--wrap=__gnu_unwind_pr_common",
-                # "-Wl,--wrap=__aeabi_unwind_cpp_pr0",
-                # "-Wl,--wrap=__aeabi_unwind_cpp_pr1",
-                # "-Wl,--wrap=__aeabi_unwind_cpp_pr2",
-                # "-Wl,--wrap=_sig_func",
-                # "-Wl,--wrap=__gxx_personality_v0",
-                # "-Wl,--wrap=__gcc_personality_v0",
-                # "-Wl,--wrap=deregister_tm_clones",
-                # "-Wl,--wrap=register_tm_clones",
+            ])
+            self.cpp_info.defines.append("LIBHAL_ESTELL_EXCEPTIONS")
+
+        if self.settings.compiler == "clang":
+            using_wrap = True
+            # If the platform matches the linker script, just use that linker
+            # script
+            self.cpp_info.exelinkflags.extend([
+                "-fexceptions",
+                "-Wl,--wrap=__cxa_terminate_handler",
             ])
 
         # Keep this for now, will update this for the runtime select
-        if self._is_arm_cortex:
+        if self._is_arm_cortex and self.settings.compiler == "gcc":
             using_wrap = True
             self.cpp_info.exelinkflags.extend([
                 "-Wl,--wrap=__cxa_allocate_exception",
@@ -152,9 +157,11 @@ class libhal_exceptions_conan(ConanFile):
             ])
 
         if using_wrap:
+            package_folder = Path(self.package_folder)
+            lib_path = package_folder / 'lib' / 'libhal-exceptions.a'
             self.cpp_info.exelinkflags.extend([
                 # Ensure that all symbols are added to the linker's symbol table
                 "-Wl,--whole-archive",
-                lib_path,
+                str(lib_path),
                 "-Wl,--no-whole-archive",
             ])

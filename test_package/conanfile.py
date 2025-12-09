@@ -19,11 +19,11 @@ from conan.tools.cmake import CMake, cmake_layout
 
 class TestPackageConan(ConanFile):
     settings = "os", "arch", "compiler", "build_type"
-    generators = "CMakeToolchain", "CMakeDeps", "VirtualRunEnv"
+    generators = "VirtualRunEnv", "CMakeDeps", "CMakeToolchain"
 
     def build_requirements(self):
-        self.tool_requires("make/4.4.1")
-        self.tool_requires("cmake/3.27.1")
+        self.tool_requires("cmake/[^4.0.0]")
+        self.tool_requires("ninja/[^1.3.0]")
 
     def requirements(self):
         self.requires(self.tested_reference_str)

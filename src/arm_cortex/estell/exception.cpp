@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <cstdlib>
+
 #include <algorithm>
-#include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
-#include <memory_resource>
 #include <span>
 #include <typeinfo>
 
-#include <libhal-exceptions/control.hpp>
+#include <libhal-exceptions/new.hpp>
 
 #include "internal.hpp"
 
@@ -820,8 +821,8 @@ enum class pop_lr : std::uint8_t
 template<size_t PopCount, pop_lr PopLinkRegister = pop_lr::skip>
 [[nodiscard("You MUST set the unwind function's stack pointer to this "
             "value after executing it!")]]
-inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
-                                               cortex_m_cpu& p_cpu)
+inline std::uintptr_t const* pop_register_range(std::uintptr_t const* sp_ptr,
+                                                cortex_m_cpu& p_cpu)
 {
   // We pull these pointers out in order to access them incrementally, which
   // will give the hint to the compiler to convert them into a sequence of
@@ -849,6 +850,8 @@ inline std::uint32_t const* pop_register_range(std::uint32_t const* sp_ptr,
 
 void unwind_frame(instructions_t const& p_instructions, cortex_m_cpu& p_cpu)
 {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-label-as-value"
   static constexpr std::array<void*, 256> jump_table{
     &&vsp_add_0,   // [0]
     &&vsp_add_1,   // [1]
@@ -1175,6 +1178,7 @@ void unwind_frame(instructions_t const& p_instructions, cortex_m_cpu& p_cpu)
     &&reserved_or_spare_thus_terminate,  // 11011'110 []
     &&reserved_or_spare_thus_terminate,  // 11111'111 [255]
   };
+#pragma clang diagnostic pop
 
   bool move_lr_to_pc = true;
   std::uint32_t u32_storage = 0;
@@ -1184,7 +1188,10 @@ void unwind_frame(instructions_t const& p_instructions, cortex_m_cpu& p_cpu)
   while (true) {
     auto const* instruction_handler = jump_table[*instruction_ptr];
     instruction_ptr++;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-label-as-value"
     goto* instruction_handler;
+#pragma clang diagnostic pop
 
   // +=========================================================================+
   // |                                 Finish!                                 |
@@ -1985,8 +1992,8 @@ void push_vmi_info(exception_ptr p_thrown_exception,
 
   auto const* word_pointer =
     reinterpret_cast<std::uint32_t const*>(p_info.type_info);
-  auto const length = word_pointer[vla_length];
-  for (std::size_t i = vla_start; i < vla_start + (length * 2); i += 2) {
+  auto const length = static_cast<std::size_t>(word_pointer[vla_length]);
+  for (std::size_t i = vla_start; i < (vla_start + (length * 2)); i += 2) {
     base_class_type_info parent_info{};
     auto const parent_address = word_pointer[i];
     // Shift by 8 to remove the first byte which is just flags
@@ -2070,12 +2077,38 @@ void flatten_rtti(exception_ptr p_thrown_exception,
     }
   }
 }
-
 }  // namespace ke
 
 namespace {
 bool const volatile libhal_convince_compiler_to_emit_metadata = false;
 }
+
+#if defined(__clang__)
+#define LIBHAL_WEAK __attribute__((weak))
+#elif defined(__GNUC__)
+#define LIBHAL_WEAK [[gnu::weak]]
+#else
+#define LIBHAL_WEAK
+#endif
+
+LIBHAL_WEAK
+void* operator new(std::size_t p_size,
+                   std::align_val_t p_align,
+                   ke::exception_allocation_tag)
+{
+  return ::operator new(p_size, p_align);
+}
+
+LIBHAL_WEAK
+void operator delete(void* p_ptr,
+                     std::size_t p_size,
+                     std::align_val_t p_align,
+                     ke::exception_allocation_tag)
+{
+  ::operator delete(p_ptr, p_size, p_align);
+}
+
+#undef LIBHAL_WEAK
 
 // NOLINTBEGIN(bugprone-reserved-identifier)
 extern "C"
@@ -2096,15 +2129,19 @@ extern "C"
     // more importantly, in order to detect if the allocator throws bad alloc
     // and we re-enter this function, we can detect that and terminate.
     ke::control_block.cache.state(ke::runtime_state::get_next_frame);
-    auto const allocation_amount =
-      sizeof(ke::exception_allocation<>) + p_thrown_size;
 
-    auto exception_memory_resource = &hal::get_exception_allocator();
+    constexpr auto exception_wrapper_size = sizeof(ke::exception_allocation<>);
+    auto const allocation_amount = exception_wrapper_size + p_thrown_size;
+    // using alloc_tag = ke::exception_allocation_tag;
 
-    auto* object = static_cast<ke::exception_allocation<>*>(
-      exception_memory_resource->allocate(allocation_amount));
+    // Currently: always max_align_t since we don't know better
+    [[maybe_unused]] constexpr auto align = alignof(std::max_align_t);
 
-    object->allocator = exception_memory_resource;
+    auto* exception_address = ::operator new(allocation_amount,
+                                             std::align_val_t{ align },
+                                             ke::exception_allocation_tag{});
+    auto* object = static_cast<ke::exception_allocation<>*>(exception_address);
+
     object->size = allocation_amount;
 
     return &object->data;
@@ -2114,7 +2151,13 @@ extern "C"
   void __wrap___cxa_free_exception(void* p_thrown_exception)
   {
     auto object = ke::get_allocation_from_exception(p_thrown_exception);
-    object->allocator->deallocate(object, object->size);
+
+    // Match the allocation
+    constexpr auto align = alignof(std::max_align_t);
+    ::operator delete(object,
+                      object->size,
+                      std::align_val_t{ align },
+                      ke::exception_allocation_tag{});
   }
 
   // NOLINTBEGIN(readability-identifier-naming)
@@ -2230,85 +2273,3 @@ extern "C"
   }
 }  // extern "C"
 // NOLINTEND(bugprone-reserved-identifier)
-
-namespace __cxxabiv1 {                                // NOLINT
-std::terminate_handler __terminate_handler = +[]() {  // NOLINT
-  while (true) {
-    continue;
-  }
-};
-}  // namespace __cxxabiv1
-
-namespace hal {
-std::terminate_handler set_terminate(
-  std::terminate_handler p_terminate_handler) noexcept
-{
-  auto copy = __cxxabiv1::__terminate_handler;
-  __cxxabiv1::__terminate_handler = p_terminate_handler;
-  return copy;
-}
-
-std::terminate_handler get_terminate() noexcept
-{
-  return __cxxabiv1::__terminate_handler;
-}
-
-/**
- * @brief Simple exception allocator
- *
- * This allocator can only allocates space for a single exception object at a
- * time.
- */
-class single_exception_allocator : public std::pmr::memory_resource
-{
-public:
-  single_exception_allocator() = default;
-  ~single_exception_allocator() override = default;
-
-private:
-  void* do_allocate(std::size_t p_size,  // NOLINT
-                    [[maybe_unused]] std::size_t p_alignment) override
-  {
-    if (m_allocated || p_size > m_buffer.size()) {
-      return nullptr;
-    }
-    m_allocated = true;
-    return m_buffer.data();
-  }
-
-  void do_deallocate(void* p_address,
-                     [[maybe_unused]] std::size_t p_size,  // NOLINT
-                     [[maybe_unused]] std::size_t p_alignment) override
-  {
-    if (p_address != m_buffer.data()) {
-      std::terminate();
-    }
-    m_allocated = false;
-  }
-
-  [[nodiscard]] bool do_is_equal(
-    std::pmr::memory_resource const& other) const noexcept override
-  {
-    return this == &other;
-  }
-
-  alignas(std::max_align_t) std::array<std::uint8_t, 64> m_buffer{};
-  bool m_allocated = false;
-};
-
-// TODO(#11): Add macro to IFDEF this out if the user want to save 64 bytes.
-// NOLINTNEXTLINE
-single_exception_allocator _default_allocator{};
-// NOLINTNEXTLINE
-std::pmr::memory_resource* _exception_allocator = &_default_allocator;
-
-void set_exception_allocator(std::pmr::memory_resource& p_allocator) noexcept
-{
-  _exception_allocator = &p_allocator;
-}
-
-std::pmr::memory_resource& get_exception_allocator() noexcept
-{
-  return *_exception_allocator;
-}
-}  // namespace hal

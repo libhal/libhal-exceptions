@@ -14,11 +14,16 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-project(libhal-exceptions LANGUAGES CXX)
+set(CMAKE_COLOR_DIAGNOSTICS ON)
 
+project(hal-exceptions LANGUAGES CXX)
+
+message("Runtime: '${RUNTIME}', selected")
 
 if("${RUNTIME}" STREQUAL "ARM_CORTEX_GCC")
-set(SOURCE_LIST src/builtin/gcc/impl.cpp)
+set(SOURCE_LIST src/builtin/gcc/override.cpp)
+elseif("${RUNTIME}" STREQUAL "ARM_CORTEX_LLVM")
+set(SOURCE_LIST src/builtin/llvm/override.cpp)
 elseif("${RUNTIME}" STREQUAL "ARM_CORTEX_ESTELL")
 set(SOURCE_LIST
     src/arm_cortex/estell/exception.cpp
@@ -29,7 +34,7 @@ message(FATAL "Invalid Exception RUNTIME: '${RUNTIME}' provided!")
 endif()
 
 libhal_make_library(
-  LIBRARY_NAME libhal-exceptions
+  LIBRARY_NAME hal-exceptions
 
   SOURCES
   ${SOURCE_LIST}
@@ -39,13 +44,16 @@ libhal_make_library(
 
   LINK_LIBRARIES
   libhal::util
+
+  COMPILE_FLAGS
+  -Wno-error,-Wgnu-label-as-value
 )
 
-target_compile_options(libhal-exceptions PRIVATE -save-temps=obj)
+target_compile_options(hal-exceptions PRIVATE -save-temps=obj)
 
 if(NOT ${CMAKE_CROSSCOMPILING})
 libhal_unit_test(
-  LIBRARY_NAME libhal-exceptions
+  LIBRARY_NAME hal-exceptions
 
   SOURCES
   tests/main.test.cpp
