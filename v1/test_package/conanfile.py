@@ -14,7 +14,9 @@
 
 
 from conan import ConanFile
+from conan.tools.build import cross_building
 from conan.tools.cmake import CMake, cmake_layout
+from pathlib import Path
 
 
 class TestPackageConan(ConanFile):
@@ -22,8 +24,8 @@ class TestPackageConan(ConanFile):
     generators = "CMakeToolchain", "CMakeDeps", "VirtualRunEnv"
 
     def build_requirements(self):
-        self.tool_requires("make/4.4.1")
-        self.tool_requires("cmake/3.27.1")
+        self.tool_requires("ninja/[^1.13.1]")
+        self.tool_requires("cmake/[^4.0.0]")
 
     def requirements(self):
         self.requires(self.tested_reference_str)
@@ -37,4 +39,6 @@ class TestPackageConan(ConanFile):
         cmake.build()
 
     def test(self):
-        pass  # No execution for this binary at this time
+        if not cross_building(self):
+            bin_path = Path(self.cpp.build.bindirs[0]) / "test_package"
+            self.run(bin_path.absolute(), env="conanrun")

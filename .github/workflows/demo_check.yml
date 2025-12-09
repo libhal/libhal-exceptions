@@ -9,38 +9,31 @@ on:
       version:
         type: string
         default: ""
-      conan_version:
-        type: string
-        default: ""
-      compiler_profile_url:
-        type: string
-        required: true
       compiler_profile:
         type: string
         required: true
       compiler_profile_branch:
         type: string
         default: "main"
-      platform_profile_url:
-        type: string
-        required: true
       platform_profile:
         type: string
         required: true
       platform_profile_branch:
         type: string
         default: "main"
+      dir:
+        type: string
+        default: "."
 jobs:
   build_release: # b/c building the debug does not guarantee that normal build works
-    uses: libhal/ci/.github/workflows/demo_builder.yml@5.x.y
+    uses: libhal/ci/.github/workflows/app_builder2.yml@5.x.y
     with:
-      compiler_profile_url: ${{ inputs.compiler_profile_url }}
       compiler_profile: ${{ inputs.compiler_profile }}
-      platform_profile_url: ${{ inputs.platform_profile_url }}
       platform_profile: ${{ inputs.platform_profile }}
+      dir: ${{ inputs.dir }}
     secrets: inherit
 
-  build_debug: # STOLEN from libhal/ci
+  build_debug:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4.1.1
@@ -56,35 +49,17 @@ jobs:
           submodules: true
           repository: ${{ inputs.repo }}
 
-      - name: 📥 Install Conan ${{ inputs.conan_version }}
-        if: ${{ inputs.conan_version != '' }}
-        run: pipx install conan==${{ inputs.conan_version }}
-
       - name: 📥 Install Conan Latest
-        if: ${{ inputs.conan_version == '' }}
         run: pipx install conan
 
-      - name: 📡 Add `libhal` repo to conan remotes
-        run: conan remote add libhal
-          https://libhal.jfrog.io/artifactory/api/conan/trunk-conan
+      - name: 📡 Install libhal/conan-config2
+        run: conan config install https://github.com/libhal/conan-config2.git
 
-      - name: 📡 Create and setup default profile
-        run: conan profile detect --force
+      - name: 📡 Run `conan hal setup`
+        run: conan hal setup
 
-      - name: 👁️‍🗨️ Show conan profile
-        run: conan profile show
-
-      - name: Install libhal settings_user.yml
-        run: conan config install -sf profiles/baremetal/v2 https://github.com/libhal/conan-config.git
-
-      - name: Install compiler profiles
-        run: conan config install -tf profiles -sf conan/profiles --args "-b ${{ inputs.compiler_profile_branch }} --single-branch" ${{ inputs.compiler_profile_url }}
-
-      - name: Install platform profiles
-        run: conan config install -tf profiles -sf conan/profiles --args "-b ${{ inputs.platform_profile_branch }} --single-branch" ${{ inputs.platform_profile_url }}
-
-      - name: 🏗️ Build debug demos for ${{ inputs.platform_profile }}
-        run: conan build demos -pr ${{ inputs.compiler_profile }} -pr ${{ inputs.platform_profile }} -s build_type=Debug
+      - name: 🏗️ Build debug ${{ inputs.dir }} for ${{ inputs.platform_profile }}
+        run: conan build ${{ inputs.dir }} -pr ${{ inputs.compiler_profile }} -pr ${{ inputs.platform_profile }} -s build_type=Debug --build=missing
 
       - name: Trim profile version
         id: trim
@@ -96,7 +71,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ steps.trim.outputs.trimmed }}
-          path: demos/build/
+          path: ${{ inputs.dir }}/build
 
   check_single_level:
     runs-on: ubuntu-24.04
