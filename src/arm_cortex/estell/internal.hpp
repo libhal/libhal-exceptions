@@ -19,7 +19,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <memory_resource>
 #include <typeinfo>
 
 #include <libhal-util/bit.hpp>
@@ -30,20 +29,20 @@ using destructor_t = void(void*);
 
 struct register_t
 {
-  std::uint32_t data;
+  std::uintptr_t data;
 
   register_t()
     : data(0)
   {
   }
 
-  register_t(std::uint32_t p_data)
+  register_t(std::uintptr_t p_data)
     : data(p_data)
   {
   }
 
   register_t(void const* p_data)
-    : data(reinterpret_cast<std::uint32_t>(p_data))
+    : data(reinterpret_cast<std::uintptr_t>(p_data))
   {
   }
 
@@ -52,10 +51,10 @@ struct register_t
     return data;
   }
 
-  std::uint32_t* operator*()
+  auto* operator*()
   {
     // NOLINTNEXTLINE(performance-no-int-to-ptr)
-    return reinterpret_cast<std::uint32_t*>(data);
+    return reinterpret_cast<std::uintptr_t*>(data);
   }
 };
 
@@ -65,9 +64,9 @@ constexpr std::uint32_t end_descriptor = 0x0000'0000;
 constexpr std::uint32_t su16_mask = 0b1111'1111'1111'1110;
 }  // namespace arm_ehabi
 
-constexpr std::uint32_t to_absolute_address(void const* p_object)
+constexpr std::uintptr_t to_absolute_address(void const* p_object)
 {
-  auto const object_address = std::bit_cast<std::int32_t>(p_object);
+  auto const object_address = std::bit_cast<std::uintptr_t>(p_object);
   auto offset = *std::bit_cast<std::int32_t const*>(p_object);
 
   // Shift bits to the end
@@ -105,16 +104,16 @@ struct function_t
 {
   using callable_t = void();
 
-  std::uint32_t address;
+  std::uintptr_t address;
 
-  function_t(std::uint32_t p_address)
+  function_t(std::uintptr_t p_address)
     : address(p_address)
   {
   }
 
-  operator std::uint32_t()
+  operator std::uintptr_t()
   {
-    return reinterpret_cast<std::uint32_t>(address);
+    return reinterpret_cast<std::uintptr_t>(address);
   }
 
   operator void*()
@@ -234,7 +233,7 @@ struct cortex_m_cpu
   {
     using register_file = std::array<register_t, 16>;
     static_assert(sizeof(cortex_m_cpu) == sizeof(register_file));
-    static_assert(sizeof(std::uint32_t) == sizeof(register_t));
+    static_assert(sizeof(std::uintptr_t) == sizeof(register_t));
 
     auto* file = reinterpret_cast<register_file*>(this);
     return (*file)[p_size];
@@ -304,7 +303,7 @@ struct exception_cache
 struct base_class_type_info
 {
   void const* type_info = nullptr;
-  std::int32_t offset = 0;
+  std::ptrdiff_t offset = 0;
 };
 
 template<std::size_t max_count>
@@ -379,7 +378,6 @@ struct flattened_hierarchy
 template<typename T = std::byte>
 struct exception_allocation
 {
-  std::pmr::memory_resource* allocator = nullptr;
   std::size_t size = 0uz;
   alignas(std::max_align_t) T data;
 };

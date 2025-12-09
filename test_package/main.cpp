@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <cstdio>
 
-#include <libhal-exceptions/control.hpp>
+#include <array>
+#include <exception>
+
+#include <libhal-exceptions/new.hpp>
 
 // NOLINTBEGIN(readability-identifier-naming)
 struct V  // NOLINT(readability-identifier-naming)
@@ -85,10 +89,29 @@ void foo()
   throw error{};
 }
 
+#if defined(LIBHAL_ESTELL_EXCEPTIONS) || 1
+
+std::array<std::byte, 128> m_buffer{};
+
+void* operator new(std::size_t, std::align_val_t, ke::exception_allocation_tag)
+{
+  m_buffer.fill(std::byte{ 0 });
+  return m_buffer.data();
+}
+
+void operator delete(void*,
+                     std::size_t,
+                     std::align_val_t,
+                     ke::exception_allocation_tag)
+{
+  m_buffer.fill(std::byte{ 0 });
+}
+#endif  // defined(LIBHAL_ESTELL_EXCEPTIONS)
+
 int main()
 {
   [[maybe_unused]] static constexpr auto error_size = sizeof(error);
-  hal::set_terminate(+[]() { puts("terminating application!"); });
+  std::set_terminate(+[]() { puts("terminating application!"); });
 
   try {
     foo();
