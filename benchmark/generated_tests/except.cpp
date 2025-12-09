@@ -1,6 +1,7 @@
 #include <cstdint>
 
 #include <array>
+#include <string>
 
 #include <platform.hpp>
 
