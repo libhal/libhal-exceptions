@@ -24,19 +24,53 @@ on:
     - cron: "0 12 * * 0"
 
 jobs:
-  ci:
+  # ===========================================================================
+  # V2
+  # ===========================================================================
+  ci_v2:
+    uses: libhal/ci/.github/workflows/library_check.yml@5.x.y
+    with:
+      dir: v2
+    secrets: inherit
+
+  package_and_upload_all_v2:
+    uses: libhal/ci/.github/workflows/package_and_upload_all.yml@5.x.y
+    with:
+      dir: v2
+    secrets: inherit
+
+  demo_check_lpc4078_v2:
+    uses: ./.github/workflows/demo_check.yml
+    with:
+      compiler_profile: hal/tc/arm-gcc-12.3
+      platform_profile: hal/mcu/lpc4078
+      dir: v2/demos
+    secrets: inherit
+
+  demo_check_stm32f103c8_v2:
+    uses: ./.github/workflows/demo_check.yml
+    with:
+      compiler_profile: hal/tc/arm-gcc-12.3
+      platform_profile: hal/mcu/stm32f103c8
+      dir: v2/demos
+    secrets: inherit
+
+  # ===========================================================================
+  # V1
+  # ===========================================================================
+  ci_v1:
     uses: libhal/ci/.github/workflows/library_check.yml@5.x.y
     with:
       dir: v1
     secrets: inherit
 
-  deploy_cortex-m4f_check:
+  package_and_upload_all_v1:
     uses: libhal/ci/.github/workflows/package_and_upload_all.yml@5.x.y
     with:
       dir: v1
     secrets: inherit
 
-  demo_check_lpc4078:
+  demo_check_lpc4078_v1:
     uses: ./.github/workflows/demo_check.yml
     with:
       compiler_profile: hal/tc/arm-gcc-12.3
@@ -44,7 +78,7 @@ jobs:
       dir: v1/demos
     secrets: inherit
 
-  demo_check_stm32f103c8:
+  demo_check_stm32f103c8_v1:
     uses: ./.github/workflows/demo_check.yml
     with:
       compiler_profile: hal/tc/arm-gcc-12.3
@@ -52,7 +86,7 @@ jobs:
       dir: v1/demos
     secrets: inherit
 
-  build_benchmarks:
+  build_benchmarks_v1:
     uses: libhal/ci/.github/workflows/app_builder2.yml@5.x.y
     with:
       dir: v1/benchmark/
